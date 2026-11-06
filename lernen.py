@@ -31,7 +31,7 @@ GEWICHTE = {
     "mehr 52W-Hoch": (0.25, 0.35, 0.35, 0.30),
 }
 SCHWELLEN = (50, 55, 60, 65)
-HALTEDAUERN = (20, 40, 60)
+HALTEDAUERN = (0.5, 1.0, 1.5)   # Faktor auf die Haltedauer, die die Forschung gewählt hat
 NACHZIEH = (0.85, 1.0, 1.2)     # Faktor auf den Nachzieh-Stopp, den die Forschung gewählt hat
 STANDARD_FILTER = [
     {"merkmal": "vola", "op": "<=", "wert": 0.60, "text": "Schwankung höchstens 60 % p.a."},
@@ -182,6 +182,7 @@ def lernen(dep, s, cfg, bench, erzwingen=False):
     basis = dict((dep.get("forschung") or {}).get("parameter") or {})
     P = lambda ueb=None: parameter(cfg, {**basis, **(ueb or {})})
     nz_basis = P().STOPP_ATR_NACHZIEH
+    hd_basis = P().HALTEDAUER
     aktuell = dict(dep.get("parameter") or {})
     akt_par = P(aktuell)
     if not any(getattr(akt_par, k, False) for k in ("PEAD_AKTIV", "INSIDER_TRIGGER", "MOMENTUM_TRIGGER", "HOCH_TRIGGER",
@@ -210,11 +211,11 @@ def lernen(dep, s, cfg, bench, erzwingen=False):
     zeilen = {}
     for (gname, w), schw, halt, nz in itertools.product(GEWICHTE.items(), SCHWELLEN, HALTEDAUERN, NACHZIEH):
         ueb = {"GEWICHT_MOMENTUM": w[0], "GEWICHT_PEAD": w[1], "GEWICHT_INSIDER": w[2], "GEWICHT_HOCH": w[3],
-               "SCHWELLE": schw, "SCHWELLE_RISK_OFF": schw + 15, "HALTEDAUER": halt,
+               "SCHWELLE": schw, "SCHWELLE_RISK_OFF": schw + 15, "HALTEDAUER": max(3, int(round(hd_basis * halt))),
                "STOPP_ATR_NACHZIEH": round(nz_basis * nz, 2), "FILTER": list(akt_par.FILTER)}
         erg = _bewerten(_simulieren(s, P(ueb), start, ende, bench, scores[gname]))
         if erg:
-            zeilen[(gname, schw, halt, nz)] = {**erg, "name": f"{gname} · {schw} · {halt} T · {nz_basis * nz:.1f}×".replace(".", ","),
+            zeilen[(gname, schw, halt, nz)] = {**erg, "name": f"{gname} · {schw} · {max(3, int(round(hd_basis * halt)))} T · {nz_basis * nz:.1f}×".replace(".", ","),
                                                "gewichte": gname, "parameter": ueb}
 
     # 3) Robustheit: Mittel aus Variante und Nachbarn
@@ -232,6 +233,9 @@ def lernen(dep, s, cfg, bench, erzwingen=False):
         nb = list(nachbarn(k))
         z["robust"] = float(np.mean([x["lern"] for x in nb])) if nb else z["lern"]
     geeignet = [z for z in zeilen.values() if z["trades_lern"] >= cfg.LERN_MIN_TRADES * 2 / 3]
+    if getattr(cfg, "PROFIL", "") == "ruhig":         # Profil: hohe Trefferquote soll erhalten bleiben
+        mindest = min(getattr(cfg, "PROFIL_MIN_TREFFER", 0.55), ref.get("quote", 0))
+        geeignet = [z for z in geeignet if z["quote"] >= mindest]
     top = sorted(geeignet, key=lambda z: z["robust"], reverse=True)
 
     # 4) Filter-Test auf den 3 robustesten Varianten (und den aktuellen Einstellungen)

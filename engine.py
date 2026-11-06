@@ -390,7 +390,7 @@ def _np(s, score=None, bench=None):
     """Numpy-Kopien für die schnelle Tages-Simulation (einmal je Signal-Satz bzw. Score)."""
     n = s.get("_np")
     if n is None:
-        n = {k: s[k].to_numpy(dtype=float) for k in ("O", "L", "C", "A", "M", "HO")}
+        n = {k: s[k].to_numpy(dtype=float) for k in ("O", "H", "L", "C", "A", "M", "HO")}
         n["NEG"] = s["NEG"].fillna(False).to_numpy(dtype=bool)
         for k in ("umkehr", "neg_kauf", "elig"):
             n[k] = s[k].fillna(False).to_numpy(dtype=bool)
@@ -456,9 +456,11 @@ def tag_verarbeiten(dep, s, d, par, modus, firmen, bench=None, pruefe_pead=None,
         invest = min(tr["gewicht"] * tr["equity_signal"], dep["cash"])
         tr["stueck"] = invest / (o * (1 + K))
         dep["cash"] -= tr["stueck"] * o * (1 + K)
-        st0 = o - par.STOPP_ATR_START * tr["atr"]
+        regeln = tr.get("parameter", {})
+        st0 = o - regeln.get("STOPP_ATR_START", par.STOPP_ATR_START) * tr["atr"]
+        gz = regeln.get("GEWINNZIEL_ATR", 0) or 0
         tr.update(status="offen", einstieg_datum=iso, einstieg_kurs=o, hoechst=o, tage=0, stopp=st0, kurs=o,
-                  stopp_start=st0)
+                  stopp_start=st0, ziel=(o + gz * tr["atr"]) if gz > 0 else None)
 
     # 3) offene Positionen: Stopp, Nachziehen, Zeitstopp, Warnsignal
     for tr in dep["trades"]:
@@ -467,11 +469,16 @@ def tag_verarbeiten(dep, s, d, par, modus, firmen, bench=None, pruefe_pead=None,
         t = tr["ticker"]
         j = J[t]
         tr["stopp_vortag"] = tr["stopp"]
-        lo, op = float(L[d, j]), float(O[d, j])
-        if lo <= tr["stopp"]:
+        lo, op, hi = float(L[d, j]), float(O[d, j]), float(N["H"][d, j])
+        if lo <= tr["stopp"]:                           # Stopp zuerst (vorsichtig, falls beides am selben Tag)
             px = min(op, tr["stopp"])
             dep["cash"] += tr["stueck"] * px * (1 - K)
             _schliessen(tr, iso, px, "Stopp", K, bench, C.index)
+            continue
+        if tr.get("ziel") and hi >= tr["ziel"]:         # Gewinnziel erreicht (Limit-Verkauf)
+            px = max(op, tr["ziel"])
+            dep["cash"] += tr["stueck"] * px * (1 - K)
+            _schliessen(tr, iso, px, "Gewinnziel", K, bench, C.index)
             continue
         c, a = float(Cn[d, j]), float(A[d, j])
         regeln = tr.get("parameter", {})            # offene Trades behalten die Regeln vom Kauftag
@@ -596,7 +603,9 @@ def tag_verarbeiten(dep, s, d, par, modus, firmen, bench=None, pruefe_pead=None,
                 "gruende": gr, "typen": typen, "komp": {x: round(v, 3) for x, v in k.items()},
                 "merkmale": mk, "signal_kurs": c, "atr": a, "equity_signal": eq, "status": "geplant",
                 "limit": c * (1 + par.MAX_GAP_EINSTIEG), "stopp_hinweis": c - par.STOPP_ATR_START * a,
-                "parameter": {"SCHWELLE": schwelle, "HALTEDAUER": par.HALTEDAUER, "STOPP_ATR_NACHZIEH": par.STOPP_ATR_NACHZIEH},
+                "ziel_hinweis": (c + par.GEWINNZIEL_ATR * a) if getattr(par, "GEWINNZIEL_ATR", 0) else None,
+                "parameter": {"SCHWELLE": schwelle, "HALTEDAUER": par.HALTEDAUER, "STOPP_ATR_NACHZIEH": par.STOPP_ATR_NACHZIEH,
+                              "STOPP_ATR_START": par.STOPP_ATR_START, "GEWINNZIEL_ATR": getattr(par, "GEWINNZIEL_ATR", 0)},
             })
             status[t] = "KAUFSIGNAL – Kauf zur nächsten Eröffnung"
             dep["naechste_id"] += 1

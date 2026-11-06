@@ -97,7 +97,8 @@ def benachrichtigen(aktionen):
         tr = a["trade"]
         if a["typ"] == "kaufen":
             teile.append(f"KAUFEN {tr['ticker']}: {tr['gewicht']:.0%} des Portfolios (ca. {a['eur']:.0f} EUR), "
-                         f"Limit {tr['limit']:.2f}, Stopp {tr['stopp_hinweis']:.2f}")
+                         f"Limit {tr['limit']:.2f}, Stopp {tr['stopp_hinweis']:.2f}"
+                         + (f", Gewinnziel {tr['ziel_hinweis']:.2f}" if tr.get("ziel_hinweis") else ""))
         elif a["typ"] == "verkaufen":
             teile.append(f"VERKAUFEN {tr['ticker']} zur Eröffnung ({tr['verkaufen_geplant']})")
         elif a["typ"] == "gestoppt":

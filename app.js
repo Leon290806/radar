@@ -327,7 +327,8 @@ function heldKarte() {
       ${M.zeige_euro ? `<div class="mute">≈ ${zahl(kauf.eur, 0)} € ${kauf.stueck > 0 ? `· ca. ${kauf.stueck} Stück` : "· Bruchstücke nutzen"}</div>` : ""}
       <ul class="schritte"><li><span>Kaufen</span><span>morgen zur Eröffnung, Limit ${zahl(t.limit)} ${s}</span></li>
         <li><span>Stopp-Order danach</span><span>ca. ${zahl(t.stopp_hinweis)} ${s}</span></li>
-        <li><span>Plan</span><span>bis ${t.parameter.HALTEDAUER} Handelstage, Stopp wird nachgezogen</span></li></ul>
+        ${t.ziel_hinweis ? `<li><span>Gewinnziel (Limit-Verkauf)</span><span>ca. ${zahl(t.ziel_hinweis)} ${s} (${pct(t.ziel_hinweis / t.signal_kurs - 1, 1)})</span></li>` : ""}
+        <li><span>Plan</span><span>bis ${t.parameter.HALTEDAUER} Handelstage${t.ziel_hinweis ? "" : ", Stopp wird nachgezogen"}</span></li></ul>
     </div><div>
       <div class="lbl" style="margin-bottom:8px">Überzeugung ${Math.round(t.score)} / 100</div>${scoreBar(t.komp, t.parameter.SCHWELLE)}
       <ul class="gruende">${t.gruende.map(g => `<li>${esc(g)}</li>`).join("")}</ul>
@@ -425,6 +426,7 @@ function tickerChart(host, t, o) {
   if (tr && tr.einstieg_datum && tr.status !== "verpasst") {
     hlinien.push({ v: tr.einstieg_kurs, farbe: "--good", txt: "Einstieg", strich: "6 5" });
     if (tr.status === "offen") hlinien.push({ v: tr.stopp, farbe: "--bad", txt: "Stopp", strich: "4 4" });
+    if (tr.status === "offen" && tr.ziel) hlinien.push({ v: tr.ziel, farbe: "--s1", txt: "Ziel", strich: "2 4" });
   } else if (tr && tr.status === "geplant") {
     hlinien.push({ v: tr.limit, farbe: "--good", txt: "Limit", strich: "6 5" });
     hlinien.push({ v: tr.stopp_hinweis, farbe: "--bad", txt: "Stopp", strich: "4 4" });
@@ -542,6 +544,7 @@ function posKarte(t) {
       <div><span>Aktuell</span><b>${zahl(offen ? t.kurs : t.signal_kurs)} ${s}</b></div>
       <div><span>Stopp</span><b>${zahl(offen ? t.stopp : t.stopp_hinweis)} ${s}</b></div>
       <div><span>Abstand zum Stopp</span><b class="neg">${pct((offen ? t.stopp / t.kurs : t.stopp_hinweis / t.signal_kurs) - 1)}</b></div>
+      ${(offen ? t.ziel : t.ziel_hinweis) ? `<div><span>Gewinnziel</span><b>${zahl(offen ? t.ziel : t.ziel_hinweis)} ${s}</b></div><div><span>Abstand zum Ziel</span><b class="pos">${pct((offen ? t.ziel / t.kurs : t.ziel_hinweis / t.signal_kurs) - 1)}</b></div>` : ""}
       ${offen ? `<div><span>Höchster Kurs</span><b>${zahl(t.hoechst)} ${s}</b></div><div><span>Gesichert</span><b class="${kl(t.stopp / t.einstieg_kurs - 1)}">${pct(t.stopp / t.einstieg_kurs - 1)}</b></div>` : ""}
     </div>
     <ul class="gruende">${t.gruende.map(g => `<li>${esc(g)}</li>`).join("")}</ul></div>`;
@@ -793,10 +796,10 @@ function forschungKarte() {
     <div class="tw" style="margin-top:14px"><table class="tbl"><thead><tr><th class="l">Signal</th><th>Ereignisse</th><th>20 Tage · Lernteil</th><th>20 Tage · Test</th><th>60 Tage · Lernteil</th><th>60 Tage · Test</th><th>vs. S&amp;P 500</th><th class="l">Urteil</th></tr></thead><tbody>
     ${studie.map(e => `<tr><td class="l wrap" style="max-width:280px"><b>${esc(e.name)}</b></td><td>${e.n}</td><td>${z(e.h20.lern)}</td><td>${z(e.h20.test)}</td><td>${z(e.h60.lern)}</td><td>${z(e.h60.test)}</td><td>${z(e.h20.spy_test)}</td><td class="l">${badge(e.urteil)}</td></tr>`).join("")}
     </tbody></table></div></div></div>
-  <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Portfolio-Aufbau · ${(F.varianten || []).length} Varianten über die ganze Historie</h3><div class="cs">Gewählt nach dem Lernteil (Rendite p.a. minus ¼ des größten Rückgangs) · Testteil zur Kontrolle</div></div></div>
-    <div class="tw"><table class="tbl"><thead><tr><th class="l">Variante</th><th>Lernteil p.a.</th><th>Testteil p.a.</th><th>Trades</th><th>Treffer</th></tr></thead><tbody>
-    ${F.bench ? `<tr><td class="l mute">S&amp;P 500 (zum Vergleich)</td><td>${k(F.bench.lern)}</td><td>${k(F.bench.test)}</td><td></td><td></td></tr>` : ""}
-    ${(F.varianten || []).map(v => `<tr class="${v.name === F.bester ? "hl" : ""}"><td class="l">${v.name === F.bester ? '<span class="badge b-kauf">gewählt</span> ' : ""}${esc(v.name)}</td><td>${k(v.lern)}</td><td>${k(v.test)}</td><td>${v.trades}</td><td>${pct(v.quote, 0, false)}</td></tr>`).join("")}
+  <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Portfolio-Aufbau · ${(F.varianten || []).length} Varianten über die ganze Historie</h3><div class="cs">Auslöser-Mischung × Ausstieg (Trend oder schnelle Gewinnmitnahme) × Anzahl Aktien · gewählt nur nach dem Lernteil · die 20 besten</div></div></div>
+    <div class="tw"><table class="tbl"><thead><tr><th class="l">Variante</th><th>Lernteil p.a.</th><th>Treffer Lern</th><th>Testteil p.a.</th><th>Treffer Test</th><th>Ø Gewinn / Ø Verlust (Test)</th><th>Trades</th></tr></thead><tbody>
+    ${F.bench ? `<tr><td class="l mute">S&amp;P 500 (zum Vergleich)</td><td>${k(F.bench.lern)}</td><td></td><td>${k(F.bench.test)}</td><td></td><td></td><td></td></tr>` : ""}
+    ${(F.varianten || []).slice().sort((a, b) => (b.name === F.bester) - (a.name === F.bester) || ((b.lern || {}).ziel ?? -9) - ((a.lern || {}).ziel ?? -9)).slice(0, 20).map(v => `<tr class="${v.name === F.bester ? "hl" : ""}"><td class="l wrap" style="max-width:420px">${v.name === F.bester ? '<span class="badge b-kauf">gewählt</span> ' : ""}${esc(v.name)}</td><td>${k(v.lern)}</td><td>${pct(v.quote_lern, 0, false)}</td><td>${k(v.test)}</td><td>${pct(v.quote_test, 0, false)}</td><td>${v.gv_test ? `<span class="pos">${pct(v.gv_test[0], 1)}</span> / <span class="neg">${pct(v.gv_test[1], 1)}</span>` : "–"}</td><td>${v.trades}</td></tr>`).join("")}
     </tbody></table></div></div></div>`;
 }
 RENDER.lernen = el => {

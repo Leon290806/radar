@@ -32,6 +32,12 @@ MIN_CASH_FUER_KAUF = 0.08      # unter 8 % freiem Cash keine neuen Käufe
 STOPP_ATR_START = 2.5      # Anfangs-Stopp: Einstieg minus 2,5 x ATR(20)
 STOPP_ATR_NACHZIEH = 3.0   # Nachzieh-Stopp: höchster Schlusskurs minus 3 x ATR(20)
 HALTEDAUER = 40            # Zeitstopp in Handelstagen (Effekte wirken meist in den ersten Wochen)
+GEWINNZIEL_ATR = 0         # Gewinnziel: Einstieg + x * ATR (0 = keins). Die Forschung wählt es passend zum Profil.
+
+# Profil: "ruhig" = oft kleine Gewinne, Verluste früh begrenzen (Trefferquote zählt mit)
+#         "rendite" = höchste Rendite bei vertretbarem Rückgang
+PROFIL = "ruhig"
+PROFIL_MIN_TREFFER = 0.55  # bei "ruhig": nur Varianten mit mind. 55 % Gewinner-Trades
 MAX_GAP_EINSTIEG = 0.04    # Eröffnet die Aktie > 4 % über dem Signal-Schluss: Einstieg auslassen
 KOSTEN = 0.001             # 0,1 % je Kauf/Verkauf (Gebühr + Spread), für das Musterdepot
 

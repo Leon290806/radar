@@ -39,20 +39,20 @@ def _pz(x, n=1):
     return f"{x * 100:+.{n}f} %".replace(".", ",").replace("-", "−")
 GROESSEN = {0: "klein", 1: "mittel", 2: "groß"}
 
-AUFBAU = [
-    ("Konzentriert · 5 Aktien · 12–35 %", {"MAX_POSITIONEN": 5, "GEWICHT_MIN": 0.12, "GEWICHT_MAX": 0.35,
-                                            "MAX_VERLUST_PRO_TRADE": 0.03, "MAX_NEU_PRO_TAG": 1}),
-    ("Mittel · 8 Aktien · 8–20 %", {"MAX_POSITIONEN": 8, "GEWICHT_MIN": 0.08, "GEWICHT_MAX": 0.20,
-                                     "MAX_VERLUST_PRO_TRADE": 0.02, "MAX_NEU_PRO_TAG": 2}),
-    ("Breit · 12 Aktien · 5–12 %", {"MAX_POSITIONEN": 12, "GEWICHT_MIN": 0.05, "GEWICHT_MAX": 0.12,
-                                     "MAX_VERLUST_PRO_TRADE": 0.015, "MAX_NEU_PRO_TAG": 2}),
-    ("Sehr breit · 20 Aktien · 3–8 %", {"MAX_POSITIONEN": 20, "GEWICHT_MIN": 0.03, "GEWICHT_MAX": 0.08,
-                                         "MAX_VERLUST_PRO_TRADE": 0.01, "MAX_NEU_PRO_TAG": 3}),
+# Welche Auslöser zusammen? (wird im Portfolio getestet – einzeln belegt heißt nicht, dass die Mischung besser ist)
+AUSLOESER = {"M": "MOMENTUM_TRIGGER", "U": "UMKEHR_TRIGGER", "N": "NEG_KAUF_TRIGGER", "H": "HOCH_TRIGGER"}
+AUSLOESER_NAME = {"M": "Momentum", "U": "Umkehr", "N": "Kursrutsch", "H": "52W-Hoch"}
+# Ausstieg: Trend laufen lassen – oder schnell kleine Gewinne mitnehmen und Verluste früh begrenzen
+AUSSTIEG = [
+    ("Trend · Nachzieh-Stopp, 40 Tage", {"GEWINNZIEL_ATR": 0, "STOPP_ATR_START": 2.5, "STOPP_ATR_NACHZIEH": 3.0, "HALTEDAUER": 40}),
+    ("Kurz · Ziel 1× ATR, Stopp 1,5× ATR, 5 Tage", {"GEWINNZIEL_ATR": 1.0, "STOPP_ATR_START": 1.5, "STOPP_ATR_NACHZIEH": 99, "HALTEDAUER": 5}),
+    ("Schnell · Ziel 1,5× ATR, Stopp 2× ATR, 10 Tage", {"GEWINNZIEL_ATR": 1.5, "STOPP_ATR_START": 2.0, "STOPP_ATR_NACHZIEH": 99, "HALTEDAUER": 10}),
+    ("Mittel · Ziel 2,5× ATR, Stopp 2× ATR, 20 Tage", {"GEWINNZIEL_ATR": 2.5, "STOPP_ATR_START": 2.0, "STOPP_ATR_NACHZIEH": 99, "HALTEDAUER": 20}),
 ]
-STOPPS = [
-    ("eng (2,5× / 3× ATR)", {"STOPP_ATR_START": 2.5, "STOPP_ATR_NACHZIEH": 3.0}),
-    ("weit (4× / 4× ATR)", {"STOPP_ATR_START": 4.0, "STOPP_ATR_NACHZIEH": 4.0}),
-    ("nur Notstopp (8× ATR)", {"STOPP_ATR_START": 8.0, "STOPP_ATR_NACHZIEH": 8.0}),
+AUFBAU = [
+    ("8 Aktien · 8–20 %", {"MAX_POSITIONEN": 8, "GEWICHT_MIN": 0.08, "GEWICHT_MAX": 0.20, "MAX_VERLUST_PRO_TRADE": 0.02, "MAX_NEU_PRO_TAG": 2}),
+    ("12 Aktien · 5–12 %", {"MAX_POSITIONEN": 12, "GEWICHT_MIN": 0.05, "GEWICHT_MAX": 0.12, "MAX_VERLUST_PRO_TRADE": 0.015, "MAX_NEU_PRO_TAG": 3}),
+    ("20 Aktien · 3–8 %", {"MAX_POSITIONEN": 20, "GEWICHT_MIN": 0.03, "GEWICHT_MAX": 0.08, "MAX_VERLUST_PRO_TRADE": 0.01, "MAX_NEU_PRO_TAG": 4}),
 ]
 
 
@@ -266,28 +266,68 @@ def _kennz(eq, tage):
     return {"cagr": float(cagr), "maxdd": dd, "sharpe": sharpe, "ziel": float(cagr - 0.25 * abs(dd))}
 
 
+def _kombis(regeln):
+    """Alle Mischungen der belegten Faktor-Auslöser (Ereignis-Auslöser laufen immer mit, wenn belegt)."""
+    belegt = [k for k, f in AUSLOESER.items() if regeln.get(f)]
+    out = []
+    for n in range(1, len(belegt) + 1):
+        out += [set(c) for c in itertools.combinations(belegt, n)]
+    if regeln.get("PEAD_AKTIV") or regeln.get("INSIDER_TRIGGER"):
+        out.append(set())                                 # nur Ereignis-Auslöser
+    return out or [set()]
+
+
 def portfolio_aufbau(s, cfg, bench, grenze, basis, start):
     import lernen
     idx = s["C"].index
     g = int(idx.searchsorted(grenze))
+    k = g - start
     erg = []
     score = None
-    for (an, ap), (sn, sp) in itertools.product(AUFBAU, STOPPS):
-        par = lernen.parameter(cfg, {**basis, **ap, **sp})
-        if score is None:
-            score = engine.kombiniere(s, par)
-        dep = engine.neues_depot()
-        for d in range(start, len(idx)):
-            engine.tag_verarbeiten(dep, s, d, par, "Test", {}, bench, score=score)
-        eq = [k[1] for k in dep["kurve"]]
-        k = g - start
-        gz = [t for t in dep["trades"] if t["status"] == "geschlossen"]
-        erg.append({"name": f"{an} · Stopp {sn}", "aufbau": an, "stopp": sn, "parameter": {**ap, **sp},
-                    "lern": _kennz(eq[:k + 1], k), "test": _kennz(eq[k:], len(eq) - k),
-                    "trades": len(gz), "quote": float(np.mean([t["ergebnis"] > 0 for t in gz])) if gz else None})
+    for kombi in _kombis(basis):
+        flags = {f: (key in kombi) for key, f in AUSLOESER.items()}
+        kname = " + ".join(AUSLOESER_NAME[x] for x in sorted(kombi)) or "nur Ereignisse"
+        for (xn, xp), (an, ap) in itertools.product(AUSSTIEG, AUFBAU):
+            par = lernen.parameter(cfg, {**basis, **flags, **xp, **ap})
+            if score is None:
+                score = engine.kombiniere(s, par)
+            dep = engine.neues_depot()
+            for d in range(start, len(idx)):
+                engine.tag_verarbeiten(dep, s, d, par, "Test", {}, bench, score=score)
+            eq = [z[1] for z in dep["kurve"]]
+            gz = [t for t in dep["trades"] if t["status"] == "geschlossen"]
+            lern_t = [t["ergebnis"] for t in gz if t["signal_datum"] < grenze.date().isoformat()]
+            test_t = [t["ergebnis"] for t in gz if t["signal_datum"] >= grenze.date().isoformat()]
+            q = lambda x: float(np.mean([v > 0 for v in x])) if x else None
+            gv = lambda x: (float(np.mean([v for v in x if v > 0])) if any(v > 0 for v in x) else None,
+                            float(np.mean([v for v in x if v <= 0])) if any(v <= 0 for v in x) else None)
+            erg.append({"name": f"{kname} · {xn} · {an}", "auslöser": kname, "ausstieg": xn, "aufbau": an,
+                        "parameter": {**flags, **xp, **ap}, "lern": _kennz(eq[:k + 1], k), "test": _kennz(eq[k:], len(eq) - k),
+                        "trades": len(gz), "quote": q([t["ergebnis"] for t in gz]), "quote_lern": q(lern_t), "quote_test": q(test_t),
+                        "gv_lern": gv(lern_t), "gv_test": gv(test_t)})
     b = bench.iloc[start:].to_numpy() if bench is not None else None
-    ref = {"lern": _kennz(b[:g - start + 1], 0), "test": _kennz(b[g - start:], 0)} if b is not None else None
+    ref = {"lern": _kennz(b[:k + 1], 0), "test": _kennz(b[k:], 0)} if b is not None else None
     return erg, ref
+
+
+def waehle(varianten, cfg, ref):
+    """Auswahl NUR nach dem Lernteil. Profil „ruhig“: Trefferquote ≥ Mindestwert und Rückgang kleiner als beim Index,
+    dann die höchste Rendite. Sonst: Rendite minus ¼ des größten Rückgangs."""
+    gueltig = [v for v in varianten if v["lern"] and v["quote_lern"] is not None]
+    if not gueltig:
+        return None, "keine gültige Variante"
+    if getattr(cfg, "PROFIL", "") == "ruhig":
+        dd_index = ref["lern"]["maxdd"] if ref and ref.get("lern") else -1
+        passend = [v for v in gueltig if v["quote_lern"] >= getattr(cfg, "PROFIL_MIN_TREFFER", 0.55)
+                   and v["lern"]["maxdd"] > dd_index]
+        if passend:
+            return max(passend, key=lambda v: v["lern"]["cagr"] - 0.25 * abs(v["lern"]["maxdd"])), \
+                f"Profil „ruhig“: {len(passend)} Varianten mit mind. {getattr(cfg, 'PROFIL_MIN_TREFFER', 0.55) * 100:.0f} % Treffern und kleinerem Rückgang als der Index"
+        passend = [v for v in gueltig if v["quote_lern"] >= getattr(cfg, "PROFIL_MIN_TREFFER", 0.55)]
+        if passend:
+            return max(passend, key=lambda v: v["lern"]["cagr"] - 0.5 * abs(v["lern"]["maxdd"])), \
+                "Profil „ruhig“: Keine Variante hatte einen kleineren Rückgang als der Index – gewählt nach Treffern und Rückgang"
+    return max(gueltig, key=lambda v: v["lern"]["ziel"]), "nach Rendite und Rückgang"
 
 
 # ---------------------------------------------------------------------------
@@ -315,14 +355,15 @@ def forschen(dep, s, ins, cfg, bench, grenze):
     regeln, gedanken = signal_regeln(studie)
     print("  Portfolio-Varianten ...")
     varianten, ref = portfolio_aufbau(s, cfg, bench, grenze, regeln, start)
-    gueltig = [v for v in varianten if v["lern"]]
     aktiv = any(regeln.get(k) for k in ("PEAD_AKTIV", "INSIDER_TRIGGER", "MOMENTUM_TRIGGER", "HOCH_TRIGGER", "UMKEHR_TRIGGER", "NEG_KAUF_TRIGGER"))
-    bester = max(gueltig, key=lambda v: v["lern"]["ziel"]) if gueltig and aktiv else None
+    bester, wie = waehle(varianten, cfg, ref) if aktiv else (None, "")
     parameter = dict(regeln)
     if bester:
         parameter.update(bester["parameter"])
-        gedanken.append(f"Portfolio-Aufbau: „{bester['name']}“ war im Lernteil am besten "
-                        f"({_pz(bester['lern']['cagr'])} pro Jahr, größter Rückgang {_pz(bester['lern']['maxdd'], 0)}).")
+        gl = bester["gv_lern"]
+        gedanken.append(f"Gewählt ({wie}): „{bester['name']}“ – im Lernteil {_pz(bester['lern']['cagr'])} pro Jahr, "
+                        f"größter Rückgang {_pz(bester['lern']['maxdd'], 0)}, {bester['quote_lern'] * 100:.0f} % Gewinner-Trades"
+                        + (f", Ø Gewinn {_pz(gl[0])} / Ø Verlust {_pz(gl[1])}" if gl[0] is not None and gl[1] is not None else "") + ".")
         if bester["test"] and ref and ref["test"]:
             besser = bester["test"]["cagr"] > ref["test"]["cagr"]
             gedanken.append(f"Im Testteil (Daten, die bei der Wahl unbekannt waren): {_pz(bester['test']['cagr'])} pro Jahr, "
@@ -354,8 +395,11 @@ def bericht(f, s=None, bench=None):
     k = lambda v: "–" if not v else f"{v['cagr'] * 100:+6.1f}% {v['maxdd'] * 100:6.1f}% {v['sharpe']:+.2f}"
     if f.get("bench"):
         z.append(f"{'S&P 500':60s} Lern {k(f['bench']['lern'])} | Test {k(f['bench']['test'])}")
-    for v in f["varianten"]:
-        z.append(f"{v['name'][:60]:60s} Lern {k(v['lern'])} | Test {k(v['test'])} | Trades {v['trades']} Treffer {(v['quote'] or 0) * 100:.0f}%"
+    pz = lambda x: "  – " if x is None else f"{x * 100:+.1f}"
+    for v in sorted(f["varianten"], key=lambda v: -(v["lern"] or {}).get("ziel", -9)):
+        gl, gt = v.get("gv_lern") or (None, None), v.get("gv_test") or (None, None)
+        z.append(f"{v['name'][:78]:78s} Lern {k(v['lern'])} T{(v.get('quote_lern') or 0) * 100:3.0f}% G{pz(gl[0])}/V{pz(gl[1])} | "
+                 f"Test {k(v['test'])} T{(v.get('quote_test') or 0) * 100:3.0f}% G{pz(gt[0])}/V{pz(gt[1])} | n{v['trades']}"
                  + ("  <== gewählt" if v["name"] == f.get("bester") else ""))
     if s is not None:
         C, elig = s["C"], s["elig"].fillna(False)
