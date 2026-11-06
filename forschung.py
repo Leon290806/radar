@@ -77,6 +77,7 @@ def _ereignisse(s, ins, cfg):
     E["Kurssprung · starker Tagesschluss"] = ("zahlen_stark", ev & s["stark"].fillna(False))
     E["Kurssprung ≥ 10 %"] = ("zahlen_gross", ev & (s["plus"] >= 0.10))
     E["Negativer Kurssprung (Warnsignal)"] = ("neg", s["neg_ev"].fillna(False) & elig)
+    E["Kauf nach Kursrutsch (Überreaktion)"] = ("neg_kauf", s["neg_ev"].fillna(False) & elig)
     E["52-Wochen-Hoch mit Volumen"] = ("hoch", s["h_ev"].fillna(False) & elig)
     monatsende = pd.Series(C.index.to_period("M"), index=C.index)
     monatsende = monatsende != monatsende.shift(-1)
@@ -224,11 +225,27 @@ def signal_regeln(studie):
         gedanken.append(f"Bewertung der Insider-Käufe: Anomalien ab 50 brachten {_pz(b, 2)} in 20 Tagen (gegenüber allen Aktien), "
                         f"alle Käufe ohne Bewertung {_pz(a, 2)}.")
     # Faktor-Auslöser: bekannte Marktanomalien, die ohne Ereignis wirken
-    for key, par, name in (("momentum", "MOMENTUM_TRIGGER", "Momentum (stärkste 10 %)"), ("hoch", "HOCH_TRIGGER", "52-Wochen-Hoch mit Volumen")):
+    for key, par, name in (("momentum", "MOMENTUM_TRIGGER", "Momentum (stärkste 10 %)"),
+                           ("hoch", "HOCH_TRIGGER", "52-Wochen-Hoch mit Volumen"),
+                           ("umkehr", "UMKEHR_TRIGGER", "Kurzfrist-Umkehr (große Aktien nach 5 schwachen Tagen)"),
+                           ("neg_kauf", "NEG_KAUF_TRIGGER", "Kauf nach Kursrutsch (Überreaktion)")):
         p[par] = stufe(key) == "belegt"
         gedanken.append(f"{name}: " + ("belegt – darf jetzt allein eine Empfehlung auslösen." if p[par]
-                                       else "nicht belegt – zählt nur als Zusatzpunkte, löst nichts aus."))
-    if not any(p.get(k) for k in ("PEAD_AKTIV", "INSIDER_TRIGGER", "MOMENTUM_TRIGGER", "HOCH_TRIGGER")):
+                                       else "nicht belegt – löst nichts aus."))
+    # Warnsignal: Verkauf/Sperre nach Kursrutsch nur, wenn danach wirklich weiter Verluste folgten
+    warn = stufe("neg") == "Warnsignal belegt"
+    p["EXIT_NEG_SPRUNG"] = p["NEG_SPERRE_AKTIV"] = warn
+    if not warn:
+        gedanken.append("Negativer Kurssprung: Danach ging es im Schnitt NICHT weiter abwärts – "
+                        "Notverkauf und Kaufsperre nach Kursrutschen sind deshalb abgeschaltet.")
+    # Priorität: belegte Mehrrendite in 20 Tagen (Lernteil) entscheidet, welcher Auslöser zuerst zum Zug kommt
+    prio = {"M": avg_l("momentum"), "H": avg_l("hoch"), "U": avg_l("umkehr"), "N": avg_l("neg_kauf")}
+    ereignis = [avg_l("zahlen")] if p["PEAD_AKTIV"] else []
+    if p["INSIDER_TRIGGER"]:
+        ereignis.append(avg_l(f"insider{p['INSIDER_MIN_AUFFAELLIG']}"))
+    prio["E"] = max(ereignis) if ereignis else 0.0
+    p["TRIGGER_PRIO"] = {k: round(float(v), 5) for k, v in prio.items()}
+    if not any(p.get(k) for k in ("PEAD_AKTIV", "INSIDER_TRIGGER", "MOMENTUM_TRIGGER", "HOCH_TRIGGER", "UMKEHR_TRIGGER", "NEG_KAUF_TRIGGER")):
         gedanken.append("Kein Auslöser ist belegt. Der Radar kauft deshalb keine Einzelaktien und bleibt im ETF, "
                         "bis sich das ändert – lieber Index als Zufall.")
     return p, gedanken
@@ -299,7 +316,7 @@ def forschen(dep, s, ins, cfg, bench, grenze):
     print("  Portfolio-Varianten ...")
     varianten, ref = portfolio_aufbau(s, cfg, bench, grenze, regeln, start)
     gueltig = [v for v in varianten if v["lern"]]
-    aktiv = any(regeln.get(k) for k in ("PEAD_AKTIV", "INSIDER_TRIGGER", "MOMENTUM_TRIGGER", "HOCH_TRIGGER"))
+    aktiv = any(regeln.get(k) for k in ("PEAD_AKTIV", "INSIDER_TRIGGER", "MOMENTUM_TRIGGER", "HOCH_TRIGGER", "UMKEHR_TRIGGER", "NEG_KAUF_TRIGGER"))
     bester = max(gueltig, key=lambda v: v["lern"]["ziel"]) if gueltig and aktiv else None
     parameter = dict(regeln)
     if bester:

@@ -264,7 +264,8 @@ def dashboard_daten(dep, s, score, par, cfg, C_alle, aktionen, kand, ins, ins_st
                                            "LERN_MARGE", "LERN_MIN_TRADES", "FILTER", "MAX_GAP_EINSTIEG",
                                            "MAX_JE_BRANCHE", "MAX_JE_SEKTOR", "INSIDER_MIN_AUFFAELLIG",
                                            "PEAD_AKTIV", "PEAD_GROESSEN", "PEAD_STARKER_SCHLUSS", "INSIDER_TRIGGER",
-                                           "MOMENTUM_TRIGGER", "HOCH_TRIGGER")}
+                                           "MOMENTUM_TRIGGER", "HOCH_TRIGGER", "UMKEHR_TRIGGER", "NEG_KAUF_TRIGGER",
+                                           "EXIT_NEG_SPRUNG")}
     return _sauber({
         "meta": {"stand": dep["letzter_tag"], "erstellt": dt.datetime.now().strftime("%d.%m.%Y %H:%M"), "demo": demo,
                  "start": dates[0], "live_seit": dep.get("live_seit"), "tage_live": sum(1 for k in kurve if k[3] == "Live"),

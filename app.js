@@ -336,7 +336,7 @@ function heldKarte() {
   }
   const k = D.scanner[0];
   return `<div class="card c8"><span class="badge b-neutral">Heute</span><p class="ruhe">Nichts Neues kaufen</p>
-    <div class="ink2">${P.PEAD_AKTIV === false && P.INSIDER_TRIGGER === false && !P.MOMENTUM_TRIGGER && !P.HOCH_TRIGGER ? "Das Forschungslabor findet in den echten Daten zurzeit keinen belegten Vorteil. Deshalb kauft der Radar keine Einzelaktien – das Geld bleibt im ETF (Details im Reiter Lernen)." : `Kein Signal ist stark genug. Freies Geld bleibt im ${M.regime ? "S&amp;P-500-ETF" : "Geldmarkt"}.`}</div>
+    <div class="ink2">${P.PEAD_AKTIV === false && P.INSIDER_TRIGGER === false && !P.MOMENTUM_TRIGGER && !P.HOCH_TRIGGER && !P.UMKEHR_TRIGGER && !P.NEG_KAUF_TRIGGER ? "Das Forschungslabor findet in den echten Daten zurzeit keinen belegten Vorteil. Deshalb kauft der Radar keine Einzelaktien – das Geld bleibt im ETF (Details im Reiter Lernen)." : `Kein Signal ist stark genug. Freies Geld bleibt im ${M.regime ? "S&amp;P-500-ETF" : "Geldmarkt"}.`}</div>
     ${k ? `<div style="margin-top:18px"><div class="lbl" style="margin-bottom:8px">Stärkster Kandidat</div>
       <div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline"><span>${tlink(k.t)} <span class="mute">${esc(k.f)}</span></span><b>${Math.round(k.sc)}</b></div>
       <div style="margin:8px 0">${scoreBar(k.komp, M.schwelle)}</div><div class="cs">${esc(k.status)}</div></div>` : ""}</div>`;
@@ -573,7 +573,7 @@ RENDER.verlauf = el => {
   <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Ergebnis je Empfehlung</h3><div class="cs">Jede Säule ein abgeschlossener Trade, zeitlich sortiert</div></div></div><div id="vl-saeulen"></div></div></div>
   <div class="grid"><div class="card c12">
     <div class="steuer"><div class="chips" id="vl-filter">${[["alle", "Alle"], ["live", "Live"], ["rueck", "Rückblick"], ["offen", "Offen"], ["gew", "Gewinner"], ["verl", "Verlierer"]].map(([f, n], k) => `<span class="chip ${k ? "" : "an"}" data-f="${f}">${n}</span>`).join("")}</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap"><select class="feld" id="vl-typ"><option value="">Alle Auslöser</option><option>Zahlen</option><option>Insider</option><option>52W-Hoch</option></select>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><select class="feld" id="vl-typ"><option value="">Alle Auslöser</option><option>Zahlen</option><option>Insider</option><option>Momentum</option><option>Umkehr</option><option>Rücksetzer</option><option>52W-Hoch</option></select>
       <select class="feld" id="vl-sort"><option value="neu">Neueste zuerst</option><option value="best">Bestes Ergebnis</option><option value="schlecht">Schlechtestes Ergebnis</option><option value="score">Höchster Score</option></select>
       <input class="feld" id="vl-suche" placeholder="Ticker suchen …"></div></div>
     <div id="vl-tabelle"></div></div></div>${fuss()}`;
@@ -814,6 +814,8 @@ RENDER.lernen = el => {
       <div><span>Auslöser Zahlen</span><b>${P.PEAD_AKTIV === false ? "aus" : (P.PEAD_GROESSEN || [0, 1, 2]).map(g => ["klein", "mittel", "groß"][g]).join(", ") + (P.PEAD_STARKER_SCHLUSS ? " · starker Schluss" : "")}</b></div>
       <div><span>Auslöser Insider</span><b>${P.INSIDER_TRIGGER === false ? "aus" : "ab " + P.INSIDER_MIN_AUFFAELLIG + " Punkten"}</b></div>
       <div><span>Auslöser Momentum</span><b>${P.MOMENTUM_TRIGGER ? "an (Top 10 %)" : "aus"}</b></div><div><span>Auslöser 52W-Hoch</span><b>${P.HOCH_TRIGGER ? "an" : "aus"}</b></div>
+      <div><span>Auslöser Umkehr</span><b>${P.UMKEHR_TRIGGER ? "an" : "aus"}</b></div><div><span>Kauf nach Kursrutsch</span><b>${P.NEG_KAUF_TRIGGER ? "an" : "aus"}</b></div>
+      <div><span>Notverkauf bei Kursrutsch</span><b>${P.EXIT_NEG_SPRUNG === false ? "aus (nicht belegt)" : "an"}</b></div>
       ${KOMP.map(k => `<div><span>Gewicht ${k.name}</span><b>${Math.round(100 * P[k.gew])}</b></div>`).join("")}</div>
       <div class="lbl" style="margin:16px 0 8px">Gelernte Filter</div>${fl.length ? fl.map(f => `<div class="box ok" style="margin-bottom:6px">${esc(f.text)}</div>`).join("") : '<div class="cs">Keine – bisher hat kein Filter in beiden Zeiträumen überzeugt.</div>'}
       <div class="cs" style="margin-top:14px">Nächste Prüfung ${esc(naechste)}.</div></div>

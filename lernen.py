@@ -184,7 +184,8 @@ def lernen(dep, s, cfg, bench, erzwingen=False):
     nz_basis = P().STOPP_ATR_NACHZIEH
     aktuell = dict(dep.get("parameter") or {})
     akt_par = P(aktuell)
-    if not any(getattr(akt_par, k, False) for k in ("PEAD_AKTIV", "INSIDER_TRIGGER", "MOMENTUM_TRIGGER", "HOCH_TRIGGER")):
+    if not any(getattr(akt_par, k, False) for k in ("PEAD_AKTIV", "INSIDER_TRIGGER", "MOMENTUM_TRIGGER", "HOCH_TRIGGER",
+                                                     "UMKEHR_TRIGGER", "NEG_KAUF_TRIGGER")):
         dep["lernen"] = {**(dep.get("lernen") or {}), "datum": idx[-1].date().isoformat(),
                          "gedanken": ["Kein Auslöser ist laut Forschung belegt – es gibt nichts zu optimieren. Das Geld bleibt im ETF."]}
         return "Lernmodul: kein belegter Auslöser – nichts zu optimieren."

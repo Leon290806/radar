@@ -251,6 +251,11 @@ def berechne_signale(kurse, aktien, insider, cfg, regime_ticker="^GSPC", sektore
                            index=C.index, columns=C.columns)
     spanne = (H - L).replace(0, np.nan)
     stark = (C - L) / spanne >= 0.7                       # Schluss im oberen Drittel der Tagesspanne
+    # Kurzfrist-Umkehr: große Aktien unter den 5 % größten Verlierern der letzten 5 Tage
+    r5 = C / C.shift(5) - 1
+    umkehr = (r5.where(elig & (groesse == 2)).rank(axis=1, pct=True) <= 0.05)
+    # Kauf nach Kursrutsch: negativer Kurssprung in den letzten 5 Tagen (Überreaktion)
+    neg_kauf = (neg & elig).astype(float).rolling(5, min_periods=1).max().fillna(0) > 0
     evGroesse = groesse.where(ev).ffill(limit=lim)
     evStark = stark.where(ev).astype(float).ffill(limit=lim)
 
@@ -258,7 +263,7 @@ def berechne_signale(kurse, aktien, insider, cfg, regime_ticker="^GSPC", sektore
     regime, regime_abst = _regime(rc)
     regime = regime.reindex(C.index).fillna(True)
     s = {"O": O, "H": H, "L": L, "C": C, "V": V, "A": A, "M": M, "P": P, "I": I, "Ipkt": Ipkt, "HO": Hs, "NEG": neg,
-         "groesse": groesse, "evGroesse": evGroesse, "evStark": evStark, "h_ev": h_ev, "neg_ev": neg, "stark": stark,
+         "groesse": groesse, "evGroesse": evGroesse, "umkehr": umkehr, "neg_kauf": neg_kauf, "r5": r5, "evStark": evStark, "h_ev": h_ev, "neg_ev": neg, "stark": stark,
          "neg_sperre": neg_sperre, "regime": regime, "regime_abst": regime_abst.reindex(C.index),
          "letzte": letzte, "evPlus": evPlus, "evVF": evVF, "iinfo": iinfo, "elig": elig,
          "vola": vola, "dist200": C / sma200 - 1, "m1": m1, "m12": m12, "m6": m6, "sma200": sma200,
@@ -289,7 +294,8 @@ def kombiniere(s, par):
     """Score mit den Gewichten aus par zusammensetzen."""
     roh = (par.GEWICHT_MOMENTUM * s["M"] + par.GEWICHT_PEAD * p_eff(s, par) + par.GEWICHT_INSIDER * i_eff(s, par)
            + par.GEWICHT_HOCH * s["HO"])
-    return (100 * roh).where(s["elig"] & ~s["neg_sperre"], 0.0).clip(upper=100)
+    sperre = s["neg_sperre"] if getattr(par, "NEG_SPERRE_AKTIV", True) else False
+    return (100 * roh).where(s["elig"] & ~sperre, 0.0).clip(upper=100)
 
 
 def komponenten(s, d, t, par=None):
@@ -386,6 +392,8 @@ def _np(s, score=None, bench=None):
     if n is None:
         n = {k: s[k].to_numpy(dtype=float) for k in ("O", "L", "C", "A", "M", "HO")}
         n["NEG"] = s["NEG"].fillna(False).to_numpy(dtype=bool)
+        for k in ("umkehr", "neg_kauf", "elig"):
+            n[k] = s[k].fillna(False).to_numpy(dtype=bool)
         n["regime"] = s["regime"].to_numpy(dtype=bool)
         n["cols"] = list(s["C"].columns)
         n["J"] = {t: j for j, t in enumerate(n["cols"])}
@@ -474,7 +482,7 @@ def tag_verarbeiten(dep, s, d, par, modus, firmen, bench=None, pruefe_pead=None,
             tr["stopp"] = max(tr["stopp"], tr["hoechst"] - nz * a)
         tr["tage"] += 1
         tr["kurs"] = c
-        if par.EXIT_NEG_SPRUNG and N["NEG"][d, j]:
+        if getattr(par, "EXIT_NEG_SPRUNG", True) and N["NEG"][d, j]:
             tr["verkaufen_geplant"] = "Negativer Kurssprung"
         elif tr["tage"] >= hd:
             tr["verkaufen_geplant"] = f"Zeitstopp ({hd} Tage)"
@@ -490,14 +498,20 @@ def tag_verarbeiten(dep, s, d, par, modus, firmen, bench=None, pruefe_pead=None,
     untergrenze = schwelle - 25 if status_merken else schwelle
     # Faktor-Auslöser (nur wenn das Forschungslabor sie in echten Daten belegt hat)
     m_d = np.nan_to_num(N["M"][d])
+    prio_w = getattr(par, "TRIGGER_PRIO", None) or {}
     fak = np.zeros(len(reihe), dtype=bool)
-    if getattr(par, "MOMENTUM_TRIGGER", False):
-        fak |= m_d >= 0.9
-    if getattr(par, "HOCH_TRIGGER", False):
-        fak |= (np.nan_to_num(N["HO"][d]) > 0) & (m_d > 0)
-    fak &= reihe > 0
+    prio = np.where(reihe >= schwelle, prio_w.get("E", 0.0), -1.0)      # Ereignis-Auslöser (Zahlen/Insider)
+    for flag, key, maske in (("MOMENTUM_TRIGGER", "M", lambda: m_d >= 0.9),
+                             ("HOCH_TRIGGER", "H", lambda: (np.nan_to_num(N["HO"][d]) > 0) & (m_d > 0)),
+                             ("UMKEHR_TRIGGER", "U", lambda: N["umkehr"][d]),
+                             ("NEG_KAUF_TRIGGER", "N", lambda: N["neg_kauf"][d])):
+        if getattr(par, flag, False):
+            m = maske() & N["elig"][d]
+            fak |= m
+            prio = np.where(m, np.maximum(prio, prio_w.get(key, 0.0)), prio)
     wahl = np.nonzero((reihe >= untergrenze) | fak)[0]
-    wahl = wahl[np.argsort(-reihe[wahl], kind="stable")]
+    # Reihenfolge: zuerst der Auslöser mit der höchsten belegten Mehrrendite, dann der Score
+    wahl = wahl[np.lexsort((-reihe[wahl], -prio[wahl]))]
     cols = N["cols"]
     faktor = {cols[jj]: bool(fak[jj]) for jj in wahl}
     status = {}
@@ -566,10 +580,20 @@ def tag_verarbeiten(dep, s, d, par, modus, firmen, bench=None, pruefe_pead=None,
                 status[t] = "Kursdaten unvollständig"
                 continue
             w = min(gewicht(sc, par.STOPP_ATR_START * a / c, schwelle, par), frei)
+            typen, gr = signal_typen(k), gruende(s, d, t, k)
+            if getattr(par, "UMKEHR_TRIGGER", False) and N["umkehr"][d, jj]:
+                typen.insert(0, "Umkehr")
+                gr.insert(0, f"Kurzfrist-Verlierer: {s['r5'].iat[d, jj] * 100:+.1f} % in 5 Tagen – große Aktien erholen sich danach im Schnitt (belegt)".replace(".", ","))
+            if getattr(par, "NEG_KAUF_TRIGGER", False) and N["neg_kauf"][d, jj]:
+                typen.insert(0, "Rücksetzer")
+                gr.insert(0, "Kursrutsch mit Volumen in den letzten Tagen – Überreaktion, die sich im Schnitt wieder erholt (belegt)")
+            if getattr(par, "MOMENTUM_TRIGGER", False) and m_d[jj] >= 0.9 and "Momentum" in typen:
+                typen.remove("Momentum")
+                typen.insert(0, "Momentum")
             dep["trades"].append({
                 "id": dep["naechste_id"], "ticker": t, "firma": firmen.get(t, t), "modus": modus,
                 "signal_datum": iso, "score": round(float(sc), 1), "gewicht": round(w, 4),
-                "gruende": gruende(s, d, t, k), "typen": signal_typen(k), "komp": {x: round(v, 3) for x, v in k.items()},
+                "gruende": gr, "typen": typen, "komp": {x: round(v, 3) for x, v in k.items()},
                 "merkmale": mk, "signal_kurs": c, "atr": a, "equity_signal": eq, "status": "geplant",
                 "limit": c * (1 + par.MAX_GAP_EINSTIEG), "stopp_hinweis": c - par.STOPP_ATR_START * a,
                 "parameter": {"SCHWELLE": schwelle, "HALTEDAUER": par.HALTEDAUER, "STOPP_ATR_NACHZIEH": par.STOPP_ATR_NACHZIEH},

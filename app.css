@@ -150,7 +150,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13.5px}
 .tlink{cursor:pointer;color:var(--ink);font-weight:650;border-bottom:1px dashed var(--line)}
 .tlink:hover{color:var(--s1);border-color:var(--s1)}
 .mtag{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.04em;padding:2px 7px;border-radius:999px;background:var(--chip);color:var(--ink2);margin-right:4px;text-transform:uppercase}
-.mtag.Zahlen{color:var(--s2)}.mtag.Insider{color:var(--s3)}.mtag.Momentum{color:var(--s1)}.mtag.W52{color:var(--s4)}
+.mtag.Zahlen{color:var(--s2)}.mtag.Insider{color:var(--s3)}.mtag.Momentum{color:var(--s1)}.mtag.W52{color:var(--s4)}.mtag.Umkehr{color:var(--s7)}.mtag.Rücksetzer{color:var(--warn)}
 .mtag.live{color:var(--s1);background:color-mix(in srgb,var(--s1) 12%,transparent)}
 .ergbar{display:inline-flex;align-items:center;gap:8px;justify-content:flex-end}
 .ergbar b{display:inline-block;height:6px;border-radius:3px}

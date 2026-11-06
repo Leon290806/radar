@@ -86,6 +86,10 @@ PEAD_STARKER_SCHLUSS = False   # nur Sprünge mit Schluss im oberen Drittel der 
 INSIDER_TRIGGER = True         # Insider-Anomalie als Auslöser erlaubt
 MOMENTUM_TRIGGER = False       # stärkste 10 % Momentum dürfen allein auslösen (nur wenn belegt)
 HOCH_TRIGGER = False           # 52W-Hoch-Ausbruch darf allein auslösen (nur wenn belegt)
+UMKEHR_TRIGGER = False         # große Aktien nach 5 sehr schwachen Tagen (Kurzfrist-Umkehr)
+NEG_KAUF_TRIGGER = False       # Kauf nach Kursrutsch mit Volumen (Überreaktion)
+NEG_SPERRE_AKTIV = True        # nach Kursrutsch 20 Tage keine Käufe (nur wenn das Warnsignal belegt ist)
+TRIGGER_PRIO = {}              # Reihenfolge der Auslöser nach belegter Mehrrendite (setzt die Forschung)
 
 INSIDER_AKTIV = True
 INSIDER_FENSTER = 10       # Käufe der letzten 10 Handelstage (nach Meldedatum)
