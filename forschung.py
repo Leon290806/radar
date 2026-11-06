@@ -319,3 +319,38 @@ def forschen(dep, s, ins, cfg, bench, grenze):
         "parameter": parameter, "gedanken": gedanken, "dauer_s": round(time.time() - t0, 1),
     }
     return f"Forschung: {len(studie)} Signale und {len(varianten)} Portfolio-Varianten geprüft ({dep['forschung']['dauer_s']} s)."
+
+
+def bericht(f, s=None, bench=None):
+    """Kurzer Text-Bericht fürs Protokoll (nur Statistik über Signale – keine Positionen, keine Empfehlungen)."""
+    z = []
+    if f.get("fehler"):
+        return f["fehler"]
+    z.append(f"FORSCHUNG {f['von']} – {f['bis']} · Lernteil bis {f['grenze']}")
+    fm = lambda st: "      –      " if not st or st.get("avg") is None else f"{st['avg'] * 100:+6.2f}% t{(st['t'] or 0):+5.1f} n{st['n']:<5d}"
+    z.append(f"{'Signal':48s} | {'20T Lern':22s} | {'20T Test':22s} | {'60T Lern':22s} | {'60T Test':22s} | {'vsSPY20 Test':22s} | Urteil")
+    for e in f["studie"]:
+        z.append(f"{e['name'][:48]:48s} | {fm(e['h20']['lern'])} | {fm(e['h20']['test'])} | {fm(e['h60']['lern'])} | "
+                 f"{fm(e['h60']['test'])} | {fm(e['h20']['spy_test'])} | {e['urteil']['stufe']}")
+        z.append(" " * 50 + "Jahre 20T: " + " ".join(f"{j}:{v * 100:+.1f}" for j, v in e["jahre"].items()))
+    z.append("PORTFOLIO (CAGR / maxDD / Sharpe)")
+    k = lambda v: "–" if not v else f"{v['cagr'] * 100:+6.1f}% {v['maxdd'] * 100:6.1f}% {v['sharpe']:+.2f}"
+    if f.get("bench"):
+        z.append(f"{'S&P 500':60s} Lern {k(f['bench']['lern'])} | Test {k(f['bench']['test'])}")
+    for v in f["varianten"]:
+        z.append(f"{v['name'][:60]:60s} Lern {k(v['lern'])} | Test {k(v['test'])} | Trades {v['trades']} Treffer {(v['quote'] or 0) * 100:.0f}%"
+                 + ("  <== gewählt" if v["name"] == f.get("bester") else ""))
+    if s is not None:
+        C, elig = s["C"], s["elig"].fillna(False)
+        r = (C / C.shift(1) - 1).where(elig & elig.shift(1, fill_value=False)).clip(-0.5, 1.0)
+        gl = (1 + r.mean(axis=1).fillna(0)).cumprod()
+        g = pd.Timestamp(f["grenze"])
+        for name, a, b in (("Lernteil", pd.Timestamp(f["von"]), g), ("Testteil", g, C.index[-1])):
+            x = gl[(gl.index >= a) & (gl.index <= b)]
+            y = bench[(bench.index >= a) & (bench.index <= b)] if bench is not None else None
+            jahre = len(x) / 252
+            z.append(f"Alle Aktien gleichgewichtet {name}: {((x.iloc[-1] / x.iloc[0]) ** (1 / jahre) - 1) * 100:+.1f}% p.a."
+                     + (f" · S&P 500 {((y.iloc[-1] / y.iloc[0]) ** (1 / jahre) - 1) * 100:+.1f}% p.a." if y is not None and len(y) else ""))
+    z.append("PARAMETER " + ", ".join(f"{a}={b}" for a, b in f["parameter"].items()))
+    z += ["- " + g for g in f["gedanken"]]
+    return "\n".join(z)

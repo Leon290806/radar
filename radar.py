@@ -124,15 +124,16 @@ def main():
     ap.add_argument("--lernen", action="store_true", help="Lernmodul sofort ausführen")
     ap.add_argument("--forschung", action="store_true", help="Forschungslabor sofort ausführen")
     ap.add_argument("--kein-browser", action="store_true")
+    ap.add_argument("--bericht", action="store_true", help="nur Forschungsbericht ins Protokoll (ohne Journal, ohne Dashboard)")
     args = ap.parse_args()
 
     pw = "" if args.demo else cfg.RADAR_PASSWORT
-    if os.environ.get("CI") and not pw:
+    if os.environ.get("CI") and not pw and not args.bericht:
         raise SystemExit("RADAR_PASSWORT fehlt (GitHub: Settings → Secrets → Actions). Ohne Passwort wäre alles öffentlich lesbar.")
     journal_pfad = "speicher/journal_demo.json" if args.demo else (cfg.JOURNAL_DATEI_GESCHUETZT if pw else cfg.JOURNAL_DATEI)
     dash_pfad = "docs/demo.html" if args.demo else cfg.DASHBOARD_DATEI
     dep = None
-    if not (args.neu or args.demo) and os.path.exists(journal_pfad):
+    if not (args.neu or args.demo or args.bericht) and os.path.exists(journal_pfad):
         try:
             dep = schutz.journal_laden(journal_pfad, pw) if pw else lade_journal(journal_pfad)
         except Exception:
@@ -174,6 +175,13 @@ def main():
     idx = s["C"].index
     bench = C_alle["SPY"].reindex(idx).ffill() if "SPY" in C_alle else None
     eurusd = float(C_alle["EURUSD=X"].dropna().iloc[-1]) if "EURUSD=X" in C_alle else 1.1
+
+    if args.bericht:
+        tmp = engine.neues_depot()
+        grenze = idx[max(300, len(idx) - 1 - cfg.RUECKBLICK_TAGE)]
+        print(forschung.forschen(tmp, s, s.get("insider"), cfg, bench, grenze))
+        print(forschung.bericht(tmp["forschung"], s, bench))
+        return
 
     if dep is None:
         dep = engine.neues_depot()
@@ -230,9 +238,13 @@ def main():
         f.write(html)
 
     print(f"\nStand {dep['letzter_tag']} – {len(tage)} neue(r) Handelstag(e) verarbeitet")
-    if not aktionen:
-        print("Heute nichts zu tun.")
-    for a in aktionen:
+    if os.environ.get("CI"):
+        aktionen_log = []        # Protokoll ist bei öffentlichem Repository sichtbar – Empfehlungen nur im Dashboard
+    else:
+        aktionen_log = aktionen
+        if not aktionen:
+            print("Heute nichts zu tun.")
+    for a in aktionen_log:
         tr = a["trade"]
         print(f"  {a['typ'].upper():10s} {tr['ticker']}  " + (f"{tr['gewicht']:.0%}" if a["typ"] == "kaufen" else ""))
     print(f"Dashboard: {os.path.abspath(dash_pfad)} ({len(html) / 1e6:.1f} MB)")

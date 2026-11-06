@@ -1,0 +1,35 @@
+name: Forschung
+
+# Nur Statistik über Signale ins Protokoll – kein Journal, kein Dashboard, keine Empfehlungen.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: radar
+  cancel-in-progress: false
+
+jobs:
+  bericht:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Zwischenspeicher lesen
+        uses: actions/cache/restore@v4
+        with:
+          path: cache
+          key: radar-${{ github.run_id }}
+          restore-keys: radar-
+      - name: Forschungsbericht
+        env:
+          CI: "1"
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+        run: python radar.py --bericht --kein-browser
