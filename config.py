@@ -15,16 +15,17 @@ ZEIGE_EURO = (os.environ.get("ZEIGE_EURO") or "1") == "1"
 
 SCHWELLE = 55              # Mindest-Score (0–100) für eine Kaufempfehlung
 SCHWELLE_RISK_OFF = 70     # höhere Hürde, wenn der S&P 500 unter seiner 200-Tage-Linie liegt
-MAX_POSITIONEN = 5         # höchstens so viele Aktien gleichzeitig
-MAX_NEU_PRO_TAG = 1        # höchstens eine neue Empfehlung pro Tag
+# Standardwerte – das Forschungslabor wählt den Portfolio-Aufbau anhand echter Daten neu (konzentriert bis breit)
+MAX_POSITIONEN = 8         # höchstens so viele Aktien gleichzeitig
+MAX_NEU_PRO_TAG = 2        # höchstens zwei neue Empfehlungen pro Tag
 MAX_JE_BRANCHE = 1         # Klumpenrisiko: höchstens 1 Aktie je Branche (z. B. nicht zwei Krankenversicherer)
 MAX_JE_SEKTOR = 2          # und höchstens 2 je Sektor (z. B. Gesundheit)
 
 # Positionsgröße wächst mit der Überzeugung: Score an der Schwelle -> GEWICHT_MIN,
 # Score 90+ -> GEWICHT_MAX (aggressiv, aber begrenzt)
-GEWICHT_MIN = 0.12
-GEWICHT_MAX = 0.35
-MAX_VERLUST_PRO_TRADE = 0.03   # Stopp-Abstand x Gewicht darf max. 3 % des Portfolios kosten
+GEWICHT_MIN = 0.08
+GEWICHT_MAX = 0.20
+MAX_VERLUST_PRO_TRADE = 0.02   # Stopp-Abstand x Gewicht darf max. 2 % des Portfolios kosten
 MIN_CASH_FUER_KAUF = 0.08      # unter 8 % freiem Cash keine neuen Käufe
 
 # Ausstieg
@@ -44,6 +45,11 @@ GELDMARKT_ZINS = 0.02      # angenommener Geldmarktzins p.a. für Phasen außerh
 # ---------------------------------------------------------------------------
 # Lernmodul: prüft regelmäßig, ob andere Einstellungen zuletzt besser funktioniert hätten
 # ---------------------------------------------------------------------------
+# Forschungslabor: wöchentlich Ereignisstudie über die ganze Historie + Wahl des Portfolio-Aufbaus
+FORSCHUNG_AKTIV = True
+FORSCHUNG_JAHRE = 8        # so viele Jahre Kurse und Insider-Daten (mehr Ereignisse = belastbarer)
+FORSCHUNG_INTERVALL = 5    # Handelstage zwischen zwei Forschungsläufen
+
 LERNEN_AKTIV = True
 LERN_INTERVALL = 20        # alle 20 Handelstage (ca. monatlich) neu prüfen
 LERN_FENSTER = 750         # auf den letzten ~3 Jahren testen (zu kurze Fenster lernen nur Zufall)
@@ -73,6 +79,13 @@ PEAD_TAGESPLUS_MIN = 0.05
 PEAD_VOLUMEN_FAKTOR = 3.0
 PEAD_FRISCH = 5            # volle Punkte bis 5 Tage nach dem Sprung, danach weniger
 PEAD_MAX_ALTER = 15
+# Wird vom Forschungslabor gesetzt (hier nur Startwerte):
+PEAD_AKTIV = True              # Kurssprung als Auslöser erlaubt
+PEAD_GROESSEN = [0, 1, 2]      # für welche Größenklassen (0 klein, 1 mittel, 2 groß nach Handelsumsatz)
+PEAD_STARKER_SCHLUSS = False   # nur Sprünge mit Schluss im oberen Drittel der Tagesspanne
+INSIDER_TRIGGER = True         # Insider-Anomalie als Auslöser erlaubt
+MOMENTUM_TRIGGER = False       # stärkste 10 % Momentum dürfen allein auslösen (nur wenn belegt)
+HOCH_TRIGGER = False           # 52W-Hoch-Ausbruch darf allein auslösen (nur wenn belegt)
 
 INSIDER_AKTIV = True
 INSIDER_FENSTER = 10       # Käufe der letzten 10 Handelstage (nach Meldedatum)

@@ -1,0 +1,321 @@
+# -*- coding: utf-8 -*-
+"""
+Forschungslabor – welche Effekte wirken mit echten Daten wirklich?
+
+Einmal pro Woche über die gesamte Kurshistorie (~8 Jahre):
+
+1. Ereignisstudie: Für jedes Signal (Kurssprung, Insider-Anomalie, 52W-Hoch, Momentum, ...)
+   werden ALLE Ereignisse der Vergangenheit ausgewertet – oft tausende statt der ~100 Trades
+   des Musterdepots. Gemessen wird die Rendite ab der nächsten Eröffnung nach 5, 20 und 60
+   Handelstagen, jeweils abzüglich des Durchschnitts aller Aktien am selben Tag. Das ist die
+   echte Mehrrendite des Signals – unabhängig davon, wie der Gesamtmarkt lief, und weitgehend
+   frei vom Fehler „nur heutige Indexmitglieder“, weil der Vergleich dieselben Aktien nutzt.
+   Zusätzlich wird gegen den S&P 500 gerechnet, denn den will der Radar schlagen.
+
+2. Ehrliche Trennung: Gelernt wird nur auf dem älteren Teil (vor dem Rückblick des Musterdepots).
+   Der Rückblick (~3 Jahre) ist damit ein echter Test mit Daten, die bei der Wahl unbekannt waren.
+
+3. Übernahme: Ein Auslöser bleibt nur aktiv, wenn er im Lernteil statistisch belegt ist
+   (t-Wert ≥ 2) und im Testteil nicht ins Minus kippt. Gibt es keinen belegten Auslöser,
+   bleibt das Geld im ETF – lieber Index als Zufall.
+
+4. Portfolio-Aufbau: Wie viele Aktien, wie groß, wie eng der Stopp? 12 Varianten werden über
+   die ganze Historie simuliert; gewählt wird nach dem Lernteil.
+"""
+import itertools
+import math
+import time
+
+import numpy as np
+import pandas as pd
+
+import engine
+
+HORIZONTE = (5, 20, 60)
+
+
+def _pz(x, n=1):
+    """Prozent mit Vorzeichen, deutsches Komma."""
+    return f"{x * 100:+.{n}f} %".replace(".", ",").replace("-", "−")
+GROESSEN = {0: "klein", 1: "mittel", 2: "groß"}
+
+AUFBAU = [
+    ("Konzentriert · 5 Aktien · 12–35 %", {"MAX_POSITIONEN": 5, "GEWICHT_MIN": 0.12, "GEWICHT_MAX": 0.35,
+                                            "MAX_VERLUST_PRO_TRADE": 0.03, "MAX_NEU_PRO_TAG": 1}),
+    ("Mittel · 8 Aktien · 8–20 %", {"MAX_POSITIONEN": 8, "GEWICHT_MIN": 0.08, "GEWICHT_MAX": 0.20,
+                                     "MAX_VERLUST_PRO_TRADE": 0.02, "MAX_NEU_PRO_TAG": 2}),
+    ("Breit · 12 Aktien · 5–12 %", {"MAX_POSITIONEN": 12, "GEWICHT_MIN": 0.05, "GEWICHT_MAX": 0.12,
+                                     "MAX_VERLUST_PRO_TRADE": 0.015, "MAX_NEU_PRO_TAG": 2}),
+    ("Sehr breit · 20 Aktien · 3–8 %", {"MAX_POSITIONEN": 20, "GEWICHT_MIN": 0.03, "GEWICHT_MAX": 0.08,
+                                         "MAX_VERLUST_PRO_TRADE": 0.01, "MAX_NEU_PRO_TAG": 3}),
+]
+STOPPS = [
+    ("eng (2,5× / 3× ATR)", {"STOPP_ATR_START": 2.5, "STOPP_ATR_NACHZIEH": 3.0}),
+    ("weit (4× / 4× ATR)", {"STOPP_ATR_START": 4.0, "STOPP_ATR_NACHZIEH": 4.0}),
+    ("nur Notstopp (8× ATR)", {"STOPP_ATR_START": 8.0, "STOPP_ATR_NACHZIEH": 8.0}),
+]
+
+
+# ---------------------------------------------------------------------------
+# Ereignisse
+# ---------------------------------------------------------------------------
+def _beginn(maske):
+    """Nur der erste Tag einer Phase zählt als Ereignis (sonst würde dasselbe Signal mehrfach gezählt)."""
+    m = maske.fillna(False).astype(bool)
+    return m & ~m.shift(1, fill_value=False)
+
+
+def _ereignisse(s, ins, cfg):
+    C = s["C"]
+    elig = s["elig"].fillna(False)
+    g = s["groesse"]
+    ev = s["ev"].fillna(False) & elig
+    E = {}
+    E["Kurssprung nach Zahlen (alle)"] = ("zahlen", ev)
+    for k, name in GROESSEN.items():
+        E[f"Kurssprung · {name}e Aktien"] = ("zahlen_" + str(k), ev & (g == k))
+    E["Kurssprung · starker Tagesschluss"] = ("zahlen_stark", ev & s["stark"].fillna(False))
+    E["Kurssprung ≥ 10 %"] = ("zahlen_gross", ev & (s["plus"] >= 0.10))
+    E["Negativer Kurssprung (Warnsignal)"] = ("neg", s["neg_ev"].fillna(False) & elig)
+    E["52-Wochen-Hoch mit Volumen"] = ("hoch", s["h_ev"].fillna(False) & elig)
+    monatsende = pd.Series(C.index.to_period("M"), index=C.index)
+    monatsende = monatsende != monatsende.shift(-1)
+    E["Momentum: stärkste 10 % (monatlich)"] = ("momentum", ((s["M"] >= 0.9) & elig).to_numpy() & monatsende.to_numpy()[:, None])
+    r5 = C / C.shift(5) - 1
+    rang5 = r5.where(elig & (g == 2)).rank(axis=1, pct=True)
+    freitag = (C.index.dayofweek == 4)[:, None]
+    E["Kurzfrist-Verlierer, große Aktien (Umkehr)"] = ("umkehr", (rang5 <= 0.05).to_numpy() & freitag)
+    Ip = s["Ipkt"]
+    E["Insider-Anomalie ≥ 50"] = ("insider50", _beginn(Ip >= 50) & elig)
+    E["Insider-Anomalie ≥ 70"] = ("insider70", _beginn(Ip >= 70) & elig)
+    E["Insider-Anomalie ≥ 50 · kleine/mittlere Aktien"] = ("insider50_km", _beginn(Ip >= 50) & elig & (g <= 1))
+    E["Kurssprung + Insider gleichzeitig"] = ("kombi", _beginn((s["P"] > 0) & (Ip >= 50)) & elig)
+    # Vergleich: jeder Insider-Kauf ab 25 Tsd. (ohne Bewertung) – zeigt, ob die Anomalie-Bewertung etwas bringt
+    if ins is not None and not ins.empty:
+        k = ins[(ins["typ"] == "Kauf") & ~ins["plan"].astype(bool) & (ins["wert"] >= cfg.INSIDER_MIN_KAUF) & ins["ticker"].isin(C.columns)]
+        pos = C.index.searchsorted(pd.to_datetime(k["datum"]).values, side="right")
+        jede = np.zeros(C.shape, dtype=bool)
+        ok = pos < len(C.index)
+        jede[pos[ok], [C.columns.get_loc(t) for t in k["ticker"][ok]]] = True
+        E["Jeder Insider-Kauf (ohne Bewertung)"] = ("insider_alle", pd.DataFrame(jede, index=C.index, columns=C.columns) & elig)
+    return E
+
+
+def _renditen(s, bench):
+    """Rendite von der nächsten Eröffnung bis zum Schluss nach h Tagen – gegen alle Aktien und gegen den S&P 500."""
+    O, C, elig = s["O"], s["C"], s["elig"].fillna(False)
+    E = O.shift(-1)
+    out = {}
+    for h in HORIZONTE:
+        r = (C.shift(-h) / E - 1).where(elig).clip(-0.95, 3.0)
+        uni = r.sub(r.mean(axis=1), axis=0)
+        b = (bench.shift(-h) / bench.shift(-1) - 1) if bench is not None else r.mean(axis=1)
+        spy = r.sub(b, axis=0)
+        out[h] = (uni.to_numpy(), spy.to_numpy())
+    return out
+
+
+def _stat(werte, daten):
+    """Mittelwert, Trefferquote und t-Wert über Monatsmittel (Ereignisse am selben Tag/Monat sind nicht unabhängig)."""
+    if len(werte) < 8:
+        return {"n": int(len(werte)), "avg": None, "t": None, "quote": None}
+    m = pd.Series(werte).groupby(pd.PeriodIndex(daten, freq="M")).mean()
+    t = float(m.mean() / (m.std(ddof=1) / math.sqrt(len(m)))) if len(m) > 2 and m.std(ddof=1) > 0 else None
+    return {"n": int(len(werte)), "avg": float(np.mean(werte)), "t": t, "quote": float(np.mean(werte > 0))}
+
+
+def ereignisstudie(s, ins, cfg, bench, grenze):
+    idx = s["C"].index
+    R = _renditen(s, bench)
+    ergebnis = []
+    for name, (key, maske) in _ereignisse(s, ins, cfg).items():
+        m = np.asarray(maske, dtype=bool)
+        zeilen, spalten = np.nonzero(m)
+        if not len(zeilen):
+            continue
+        d = idx[zeilen]
+        lern = d < grenze
+        e = {"name": name, "key": key, "n": int(len(zeilen))}
+        for h in HORIZONTE:
+            uni, spy = R[h]
+            v, w = uni[zeilen, spalten], spy[zeilen, spalten]
+            ok = np.isfinite(v)
+            e[f"h{h}"] = {"lern": _stat(v[ok & lern], d[ok & lern]), "test": _stat(v[ok & ~lern], d[ok & ~lern]),
+                          "spy_lern": _stat(w[ok & lern & np.isfinite(w)], d[ok & lern & np.isfinite(w)]),
+                          "spy_test": _stat(w[ok & ~lern & np.isfinite(w)], d[ok & ~lern & np.isfinite(w)])}
+        uni, _ = R[20]
+        v = uni[zeilen, spalten]
+        ok = np.isfinite(v)
+        e["jahre"] = {str(j): round(float(x), 4) for j, x in pd.Series(v[ok]).groupby(d[ok].year).mean().items()}
+        e["urteil"] = _urteil(e)
+        ergebnis.append(e)
+    return ergebnis
+
+
+def _urteil(e):
+    """Belegt = im Lernteil t ≥ 2 (20 oder 60 Tage) und im Testteil nicht negativ."""
+    best = None
+    for h in (20, 60):
+        l, t = e[f"h{h}"]["lern"], e[f"h{h}"]["test"]
+        if l["avg"] is None or l["t"] is None:
+            continue
+        if best is None or (l["t"] or 0) > (best[1]["t"] or 0):
+            best = (h, l, t)
+    if best is None:
+        return {"stufe": "zu wenig Daten", "h": None}
+    h, l, t = best
+    neg = e["key"] == "neg"
+    if neg:
+        return {"stufe": "Warnsignal belegt" if l["avg"] < 0 and (l["t"] or 0) <= -2 else "kein klares Warnsignal", "h": h}
+    test_ok = t["avg"] is None or t["avg"] > 0
+    if l["avg"] > 0 and l["t"] >= 2 and test_ok:
+        stufe = "belegt"
+    elif l["avg"] > 0 and l["t"] >= 1.5 and test_ok:
+        stufe = "schwach"
+    else:
+        stufe = "kein Vorteil"
+    return {"stufe": stufe, "h": h, "t": l["t"], "avg": l["avg"], "test": t["avg"]}
+
+
+# ---------------------------------------------------------------------------
+# Signal-Regeln aus der Ereignisstudie ableiten
+# ---------------------------------------------------------------------------
+def signal_regeln(studie):
+    E = {e["key"]: e for e in studie}
+    stufe = lambda k: E.get(k, {}).get("urteil", {}).get("stufe")
+    t_l = lambda k, h=20: (E.get(k, {}).get(f"h{h}", {}).get("lern", {}).get("t") or 0)
+    avg_l = lambda k, h=20: (E.get(k, {}).get(f"h{h}", {}).get("lern", {}).get("avg") or 0)
+    p, gedanken = {}, []
+
+    # Zahlen-Baustein
+    groessen = [k for k in (0, 1, 2) if stufe(f"zahlen_{k}") in ("belegt", "schwach")]
+    if stufe("zahlen") == "belegt" or any(stufe(f"zahlen_{k}") == "belegt" for k in (0, 1, 2)):
+        p["PEAD_AKTIV"] = True
+        p["PEAD_GROESSEN"] = groessen or [0, 1, 2]
+        gedanken.append("Kurssprung nach Zahlen: belegt für " + ", ".join(GROESSEN[k] + "e" for k in p["PEAD_GROESSEN"]) + " Aktien.")
+        ausgeschl = [GROESSEN[k] + "e" for k in (0, 1, 2) if k not in p["PEAD_GROESSEN"]]
+        if ausgeschl:
+            gedanken.append(f"Bei {', '.join(ausgeschl)} Aktien wirkt der Kurssprung nicht – dort wird er ignoriert.")
+        if stufe("zahlen_stark") == "belegt" and avg_l("zahlen_stark") > avg_l("zahlen") + 0.003:
+            p["PEAD_STARKER_SCHLUSS"] = True
+            gedanken.append("Nur Kurssprünge mit starkem Tagesschluss zählen – sie liefen klar besser.")
+        else:
+            p["PEAD_STARKER_SCHLUSS"] = False
+    else:
+        p["PEAD_AKTIV"] = False
+        gedanken.append("Kurssprung nach Zahlen: in den echten Daten kein belegter Vorteil – als Auslöser abgeschaltet.")
+
+    # Insider-Baustein
+    kand = [(k, thr) for k, thr in (("insider50", 50), ("insider70", 70)) if stufe(k) in ("belegt",)]
+    if kand:
+        k, thr = max(kand, key=lambda x: t_l(x[0]))
+        p["INSIDER_TRIGGER"] = True
+        p["INSIDER_MIN_AUFFAELLIG"] = thr
+        gedanken.append(f"Insider-Anomalie: belegt, Schwelle {thr} Punkte (höchster t-Wert).")
+    elif stufe("insider50") == "schwach" or stufe("insider70") == "schwach":
+        p["INSIDER_TRIGGER"] = True
+        p["INSIDER_MIN_AUFFAELLIG"] = 70
+        gedanken.append("Insider-Anomalie: nur schwach belegt – nur die stärksten Fälle (ab 70 Punkten) zählen.")
+    else:
+        p["INSIDER_TRIGGER"] = False
+        gedanken.append("Insider-Anomalie: in den echten Daten kein belegter Vorteil – als Auslöser abgeschaltet.")
+    if "insider_alle" in E and "insider50" in E:
+        a, b = avg_l("insider_alle"), avg_l("insider50")
+        gedanken.append(f"Bewertung der Insider-Käufe: Anomalien ab 50 brachten {_pz(b, 2)} in 20 Tagen (gegenüber allen Aktien), "
+                        f"alle Käufe ohne Bewertung {_pz(a, 2)}.")
+    # Faktor-Auslöser: bekannte Marktanomalien, die ohne Ereignis wirken
+    for key, par, name in (("momentum", "MOMENTUM_TRIGGER", "Momentum (stärkste 10 %)"), ("hoch", "HOCH_TRIGGER", "52-Wochen-Hoch mit Volumen")):
+        p[par] = stufe(key) == "belegt"
+        gedanken.append(f"{name}: " + ("belegt – darf jetzt allein eine Empfehlung auslösen." if p[par]
+                                       else "nicht belegt – zählt nur als Zusatzpunkte, löst nichts aus."))
+    if not any(p.get(k) for k in ("PEAD_AKTIV", "INSIDER_TRIGGER", "MOMENTUM_TRIGGER", "HOCH_TRIGGER")):
+        gedanken.append("Kein Auslöser ist belegt. Der Radar kauft deshalb keine Einzelaktien und bleibt im ETF, "
+                        "bis sich das ändert – lieber Index als Zufall.")
+    return p, gedanken
+
+
+# ---------------------------------------------------------------------------
+# Portfolio-Aufbau
+# ---------------------------------------------------------------------------
+def _kennz(eq, tage):
+    if len(eq) < 30:
+        return None
+    eq = np.asarray(eq, dtype=float)
+    r = np.diff(eq) / eq[:-1]
+    jahre = len(eq) / 252
+    cagr = (eq[-1] / eq[0]) ** (1 / jahre) - 1 if eq[0] > 0 and eq[-1] > 0 else -1.0
+    dd = float((eq / np.maximum.accumulate(eq) - 1).min())
+    sharpe = float((r.mean() * 252 - 0.02) / (r.std() * math.sqrt(252))) if r.std() > 0 else 0.0
+    return {"cagr": float(cagr), "maxdd": dd, "sharpe": sharpe, "ziel": float(cagr - 0.25 * abs(dd))}
+
+
+def portfolio_aufbau(s, cfg, bench, grenze, basis, start):
+    import lernen
+    idx = s["C"].index
+    g = int(idx.searchsorted(grenze))
+    erg = []
+    score = None
+    for (an, ap), (sn, sp) in itertools.product(AUFBAU, STOPPS):
+        par = lernen.parameter(cfg, {**basis, **ap, **sp})
+        if score is None:
+            score = engine.kombiniere(s, par)
+        dep = engine.neues_depot()
+        for d in range(start, len(idx)):
+            engine.tag_verarbeiten(dep, s, d, par, "Test", {}, bench, score=score)
+        eq = [k[1] for k in dep["kurve"]]
+        k = g - start
+        gz = [t for t in dep["trades"] if t["status"] == "geschlossen"]
+        erg.append({"name": f"{an} · Stopp {sn}", "aufbau": an, "stopp": sn, "parameter": {**ap, **sp},
+                    "lern": _kennz(eq[:k + 1], k), "test": _kennz(eq[k:], len(eq) - k),
+                    "trades": len(gz), "quote": float(np.mean([t["ergebnis"] > 0 for t in gz])) if gz else None})
+    b = bench.iloc[start:].to_numpy() if bench is not None else None
+    ref = {"lern": _kennz(b[:g - start + 1], 0), "test": _kennz(b[g - start:], 0)} if b is not None else None
+    return erg, ref
+
+
+# ---------------------------------------------------------------------------
+# Hauptfunktion
+# ---------------------------------------------------------------------------
+def faellig(dep, idx, tage=5):
+    f = dep.get("forschung") or {}
+    if f.get("version") != engine.VERSION or not f.get("datum"):
+        return True
+    return int((idx > pd.Timestamp(f["datum"])).sum()) >= tage
+
+
+def forschen(dep, s, ins, cfg, bench, grenze):
+    """Führt Ereignisstudie und Portfolio-Test aus und schreibt das Ergebnis nach dep['forschung']."""
+    t0 = time.time()
+    idx = s["C"].index
+    grenze = pd.Timestamp(grenze)
+    start = 300
+    if idx.searchsorted(grenze) - start < 250:
+        dep["forschung"] = {"version": engine.VERSION, "datum": idx[-1].date().isoformat(), "fehler": "Zu wenig Historie für die Forschung.",
+                            "parameter": {}}
+        return "Forschung: zu wenig Historie."
+    print("  Ereignisstudie ...")
+    studie = ereignisstudie(s, ins, cfg, bench, grenze)
+    regeln, gedanken = signal_regeln(studie)
+    print("  Portfolio-Varianten ...")
+    varianten, ref = portfolio_aufbau(s, cfg, bench, grenze, regeln, start)
+    gueltig = [v for v in varianten if v["lern"]]
+    aktiv = any(regeln.get(k) for k in ("PEAD_AKTIV", "INSIDER_TRIGGER", "MOMENTUM_TRIGGER", "HOCH_TRIGGER"))
+    bester = max(gueltig, key=lambda v: v["lern"]["ziel"]) if gueltig and aktiv else None
+    parameter = dict(regeln)
+    if bester:
+        parameter.update(bester["parameter"])
+        gedanken.append(f"Portfolio-Aufbau: „{bester['name']}“ war im Lernteil am besten "
+                        f"({_pz(bester['lern']['cagr'])} pro Jahr, größter Rückgang {_pz(bester['lern']['maxdd'], 0)}).")
+        if bester["test"] and ref and ref["test"]:
+            besser = bester["test"]["cagr"] > ref["test"]["cagr"]
+            gedanken.append(f"Im Testteil (Daten, die bei der Wahl unbekannt waren): {_pz(bester['test']['cagr'])} pro Jahr, "
+                            f"größter Rückgang {_pz(bester['test']['maxdd'], 0)} – S&P 500: {_pz(ref['test']['cagr'])} pro Jahr, "
+                            f"größter Rückgang {_pz(ref['test']['maxdd'], 0)}. "
+                            + ("Der Radar war besser." if besser else "Der Radar war NICHT besser. Ehrliches Ergebnis: Ein Vorteil ist nicht nachgewiesen."))
+    dep["forschung"] = {
+        "version": engine.VERSION, "datum": idx[-1].date().isoformat(), "grenze": grenze.date().isoformat(),
+        "von": idx[start].date().isoformat(), "bis": idx[-1].date().isoformat(), "studie": studie,
+        "varianten": varianten, "bench": ref, "bester": bester["name"] if bester else None,
+        "parameter": parameter, "gedanken": gedanken, "dauer_s": round(time.time() - t0, 1),
+    }
+    return f"Forschung: {len(studie)} Signale und {len(varianten)} Portfolio-Varianten geprüft ({dep['forschung']['dauer_s']} s)."

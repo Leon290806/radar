@@ -151,20 +151,21 @@ def auffaellig_text(p):
 def _insider(ins, C, umsatz, cfg):
     """Insider-Baustein: nur echte Anomalien (Bewertung ab INSIDER_MIN_AUFFAELLIG) zählen."""
     I = np.zeros(C.shape)
+    Ip = np.zeros(C.shape)
     info = {}
     leer = pd.DataFrame(I, index=C.index, columns=C.columns)
     if ins is None or ins.empty:
-        return leer, info
+        return leer, leer.copy(), info
     k = ins[(ins["typ"] == "Kauf") & (~ins["plan"].astype(bool)) & (ins["wert"] >= cfg.INSIDER_MIN_KAUF)
             & ins["ticker"].isin(C.columns)].copy()
     if k.empty:
-        return leer, info
+        return leer, leer.copy(), info
     idx = C.index
     # verfügbar ab dem Handelstag NACH dem Meldedatum (kein Blick in die Zukunft)
     k["pos"] = idx.searchsorted(pd.to_datetime(k["datum"]).values, side="right")
     k = k[k["pos"] < len(idx)]
     W = cfg.INSIDER_FENSTER
-    grenze = getattr(cfg, "INSIDER_MIN_AUFFAELLIG", 50)
+    grenze = min(40, getattr(cfg, "INSIDER_MIN_AUFFAELLIG", 50))   # genaue Schwelle erst beim Score (Forschung wählt 50 oder 70)
     Cn = C.to_numpy()
     hoch = C.rolling(252, min_periods=60).max().to_numpy()
     Un = umsatz.to_numpy()
@@ -191,8 +192,9 @@ def _insider(ins, C, umsatz, cfg):
                 if Cn[d, j] < 0.9 * avg:                     # Kurs schon deutlich unter Insider-Preis
                     continue
                 I[d, j] = staerke
+                Ip[d, j] = pk
                 info[(d, t)] = inf
-    return pd.DataFrame(I, index=C.index, columns=C.columns), info
+    return pd.DataFrame(I, index=C.index, columns=C.columns), pd.DataFrame(Ip, index=C.index, columns=C.columns), info
 
 
 def _regime(c):
@@ -242,12 +244,21 @@ def berechne_signale(kurse, aktien, insider, cfg, regime_ticker="^GSPC", sektore
     Hs = Hs.astype(float).where(trend, 0.0)
 
     insider = insider_merkmale(insider) if insider is not None else None
-    I, iinfo = _insider(insider, C, umsatz, cfg) if cfg.INSIDER_AKTIV else (C * 0.0, {})
+    I, Ipkt, iinfo = _insider(insider, C, umsatz, cfg) if cfg.INSIDER_AKTIV else (C * 0.0, C * 0.0, {})
+    # Größenklasse nach Handelsumsatz (0 = klein, 1 = mittel, 2 = groß), je Tag unter allen handelbaren Aktien
+    rang_u = umsatz.where(elig).rank(axis=1, pct=True)
+    groesse = pd.DataFrame(np.where(rang_u.isna(), np.nan, np.where(rang_u < 1 / 3, 0, np.where(rang_u < 2 / 3, 1, 2))),
+                           index=C.index, columns=C.columns)
+    spanne = (H - L).replace(0, np.nan)
+    stark = (C - L) / spanne >= 0.7                       # Schluss im oberen Drittel der Tagesspanne
+    evGroesse = groesse.where(ev).ffill(limit=lim)
+    evStark = stark.where(ev).astype(float).ffill(limit=lim)
 
     rc = kurse["Close"][regime_ticker] if regime_ticker in kurse["Close"] else C.mean(axis=1)
     regime, regime_abst = _regime(rc)
     regime = regime.reindex(C.index).fillna(True)
-    s = {"O": O, "H": H, "L": L, "C": C, "V": V, "A": A, "M": M, "P": P, "I": I, "HO": Hs, "NEG": neg,
+    s = {"O": O, "H": H, "L": L, "C": C, "V": V, "A": A, "M": M, "P": P, "I": I, "Ipkt": Ipkt, "HO": Hs, "NEG": neg,
+         "groesse": groesse, "evGroesse": evGroesse, "evStark": evStark, "h_ev": h_ev, "neg_ev": neg, "stark": stark,
          "neg_sperre": neg_sperre, "regime": regime, "regime_abst": regime_abst.reindex(C.index),
          "letzte": letzte, "evPlus": evPlus, "evVF": evVF, "iinfo": iinfo, "elig": elig,
          "vola": vola, "dist200": C / sma200 - 1, "m1": m1, "m12": m12, "m6": m6, "sma200": sma200,
@@ -257,17 +268,41 @@ def berechne_signale(kurse, aktien, insider, cfg, regime_ticker="^GSPC", sektore
     return s
 
 
+def p_eff(s, par):
+    """Zahlen-Baustein nach den Regeln aus der Forschung (z. B. nur kleine/mittlere Aktien, nur starker Schluss)."""
+    if not getattr(par, "PEAD_AKTIV", True):
+        return s["P"] * 0.0
+    m = s["evGroesse"].isin(list(getattr(par, "PEAD_GROESSEN", (0, 1, 2))))
+    if getattr(par, "PEAD_STARKER_SCHLUSS", False):
+        m &= s["evStark"] > 0.5
+    return s["P"].where(m, 0.0)
+
+
+def i_eff(s, par):
+    """Insider-Baustein: nur Anomalien ab der Schwelle (50 oder 70 Punkte)."""
+    if not getattr(par, "INSIDER_TRIGGER", True):
+        return s["I"] * 0.0
+    return s["I"].where(s["Ipkt"] >= getattr(par, "INSIDER_MIN_AUFFAELLIG", 50), 0.0)
+
+
 def kombiniere(s, par):
     """Score mit den Gewichten aus par zusammensetzen."""
-    roh = (par.GEWICHT_MOMENTUM * s["M"] + par.GEWICHT_PEAD * s["P"] + par.GEWICHT_INSIDER * s["I"]
+    roh = (par.GEWICHT_MOMENTUM * s["M"] + par.GEWICHT_PEAD * p_eff(s, par) + par.GEWICHT_INSIDER * i_eff(s, par)
            + par.GEWICHT_HOCH * s["HO"])
     return (100 * roh).where(s["elig"] & ~s["neg_sperre"], 0.0).clip(upper=100)
 
 
-def komponenten(s, d, t):
+def komponenten(s, d, t, par=None):
     j = s["C"].columns.get_loc(t)
-    return {"M": float(s["M"].iat[d, j]), "P": float(s["P"].iat[d, j]), "I": float(s["I"].iat[d, j]),
-            "H": float(s["HO"].iat[d, j])}
+    P, I = float(s["P"].iat[d, j]), float(s["I"].iat[d, j])
+    if par is not None:
+        g = s["evGroesse"].iat[d, j]
+        if (not getattr(par, "PEAD_AKTIV", True) or not np.isfinite(g) or int(g) not in list(getattr(par, "PEAD_GROESSEN", (0, 1, 2)))
+                or (getattr(par, "PEAD_STARKER_SCHLUSS", False) and not s["evStark"].iat[d, j] > 0.5)):
+            P = 0.0
+        if not getattr(par, "INSIDER_TRIGGER", True) or s["Ipkt"].iat[d, j] < getattr(par, "INSIDER_MIN_AUFFAELLIG", 50):
+            I = 0.0
+    return {"M": float(s["M"].iat[d, j]), "P": P, "I": I, "H": float(s["HO"].iat[d, j])}
 
 
 def merkmale(s, d, t, score):
@@ -294,14 +329,14 @@ def signal_typen(k):
     return typen
 
 
-def gruende(s, d, t):
+def gruende(s, d, t, k=None):
     g = []
     j = s["C"].columns.get_loc(t)
-    if s["P"].iat[d, j] > 0:
+    if (k["P"] if k else s["P"].iat[d, j]) > 0:
         ev_d = s["C"].index[int(s["letzte"].iat[d, j])]
         g.append(f"Kurssprung +{s['evPlus'].iat[d, j] * 100:.0f} % am {ev_d:%d.%m.} "
                  f"({s['evVF'].iat[d, j]:.0f}× Volumen), Niveau gehalten")
-    inf = s["iinfo"].get((d, t))
+    inf = s["iinfo"].get((d, t)) if (k["I"] if k else 1) > 0 else None
     if inf:
         rollen = f" ({', '.join(inf['kat'])})" if inf["kat"] else ""
         wert = f"{inf['wert'] / 1e6:.2f}".replace(".", ",") + " Mio." if inf["wert"] >= 1e6 else f"{inf['wert'] / 1e3:.0f} Tsd."
@@ -336,7 +371,7 @@ def filter_ok(mk, filter_liste):
 # ---------------------------------------------------------------------------
 # Musterdepot
 # ---------------------------------------------------------------------------
-VERSION = 5
+VERSION = 6
 
 
 def neues_depot():
@@ -345,11 +380,29 @@ def neues_depot():
             "kandidaten_status": {}}
 
 
+def _np(s, score=None, bench=None):
+    """Numpy-Kopien für die schnelle Tages-Simulation (einmal je Signal-Satz bzw. Score)."""
+    n = s.get("_np")
+    if n is None:
+        n = {k: s[k].to_numpy(dtype=float) for k in ("O", "L", "C", "A", "M", "HO")}
+        n["NEG"] = s["NEG"].fillna(False).to_numpy(dtype=bool)
+        n["regime"] = s["regime"].to_numpy(dtype=bool)
+        n["cols"] = list(s["C"].columns)
+        n["J"] = {t: j for j, t in enumerate(n["cols"])}
+        s["_np"] = n
+    if score is not None and n.get("score_id") != id(score):
+        n["score"], n["score_id"], n["score_ref"] = score.to_numpy(dtype=float), id(score), score  # Referenz halten: id bleibt eindeutig
+    if bench is not None and n.get("bench_id") != id(bench):
+        n["bench"], n["bench_id"], n["bench_ref"] = bench.to_numpy(dtype=float), id(bench), bench
+    return n
+
+
 def _equity(dep, s, d):
+    n = _np(s)
     wert = dep["cash"]
     for tr in dep["trades"]:
         if tr["status"] == "offen":
-            wert += tr["stueck"] * float(s["C"][tr["ticker"]].iat[d])
+            wert += tr["stueck"] * float(n["C"][d, n["J"][tr["ticker"]]])
     return wert
 
 
@@ -359,24 +412,28 @@ def tag_verarbeiten(dep, s, d, par, modus, firmen, bench=None, pruefe_pead=None,
     Nicht investiertes Geld ("Kern") liegt im S&P-500-ETF, solange der Markt über seiner
     200-Tage-Linie liegt, sonst im Geldmarkt.
     """
-    O, L, C, A = s["O"], s["L"], s["C"], s["A"]
+    C = s["C"]
     score = s["score"] if score is None else score
+    N = _np(s, score, bench)
+    J = N["J"]
+    O, L, Cn, A = N["O"], N["L"], N["C"], N["A"]
+    B = N.get("bench") if bench is not None else None
     datum = C.index[d]
     iso = datum.date().isoformat()
     K = par.KOSTEN
 
     # 0) Kern: Rendite auf das freie Geld
     if d > 0 and dep["cash"] > 0:
-        if par.KERN_AKTIV and bench is not None and bool(s["regime"].iat[d - 1]) \
-                and np.isfinite(bench.iat[d]) and np.isfinite(bench.iat[d - 1]):
-            dep["cash"] *= bench.iat[d] / bench.iat[d - 1]
+        if par.KERN_AKTIV and B is not None and N["regime"][d - 1] \
+                and np.isfinite(B[d]) and np.isfinite(B[d - 1]):
+            dep["cash"] *= B[d] / B[d - 1]
         else:
             dep["cash"] *= (1 + par.GELDMARKT_ZINS) ** (1 / 252)
 
     # 1) geplante Verkäufe zur Eröffnung
     for tr in dep["trades"]:
         if tr["status"] == "offen" and tr.get("verkaufen_geplant"):
-            px = float(O[tr["ticker"]].iat[d])
+            px = float(O[d, J[tr["ticker"]]])
             dep["cash"] += tr["stueck"] * px * (1 - K)
             _schliessen(tr, iso, px, tr["verkaufen_geplant"], K, bench, C.index)
 
@@ -384,7 +441,7 @@ def tag_verarbeiten(dep, s, d, par, modus, firmen, bench=None, pruefe_pead=None,
     for tr in dep["trades"]:
         if tr["status"] != "geplant":
             continue
-        o = float(O[tr["ticker"]].iat[d])
+        o = float(O[d, J[tr["ticker"]]])
         if not np.isfinite(o) or o > tr["signal_kurs"] * (1 + par.MAX_GAP_EINSTIEG):
             tr.update(status="verpasst", ausstieg_grund="Eröffnung zu hoch – ausgelassen", ausstieg_datum=iso)
             continue
@@ -400,14 +457,15 @@ def tag_verarbeiten(dep, s, d, par, modus, firmen, bench=None, pruefe_pead=None,
         if tr["status"] != "offen" or tr.get("verkaufen_geplant"):
             continue
         t = tr["ticker"]
+        j = J[t]
         tr["stopp_vortag"] = tr["stopp"]
-        lo, op = float(L[t].iat[d]), float(O[t].iat[d])
+        lo, op = float(L[d, j]), float(O[d, j])
         if lo <= tr["stopp"]:
             px = min(op, tr["stopp"])
             dep["cash"] += tr["stueck"] * px * (1 - K)
             _schliessen(tr, iso, px, "Stopp", K, bench, C.index)
             continue
-        c, a = float(C[t].iat[d]), float(A[t].iat[d])
+        c, a = float(Cn[d, j]), float(A[d, j])
         regeln = tr.get("parameter", {})            # offene Trades behalten die Regeln vom Kauftag
         nz = regeln.get("STOPP_ATR_NACHZIEH", par.STOPP_ATR_NACHZIEH)
         hd = regeln.get("HALTEDAUER", par.HALTEDAUER)
@@ -416,29 +474,44 @@ def tag_verarbeiten(dep, s, d, par, modus, firmen, bench=None, pruefe_pead=None,
             tr["stopp"] = max(tr["stopp"], tr["hoechst"] - nz * a)
         tr["tage"] += 1
         tr["kurs"] = c
-        if par.EXIT_NEG_SPRUNG and bool(s["NEG"][t].iat[d]):
+        if par.EXIT_NEG_SPRUNG and N["NEG"][d, j]:
             tr["verkaufen_geplant"] = "Negativer Kurssprung"
         elif tr["tage"] >= hd:
             tr["verkaufen_geplant"] = f"Zeitstopp ({hd} Tage)"
 
     eq = _equity(dep, s, d)
-    b = float(bench.iat[d]) if bench is not None and np.isfinite(bench.iat[d]) else None
+    b = float(B[d]) if B is not None and np.isfinite(B[d]) else None
     investiert = 1 - dep["cash"] / eq if eq > 0 else 0.0
-    dep["kurve"].append([iso, round(eq, 4), b, modus, round(investiert, 3), 1 if bool(s["regime"].iat[d]) else 0])
+    dep["kurve"].append([iso, round(eq, 4), b, modus, round(investiert, 3), 1 if N["regime"][d] else 0])
 
     # 4) neue Empfehlung(en) auf Basis des heutigen Schlusskurses
-    schwelle = par.SCHWELLE if bool(s["regime"].iat[d]) else par.SCHWELLE_RISK_OFF
-    reihe = score.iloc[d]
+    schwelle = par.SCHWELLE if N["regime"][d] else par.SCHWELLE_RISK_OFF
+    reihe = np.nan_to_num(N["score"][d])
     untergrenze = schwelle - 25 if status_merken else schwelle
-    kand = reihe[reihe >= untergrenze].sort_values(ascending=False)
+    # Faktor-Auslöser (nur wenn das Forschungslabor sie in echten Daten belegt hat)
+    m_d = np.nan_to_num(N["M"][d])
+    fak = np.zeros(len(reihe), dtype=bool)
+    if getattr(par, "MOMENTUM_TRIGGER", False):
+        fak |= m_d >= 0.9
+    if getattr(par, "HOCH_TRIGGER", False):
+        fak |= (np.nan_to_num(N["HO"][d]) > 0) & (m_d > 0)
+    fak &= reihe > 0
+    wahl = np.nonzero((reihe >= untergrenze) | fak)[0]
+    wahl = wahl[np.argsort(-reihe[wahl], kind="stable")]
+    cols = N["cols"]
+    faktor = {cols[jj]: bool(fak[jj]) for jj in wahl}
     status = {}
-    if not kand.empty:
+    if len(wahl):
         belegt = {tr["ticker"] for tr in dep["trades"] if tr["status"] in ("offen", "geplant")}
-        kuerzlich = {tr["ticker"] for tr in dep["trades"] if tr.get("ausstieg_datum")
-                     and (datum - pd.Timestamp(tr["ausstieg_datum"])).days < 14}
+        grenze14 = (datum - pd.Timedelta(days=14)).date().isoformat()
+        kuerzlich = {tr["ticker"] for tr in dep["trades"] if (tr.get("ausstieg_datum") or "") > grenze14}
         neu = 0
-        for t, sc in kand.items():
-            if sc < schwelle:
+        n_aktiv = sum(1 for tr in dep["trades"] if tr["status"] in ("offen", "geplant"))
+        for jj in wahl:
+            t, sc = cols[jj], float(reihe[jj])
+            if not status_merken and (neu >= par.MAX_NEU_PRO_TAG or n_aktiv >= par.MAX_POSITIONEN):
+                break                                   # nichts mehr zu kaufen – Rest nur für die Status-Anzeige nötig
+            if sc < schwelle and not faktor.get(t, False):
                 status[t] = f"Score {sc:.0f} – es fehlen {schwelle - sc:.0f} Punkte bis zur Schwelle {schwelle}"
                 continue
             if t in belegt:
@@ -470,16 +543,16 @@ def tag_verarbeiten(dep, s, d, par, modus, firmen, bench=None, pruefe_pead=None,
             if frei < par.MIN_CASH_FUER_KAUF:
                 status[t] = "Kein freies Kapital"
                 continue
-            k = komponenten(s, d, t)
-            if k["P"] <= 0 and k["I"] <= 0:
-                status[t] = "Kein Auslöser: nur Momentum/52W-Hoch – es braucht einen Kurssprung nach Zahlen oder Insider-Käufe"
+            k = komponenten(s, d, t, par)
+            if k["P"] <= 0 and k["I"] <= 0 and not faktor.get(t, False):
+                status[t] = "Kein Auslöser: Es braucht einen Kurssprung nach Zahlen, eine Insider-Anomalie oder einen belegten Faktor-Auslöser"
                 continue
             if pruefe_pead is not None and k["P"] > 0:
                 ev_d = s["C"].index[int(s["letzte"].iat[d, s["C"].columns.get_loc(t)])].date()
                 if not pruefe_pead(t, ev_d):
                     sc = sc - 100 * par.GEWICHT_PEAD * k["P"]
                     k["P"] = 0.0
-                    if sc < schwelle or k["I"] <= 0:
+                    if (sc < schwelle or k["I"] <= 0) and not faktor.get(t, False):
                         status[t] = ("Kurssprung kam nicht von Quartalszahlen (z. B. Übernahme/News) – "
                                      f"ohne diesen Baustein nur Score {sc:.0f}")
                         continue
@@ -488,7 +561,7 @@ def tag_verarbeiten(dep, s, d, par, modus, firmen, bench=None, pruefe_pead=None,
             if not ok:
                 status[t] = f"Gelernter Filter greift: {grund}"
                 continue
-            c, a = float(C[t].iat[d]), float(A[t].iat[d])
+            c, a = float(Cn[d, jj]), float(A[d, jj])
             if not (np.isfinite(c) and np.isfinite(a) and c > 0):
                 status[t] = "Kursdaten unvollständig"
                 continue
@@ -496,7 +569,7 @@ def tag_verarbeiten(dep, s, d, par, modus, firmen, bench=None, pruefe_pead=None,
             dep["trades"].append({
                 "id": dep["naechste_id"], "ticker": t, "firma": firmen.get(t, t), "modus": modus,
                 "signal_datum": iso, "score": round(float(sc), 1), "gewicht": round(w, 4),
-                "gruende": gruende(s, d, t), "typen": signal_typen(k), "komp": {x: round(v, 3) for x, v in k.items()},
+                "gruende": gruende(s, d, t, k), "typen": signal_typen(k), "komp": {x: round(v, 3) for x, v in k.items()},
                 "merkmale": mk, "signal_kurs": c, "atr": a, "equity_signal": eq, "status": "geplant",
                 "limit": c * (1 + par.MAX_GAP_EINSTIEG), "stopp_hinweis": c - par.STOPP_ATR_START * a,
                 "parameter": {"SCHWELLE": schwelle, "HALTEDAUER": par.HALTEDAUER, "STOPP_ATR_NACHZIEH": par.STOPP_ATR_NACHZIEH},
@@ -504,6 +577,7 @@ def tag_verarbeiten(dep, s, d, par, modus, firmen, bench=None, pruefe_pead=None,
             status[t] = "KAUFSIGNAL – Kauf zur nächsten Eröffnung"
             dep["naechste_id"] += 1
             neu += 1
+            n_aktiv += 1
     if status_merken:
         dep["kandidaten_status"] = status
     dep["letzter_tag"] = iso
@@ -524,7 +598,7 @@ def _schliessen(tr, iso, px, grund, K, bench=None, idx=None):
             pass
 
 
-def kandidaten(s, d, n=5, score=None):
+def kandidaten(s, d, n=5, score=None, par=None):
     score = s["score"] if score is None else score
     reihe = score.iloc[d].sort_values(ascending=False).head(n)
-    return [(t, float(v), komponenten(s, d, t)) for t, v in reihe.items() if v > 0]
+    return [(t, float(v), komponenten(s, d, t, par)) for t, v in reihe.items() if v > 0]

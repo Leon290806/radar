@@ -336,7 +336,7 @@ function heldKarte() {
   }
   const k = D.scanner[0];
   return `<div class="card c8"><span class="badge b-neutral">Heute</span><p class="ruhe">Nichts Neues kaufen</p>
-    <div class="ink2">Kein Signal ist stark genug. Freies Geld bleibt im ${M.regime ? "S&amp;P-500-ETF" : "Geldmarkt"}.</div>
+    <div class="ink2">${P.PEAD_AKTIV === false && P.INSIDER_TRIGGER === false && !P.MOMENTUM_TRIGGER && !P.HOCH_TRIGGER ? "Das Forschungslabor findet in den echten Daten zurzeit keinen belegten Vorteil. Deshalb kauft der Radar keine Einzelaktien – das Geld bleibt im ETF (Details im Reiter Lernen)." : `Kein Signal ist stark genug. Freies Geld bleibt im ${M.regime ? "S&amp;P-500-ETF" : "Geldmarkt"}.`}</div>
     ${k ? `<div style="margin-top:18px"><div class="lbl" style="margin-bottom:8px">Stärkster Kandidat</div>
       <div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline"><span>${tlink(k.t)} <span class="mute">${esc(k.f)}</span></span><b>${Math.round(k.sc)}</b></div>
       <div style="margin:8px 0">${scoreBar(k.komp, M.schwelle)}</div><div class="cs">${esc(k.status)}</div></div>` : ""}</div>`;
@@ -778,17 +778,42 @@ RENDER.statistik = el => {
 };
 
 /* ============================== Lernen ============================== */
+function forschungKarte() {
+  const F = D.forschung;
+  if (!F) return `<div class="grid"><div class="card c12"><h3 class="ct">Forschungslabor</h3><div class="leer">Läuft beim nächsten Tageslauf.</div></div></div>`;
+  if (F.fehler) return `<div class="grid"><div class="card c12"><h3 class="ct">Forschungslabor</h3><div class="box warn">${esc(F.fehler)}</div></div></div>`;
+  const badge = u => { const s = (u || {}).stufe || "–"; const c = /belegt/.test(s) ? "b-kauf" : s === "schwach" ? "b-warn" : "b-neutral"; return `<span class="badge ${c}">${esc(s)}</span>`; };
+  const z = st => st && ok(st.avg) ? `<span class="${kl(st.avg)}">${pct(st.avg, 2)}</span><div class="klein mute">t ${zahl(st.t, 1)} · ${st.n}×</div>` : '<span class="mute">–</span>';
+  const k = v => v ? `${pct(v.cagr, 1)}<div class="klein mute">DD ${pct(v.maxdd, 0)} · Sharpe ${zahl(v.sharpe)}</div>` : "–";
+  const studie = (F.studie || []).slice().sort((a, b) => ((b.urteil || {}).t || -9) - ((a.urteil || {}).t || -9));
+  return `<div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Forschungslabor · Welche Effekte wirken mit echten Daten?</h3>
+      <div class="cs">Alle Ereignisse ${datKurz(F.von)} – ${datKurz(F.bis)} · Lernteil bis ${datKurz(F.grenze)}, danach Testteil mit Daten, die bei der Wahl unbekannt waren · Stand ${dat(F.datum, true)} · ${zahl(F.dauer_s, 0)} s</div></div></div>
+    <p class="erkl">Gemessen wird die Rendite ab der nächsten Eröffnung, <b>abzüglich des Durchschnitts aller Aktien</b> am selben Tag – also das, was das Signal wirklich mehr bringt. t-Wert ab 2 = kaum Zufall. Die Spalte „vs. S&amp;P 500“ zeigt, ob das auch gegen den Index reicht (Testteil, 20 Tage).</p>
+    <ol class="gedanken">${(F.gedanken || []).map(g => `<li>${esc(g)}</li>`).join("")}</ol>
+    <div class="tw" style="margin-top:14px"><table class="tbl"><thead><tr><th class="l">Signal</th><th>Ereignisse</th><th>20 Tage · Lernteil</th><th>20 Tage · Test</th><th>60 Tage · Lernteil</th><th>60 Tage · Test</th><th>vs. S&amp;P 500</th><th class="l">Urteil</th></tr></thead><tbody>
+    ${studie.map(e => `<tr><td class="l wrap" style="max-width:280px"><b>${esc(e.name)}</b></td><td>${e.n}</td><td>${z(e.h20.lern)}</td><td>${z(e.h20.test)}</td><td>${z(e.h60.lern)}</td><td>${z(e.h60.test)}</td><td>${z(e.h20.spy_test)}</td><td class="l">${badge(e.urteil)}</td></tr>`).join("")}
+    </tbody></table></div></div></div>
+  <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Portfolio-Aufbau · ${(F.varianten || []).length} Varianten über die ganze Historie</h3><div class="cs">Gewählt nach dem Lernteil (Rendite p.a. minus ¼ des größten Rückgangs) · Testteil zur Kontrolle</div></div></div>
+    <div class="tw"><table class="tbl"><thead><tr><th class="l">Variante</th><th>Lernteil p.a.</th><th>Testteil p.a.</th><th>Trades</th><th>Treffer</th></tr></thead><tbody>
+    ${F.bench ? `<tr><td class="l mute">S&amp;P 500 (zum Vergleich)</td><td>${k(F.bench.lern)}</td><td>${k(F.bench.test)}</td><td></td><td></td></tr>` : ""}
+    ${(F.varianten || []).map(v => `<tr class="${v.name === F.bester ? "hl" : ""}"><td class="l">${v.name === F.bester ? '<span class="badge b-kauf">gewählt</span> ' : ""}${esc(v.name)}</td><td>${k(v.lern)}</td><td>${k(v.test)}</td><td>${v.trades}</td><td>${pct(v.quote, 0, false)}</td></tr>`).join("")}
+    </tbody></table></div></div></div>`;
+}
 RENDER.lernen = el => {
   const L = D.lernen || {};
   const fl = P.FILTER || [];
   const naechste = L.datum ? `etwa ${P.LERN_INTERVALL} Handelstage nach dem ${dat(L.datum, true)}` : "beim nächsten Lauf";
-  el.innerHTML = `<div class="grid">
+  el.innerHTML = forschungKarte() + `<div class="grid">
     <div class="card c8"><div class="ch"><div><h3 class="ct">Was der Radar gerade denkt</h3><div class="cs">${L.datum ? `Letzte Prüfung ${dat(L.datum, true)} · ${L.varianten} Varianten in ${zahl(L.dauer_s, 0)} s · Zeitraum ${datKurz(L.fenster[0])} – ${datKurz(L.fenster[1])}` : "Noch keine Prüfung"}</div></div>
       ${L.datum ? `<span class="badge ${L.gewechselt ? "b-kauf" : "b-neutral"}">${L.gewechselt ? "Regeln angepasst" : "Regeln bestätigt"}</span>` : ""}</div>
       ${(L.gedanken || []).length ? `<ol class="gedanken">${L.gedanken.map(g => `<li>${esc(g)}</li>`).join("")}</ol>` : '<div class="leer">Die erste Prüfung läuft beim nächsten Tageslauf.</div>'}</div>
     <div class="card c4"><h3 class="ct" style="margin-bottom:12px">Aktuelle Regeln</h3><div class="fakten" style="grid-template-columns:1fr 1fr">
       <div><span>Kauf-Schwelle</span><b>${P.SCHWELLE}</b></div><div><span>bei Abwärtstrend</span><b>${P.SCHWELLE_RISK_OFF}</b></div>
       <div><span>Max. Haltedauer</span><b>${P.HALTEDAUER} Tage</b></div><div><span>Nachzieh-Stopp</span><b>${zahl(P.STOPP_ATR_NACHZIEH, 1)} × ATR</b></div>
+      <div><span>Positionen</span><b>max. ${P.MAX_POSITIONEN} · ${pct(P.GEWICHT_MIN, 0, false)}–${pct(P.GEWICHT_MAX, 0, false)}</b></div><div><span>Anfangs-Stopp</span><b>${zahl(P.STOPP_ATR_START, 1)} × ATR</b></div>
+      <div><span>Auslöser Zahlen</span><b>${P.PEAD_AKTIV === false ? "aus" : (P.PEAD_GROESSEN || [0, 1, 2]).map(g => ["klein", "mittel", "groß"][g]).join(", ") + (P.PEAD_STARKER_SCHLUSS ? " · starker Schluss" : "")}</b></div>
+      <div><span>Auslöser Insider</span><b>${P.INSIDER_TRIGGER === false ? "aus" : "ab " + P.INSIDER_MIN_AUFFAELLIG + " Punkten"}</b></div>
+      <div><span>Auslöser Momentum</span><b>${P.MOMENTUM_TRIGGER ? "an (Top 10 %)" : "aus"}</b></div><div><span>Auslöser 52W-Hoch</span><b>${P.HOCH_TRIGGER ? "an" : "aus"}</b></div>
       ${KOMP.map(k => `<div><span>Gewicht ${k.name}</span><b>${Math.round(100 * P[k.gew])}</b></div>`).join("")}</div>
       <div class="lbl" style="margin:16px 0 8px">Gelernte Filter</div>${fl.length ? fl.map(f => `<div class="box ok" style="margin-bottom:6px">${esc(f.text)}</div>`).join("") : '<div class="cs">Keine – bisher hat kein Filter in beiden Zeiträumen überzeugt.</div>'}
       <div class="cs" style="margin-top:14px">Nächste Prüfung ${esc(naechste)}.</div></div>

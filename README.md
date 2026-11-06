@@ -25,6 +25,18 @@ Jede Aktie bekommt täglich einen Score von 0 bis 100 aus vier Bausteinen:
 - **Höchstens 1 neue Empfehlung pro Tag und 5 Positionen.** Größe 12–35 % je nach Score, ein Stopp kostet höchstens 3 % des Portfolios.
 - **Ausstieg:** Nachzieh-Stopp oder Zeitstopp. **Freies Geld** liegt im S&P-500-ETF bzw. im Abwärtstrend im Geldmarkt.
 
+## Forschungslabor (wöchentlich)
+
+Der Radar prüft selbst, welche Effekte mit echten Daten wirken, statt sich auf Lehrbücher zu verlassen:
+1. **Ereignisstudie über ~8 Jahre:** Jeder Kurssprung, jede Insider-Anomalie, jedes 52W-Hoch, Momentum, Kurzfrist-Umkehr usw.
+   wird ausgewertet (tausende Ereignisse statt ~100 Trades). Gemessen: Rendite nach 5/20/60 Tagen **abzüglich aller Aktien**
+   am selben Tag, plus Vergleich mit dem S&P 500.
+2. **Ehrliche Trennung:** Gewählt wird nur mit Daten vor dem Rückblick-Zeitraum. Der Rückblick ist damit ein echter Test.
+3. **Nur Belegtes wird Auslöser** (t-Wert ≥ 2, im Testteil nicht negativ). Ist nichts belegt, bleibt das Geld im ETF.
+4. **Portfolio-Aufbau:** 4 Konzentrationsstufen (5 bis 20 Aktien) × 3 Stopp-Varianten werden simuliert, die beste wird übernommen.
+
+Alles steht im Reiter *Lernen* ganz oben.
+
 ## Lernmodul
 
 Etwa alle 20 Handelstage passiert Folgendes:

@@ -27,6 +27,7 @@ import aufbereiten
 import dashboard
 import schutz
 import lernen
+import forschung
 
 
 def lade_journal(pfad):
@@ -121,6 +122,7 @@ def main():
     ap.add_argument("--neu", action="store_true", help="Journal neu beginnen")
     ap.add_argument("--rueckblick", type=int, default=cfg.RUECKBLICK_TAGE)
     ap.add_argument("--lernen", action="store_true", help="Lernmodul sofort ausführen")
+    ap.add_argument("--forschung", action="store_true", help="Forschungslabor sofort ausführen")
     ap.add_argument("--kein-browser", action="store_true")
     args = ap.parse_args()
 
@@ -149,7 +151,8 @@ def main():
         hinweise += h
         offen = [t["ticker"] for t in (dep or {}).get("trades", []) if t["status"] in ("offen", "geplant")]
         aktien = list(dict.fromkeys(aktien + cfg.ZUSATZ_TICKER + offen))
-        jahre = max(3, 2 + math.ceil((max(args.rueckblick, cfg.LERN_FENSTER) if dep is None else cfg.LERN_FENSTER) / 250))
+        jahre = max(3, 2 + math.ceil((max(args.rueckblick, cfg.LERN_FENSTER) if dep is None else cfg.LERN_FENSTER) / 250),
+                    cfg.FORSCHUNG_JAHRE if cfg.FORSCHUNG_AKTIV else 0)
         print(f"{len(aktien)} Aktien – Kurse laden ({jahre} Jahre) ...")
         kurse = daten.lade_kurse(list(dict.fromkeys(aktien + ["SPY", "^GSPC", "EURUSD=X"] + bench_ticker)), jahre=jahre)
         kurse = unfertigen_tag_entfernen(kurse)
@@ -157,7 +160,7 @@ def main():
         if cfg.INSIDER_AKTIV:
             idx = kurse["Close"].index
             tage_zurueck = max(args.rueckblick if dep is None else 30, cfg.LERN_FENSTER) + 40 + cfg.INSIDER_HISTORIE_TAGE
-            von = (idx[max(0, len(idx) - tage_zurueck)] - pd.Timedelta(days=20)).date()
+            von = (idx[0] if cfg.FORSCHUNG_AKTIV else idx[max(0, len(idx) - tage_zurueck)] - pd.Timedelta(days=20)).date()
             print(f"Insider-Transaktionen ab {von} laden (SEC, BaFin) ...")
             insider, ins_status = daten.lade_insider(von, cfg.SEC_USER_AGENT, set(aktien), firmen, cfg.INSIDER_LAENDER)
             print(f"  {ins_status['anzahl']} Transaktionen · Fehler: {ins_status['fehler'] or 'keine'}")
@@ -184,7 +187,10 @@ def main():
         fehlend = [t["ticker"] for t in dep["trades"] if t["status"] in ("offen", "geplant") and t["ticker"] not in s["C"].columns]
         if fehlend:
             hinweise.append("Keine Kurse für offene Position(en): " + ", ".join(fehlend))
-    par = lernen.parameter(cfg, dep.get("parameter"))
+    if cfg.FORSCHUNG_AKTIV and (forschung.faellig(dep, idx, cfg.FORSCHUNG_INTERVALL) or args.forschung):
+        print("Forschungslabor ...")
+        print(forschung.forschen(dep, s, insider if s.get("insider") is None else s["insider"], cfg, bench, dep["start"]))
+    par = lernen.alle_parameter(cfg, dep)
     score = engine.kombiniere(s, par)
     pruefer = None if args.demo else pead_pruefer()
     for d in tage:
@@ -196,7 +202,7 @@ def main():
         dep["live_seit"] = dep["letzter_tag"]
     if tage or args.lernen:
         print(lernen.lernen(dep, s, cfg, bench, erzwingen=args.lernen))
-        par = lernen.parameter(cfg, dep.get("parameter"))
+        par = lernen.alle_parameter(cfg, dep)
         score = engine.kombiniere(s, par)
     if pw:
         schutz.journal_speichern(dep, journal_pfad, pw)
@@ -204,7 +210,7 @@ def main():
         speichere_journal(dep, journal_pfad)
 
     aktionen = baue_aktionen(dep, eurusd)
-    kand = engine.kandidaten(s, len(idx) - 1, 30, score)
+    kand = engine.kandidaten(s, len(idx) - 1, 30, score, par)
 
     oddlot = []
     if cfg.ODDLOT_AKTIV and not args.demo:

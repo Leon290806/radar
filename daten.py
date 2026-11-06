@@ -142,7 +142,8 @@ def lade_kurse(ticker, jahre=3, stapel=100, max_alter_std=4):
         df = None
         for v in range(3):
             try:
-                df = yf.download(teil, period=f"{jahre}y", interval="1d", auto_adjust=False,
+                df = yf.download(teil, start=(dt.date.today() - dt.timedelta(days=int(jahre * 365.25) + 5)).isoformat(),
+                                 interval="1d", auto_adjust=False,
                                  progress=False, threads=True, group_by="column")
                 break
             except Exception as e:
@@ -625,7 +626,7 @@ def suche_oddlot(ua, tage=30):
 # ---------------------------------------------------------------------------
 # Demo-Daten
 # ---------------------------------------------------------------------------
-def demo_daten(tage=800, n=160, seed=11):
+def demo_daten(tage=1400, n=160, seed=11):
     rng = np.random.default_rng(seed)
     idx = pd.bdate_range(end=pd.Timestamp.today().normalize() - pd.Timedelta(days=1), periods=tage)
     aktien = [f"DEMO{i:03d}" for i in range(n)] + [f"DEM{i:02d}.DE" for i in range(15)]

@@ -32,7 +32,7 @@ GEWICHTE = {
 }
 SCHWELLEN = (50, 55, 60, 65)
 HALTEDAUERN = (20, 40, 60)
-NACHZIEH = (2.5, 3.0, 3.5)
+NACHZIEH = (0.85, 1.0, 1.2)     # Faktor auf den Nachzieh-Stopp, den die Forschung gewählt hat
 STANDARD_FILTER = [
     {"merkmal": "vola", "op": "<=", "wert": 0.60, "text": "Schwankung höchstens 60 % p.a."},
     {"merkmal": "dist200", "op": "<=", "wert": 0.40, "text": "höchstens 40 % über der 200-Tage-Linie"},
@@ -47,6 +47,11 @@ def parameter(cfg, ueberschreibung=None):
     for k, v in (ueberschreibung or {}).items():
         setattr(p, k, v)
     return p
+
+
+def alle_parameter(cfg, dep):
+    """Grundeinstellungen <- Forschung (Signale, Portfolio-Aufbau) <- Lernmodul (Gewichte, Schwelle, Haltedauer)."""
+    return parameter(cfg, {**((dep.get("forschung") or {}).get("parameter") or {}), **(dep.get("parameter") or {})})
 
 
 def _ziel(eq):
@@ -174,8 +179,15 @@ def lernen(dep, s, cfg, bench, erzwingen=False):
         return "Lernmodul: zu wenig Historie."
 
     t0 = time.time()
+    basis = dict((dep.get("forschung") or {}).get("parameter") or {})
+    P = lambda ueb=None: parameter(cfg, {**basis, **(ueb or {})})
+    nz_basis = P().STOPP_ATR_NACHZIEH
     aktuell = dict(dep.get("parameter") or {})
-    akt_par = parameter(cfg, aktuell)
+    akt_par = P(aktuell)
+    if not any(getattr(akt_par, k, False) for k in ("PEAD_AKTIV", "INSIDER_TRIGGER", "MOMENTUM_TRIGGER", "HOCH_TRIGGER")):
+        dep["lernen"] = {**(dep.get("lernen") or {}), "datum": idx[-1].date().isoformat(),
+                         "gedanken": ["Kein Auslöser ist laut Forschung belegt – es gibt nichts zu optimieren. Das Geld bleibt im ETF."]}
+        return "Lernmodul: kein belegter Auslöser – nichts zu optimieren."
     gedanken = []
 
     # 1) Referenz: aktuelle Einstellungen
@@ -192,16 +204,16 @@ def lernen(dep, s, cfg, bench, erzwingen=False):
         gedanken.append("Die Verlierer haben kein gemeinsames Merkmal, das deutlich heraussticht.")
 
     # 2) Gittersuche
-    scores = {name: engine.kombiniere(s, parameter(cfg, dict(zip(("GEWICHT_MOMENTUM", "GEWICHT_PEAD", "GEWICHT_INSIDER", "GEWICHT_HOCH"), w))))
+    scores = {name: engine.kombiniere(s, P(dict(zip(("GEWICHT_MOMENTUM", "GEWICHT_PEAD", "GEWICHT_INSIDER", "GEWICHT_HOCH"), w))))
               for name, w in GEWICHTE.items()}
     zeilen = {}
     for (gname, w), schw, halt, nz in itertools.product(GEWICHTE.items(), SCHWELLEN, HALTEDAUERN, NACHZIEH):
         ueb = {"GEWICHT_MOMENTUM": w[0], "GEWICHT_PEAD": w[1], "GEWICHT_INSIDER": w[2], "GEWICHT_HOCH": w[3],
-               "SCHWELLE": schw, "SCHWELLE_RISK_OFF": schw + 15, "HALTEDAUER": halt, "STOPP_ATR_NACHZIEH": nz,
-               "FILTER": list(akt_par.FILTER)}
-        erg = _bewerten(_simulieren(s, parameter(cfg, ueb), start, ende, bench, scores[gname]))
+               "SCHWELLE": schw, "SCHWELLE_RISK_OFF": schw + 15, "HALTEDAUER": halt,
+               "STOPP_ATR_NACHZIEH": round(nz_basis * nz, 2), "FILTER": list(akt_par.FILTER)}
+        erg = _bewerten(_simulieren(s, P(ueb), start, ende, bench, scores[gname]))
         if erg:
-            zeilen[(gname, schw, halt, nz)] = {**erg, "name": f"{gname} · {schw} · {halt} T · {nz:.1f}×".replace(".", ","),
+            zeilen[(gname, schw, halt, nz)] = {**erg, "name": f"{gname} · {schw} · {halt} T · {nz_basis * nz:.1f}×".replace(".", ","),
                                                "gewichte": gname, "parameter": ueb}
 
     # 3) Robustheit: Mittel aus Variante und Nachbarn
@@ -231,8 +243,8 @@ def lernen(dep, s, cfg, bench, erzwingen=False):
     for basis in basen:
         for f in ideen:
             ueb = dict(basis["parameter"] or {})
-            ueb["FILTER"] = list(parameter(cfg, ueb).FILTER) + [{k: f[k] for k in ("merkmal", "op", "wert", "text")}]
-            p = parameter(cfg, ueb)
+            ueb["FILTER"] = list(P(ueb).FILTER) + [{k: f[k] for k in ("merkmal", "op", "wert", "text")}]
+            p = P(ueb)
             erg = _bewerten(_simulieren(s, p, start, ende, bench, engine.kombiniere(s, p)))
             if erg:
                 # Robustheit vom Basis-Nachbarschaftswert übernehmen und nur die Verbesserung addieren (faire Vergleichbarkeit)

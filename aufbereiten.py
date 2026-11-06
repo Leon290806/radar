@@ -155,7 +155,7 @@ def ticker_details(ticks, s, score, ins, dep, firmen, status_heute, par):
             trades.append({"id": tr["id"], "ein": int(ein) if ein is not None and tr.get("einstieg_datum", "") >= tdates[0] else None,
                            "aus": int(aus) if aus is not None and tr["ausstieg_datum"] >= tdates[0] else None})
         j = C.columns.get_loc(t)
-        k = engine.komponenten(s, n - 1, t)
+        k = engine.komponenten(s, n - 1, t, par)
         hoch52 = C[t].iloc[-252:].max()
         out[t] = {
             "f": firmen.get(t, t), "cur": daten.waehrung(t), "a": a, "c": _liste(c), "sma": _liste(s["sma200"][t].iloc[a:]),
@@ -262,7 +262,9 @@ def dashboard_daten(dep, s, score, par, cfg, C_alle, aktionen, kand, ins, ins_st
                                            "MAX_POSITIONEN", "MAX_NEU_PRO_TAG", "GEWICHT_MIN", "GEWICHT_MAX",
                                            "MAX_VERLUST_PRO_TRADE", "KOSTEN", "LERN_INTERVALL", "LERN_FENSTER",
                                            "LERN_MARGE", "LERN_MIN_TRADES", "FILTER", "MAX_GAP_EINSTIEG",
-                                           "MAX_JE_BRANCHE", "MAX_JE_SEKTOR", "INSIDER_MIN_AUFFAELLIG")}
+                                           "MAX_JE_BRANCHE", "MAX_JE_SEKTOR", "INSIDER_MIN_AUFFAELLIG",
+                                           "PEAD_AKTIV", "PEAD_GROESSEN", "PEAD_STARKER_SCHLUSS", "INSIDER_TRIGGER",
+                                           "MOMENTUM_TRIGGER", "HOCH_TRIGGER")}
     return _sauber({
         "meta": {"stand": dep["letzter_tag"], "erstellt": dt.datetime.now().strftime("%d.%m.%Y %H:%M"), "demo": demo,
                  "start": dates[0], "live_seit": dep.get("live_seit"), "tage_live": sum(1 for k in kurve if k[3] == "Live"),
@@ -272,5 +274,5 @@ def dashboard_daten(dep, s, score, par, cfg, C_alle, aktionen, kand, ins, ins_st
         "markt": regime_txt, "dates": dates, "eq": _liste(eq_n), "bench": benches, "kern": _liste(pd.Series(kern) / kern[0] * 100),
         "invest": [k[4] for k in kurve], "dd": _liste(dd, 4), "live_idx": live_idx,
         "trades": trades, "kern_w": kern_w, "aktionen": akt, "stats": stats, "scanner": scanner,
-        "insider": insd, "tdates": tdates, "tick": details, "lernen": L, "par": par_d, "oddlot": oddlot, "hinweise": hinweise,
+        "insider": insd, "tdates": tdates, "tick": details, "lernen": L, "forschung": dep.get("forschung"), "par": par_d, "oddlot": oddlot, "hinweise": hinweise,
     })
