@@ -34,6 +34,20 @@ KOSTEN = 0.001             # 0,1 % je Kauf/Verkauf (Gebühr + Spread), für das 
 
 RUECKBLICK_TAGE = 250      # beim ersten Start: so viele Handelstage rückwirkend simulieren
 
+# Kern: Geld, das gerade in keiner Empfehlung steckt, liegt im S&P-500-ETF (Markt über 200-Tage-Linie)
+# bzw. im Geldmarkt (Markt darunter). So arbeitet auch das freie Geld.
+KERN_AKTIV = True
+GELDMARKT_ZINS = 0.02      # angenommener Geldmarktzins p.a. für Phasen außerhalb des Marktes
+
+# ---------------------------------------------------------------------------
+# Lernmodul: prüft regelmäßig, ob andere Einstellungen zuletzt besser funktioniert hätten
+# ---------------------------------------------------------------------------
+LERNEN_AKTIV = True
+LERN_INTERVALL = 20        # alle 20 Handelstage (ca. monatlich) neu prüfen
+LERN_FENSTER = 400         # auf den letzten 400 Handelstagen testen
+LERN_MARGE = 0.15          # nur wechseln, wenn eine Variante klar (15 %) besser ist – gegen Zufallstreffer
+LERN_MIN_TRADES = 12
+
 # ---------------------------------------------------------------------------
 # Signale und ihr Gewicht im Score (0–100)
 # ---------------------------------------------------------------------------

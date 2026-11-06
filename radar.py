@@ -25,6 +25,7 @@ import daten
 import engine
 import dashboard
 import schutz
+import lernen
 
 
 def lade_journal(pfad):
@@ -66,6 +67,29 @@ def pead_pruefer():
         except Exception:
             return True
     return pruefe
+
+
+def kursverlaeufe(dep, C, bench):
+    """Kurze Kursverläufe je Empfehlung für die Mini-Charts im Dashboard."""
+    idx = C.index
+    out = {}
+    for tr in dep["trades"]:
+        t = tr["ticker"]
+        if t not in C.columns:
+            continue
+        try:
+            i_sig = idx.get_loc(pd.Timestamp(tr["signal_datum"]))
+        except KeyError:
+            continue
+        i_ein = idx.get_loc(pd.Timestamp(tr["einstieg_datum"])) if tr.get("einstieg_datum") else None
+        i_aus = idx.get_loc(pd.Timestamp(tr["ausstieg_datum"])) if tr.get("ausstieg_datum") and tr["status"] == "geschlossen" else None
+        a = max(0, i_sig - 15)
+        e = min(len(idx) - 1, (i_aus if i_aus is not None else len(idx) - 1) + 5)
+        werte = [round(float(v), 4) for v in C[t].iloc[a:e + 1].ffill().bfill()]
+        out[tr["id"]] = {"c": werte, "sig": i_sig - a, "ein": None if i_ein is None else i_ein - a,
+                         "aus": None if i_aus is None else i_aus - a,
+                         "von": idx[a].date().isoformat(), "bis": idx[e].date().isoformat()}
+    return out
 
 
 def baue_aktionen(dep, eurusd):
@@ -133,6 +157,10 @@ def main():
         except Exception:
             raise SystemExit("Journal lässt sich nicht öffnen – Passwort geändert? Mit --neu neu beginnen.")
     hinweise = []
+    if dep is not None and dep.get("version", 2) < 3:
+        dep = None
+        hinweise.append("Journal wurde mit den neuen Regeln (Version 3) neu aufgebaut.")
+    insider_status = {"ok": False, "anzahl": 0, "fehler": "Insider-Modul ausgeschaltet" if not cfg.INSIDER_AKTIV else ""}
 
     print("Strategie-Radar" + (" – DEMO" if args.demo else ""))
     if args.demo:
@@ -153,11 +181,17 @@ def main():
             von = (idx[start_pos] - pd.Timedelta(days=20)).date()
             print(f"Insider-Käufe ab {von} laden (SEC) ...")
             try:
-                insider = daten.lade_insider(von, cfg.SEC_USER_AGENT, set(aktien))
+                insider = daten.lade_insider(von, cfg.SEC_USER_AGENT, set(aktien), hinweise)
                 print(f"  {len(insider)} Insider-Käufe gefunden")
             except Exception as e:
-                hinweise.append(f"Insider-Daten nicht verfügbar ({e}). Tipp: SEC_USER_AGENT mit echter E-Mail setzen.")
+                print(f"  FEHLER Insider-Daten: {type(e).__name__}: {e}")
+                insider_status["fehler"] = f"{type(e).__name__}: {e}"
+                hinweise.append(f"Insider-Daten nicht verfügbar ({e}).")
 
+    if insider is not None:
+        insider_status.update(ok=True, anzahl=int(len(insider)), fehler="",
+                              von=str(pd.to_datetime(insider["datum"]).min().date()) if len(insider) else None,
+                              bis=str(pd.to_datetime(insider["datum"]).max().date()) if len(insider) else None)
     C_alle = kurse["Close"]
     aktien = [t for t in aktien if t in C_alle.columns and C_alle[t].notna().sum() > 270]
     print(f"Signale berechnen für {len(aktien)} Aktien ...")
@@ -178,14 +212,20 @@ def main():
         fehlend = [t["ticker"] for t in dep["trades"] if t["status"] in ("offen", "geplant") and t["ticker"] not in s["C"].columns]
         if fehlend:
             hinweise.append("Keine Kurse für offene Position(en): " + ", ".join(fehlend))
+    par = lernen.parameter(cfg, dep.get("parameter"))
+    score = engine.kombiniere(s, par.GEWICHT_MOMENTUM, par.GEWICHT_PEAD, par.GEWICHT_INSIDER)
     pruefer = None if args.demo else pead_pruefer()
     for d in tage:
         letzter_tag = d == len(idx) - 1
         modus = "Live" if (dep["live_seit"] or letzter_tag) else "Rückblick"
-        engine.tag_verarbeiten(dep, s, d, cfg, modus, firmen, bench,
-                               pruefe_pead=pruefer if letzter_tag else None)
+        engine.tag_verarbeiten(dep, s, d, par, modus, firmen, bench,
+                               pruefe_pead=pruefer if letzter_tag else None, score=score)
     if dep["live_seit"] is None:
         dep["live_seit"] = dep["letzter_tag"]
+    if tage:
+        print(lernen.lernen(dep, s, cfg, bench))
+        par = lernen.parameter(cfg, dep.get("parameter"))
+        score = engine.kombiniere(s, par.GEWICHT_MOMENTUM, par.GEWICHT_PEAD, par.GEWICHT_INSIDER)
     if pw:
         schutz.journal_speichern(dep, journal_pfad, pw)
     else:
@@ -193,7 +233,9 @@ def main():
 
     aktionen = baue_aktionen(dep, eurusd)
     belegt = {tr["ticker"] for tr in dep["trades"] if tr["status"] in ("offen", "geplant")}
-    kand = [(t, v) for t, v in engine.kandidaten(s, len(idx) - 1, 10) if t not in belegt and v < 100][:5]
+    kand = [k for k in engine.kandidaten(s, len(idx) - 1, 25, score) if k[0] not in belegt][:15]
+    feed = engine.insider_feed(insider, s, cfg)
+    verlaeufe = kursverlaeufe(dep, s["C"], bench)
 
     oddlot = []
     if cfg.ODDLOT_AKTIV and not args.demo:
@@ -202,7 +244,8 @@ def main():
         except Exception as e:
             hinweise.append(f"Odd-Lot-Suche fehlgeschlagen ({e}).")
 
-    html = dashboard.erstelle(dep, aktionen, kand, cfg, bool(s["regime"].iat[-1]), oddlot, hinweise, demo=args.demo)
+    html = dashboard.erstelle(dep, aktionen, kand, par, bool(s["regime"].iat[-1]), oddlot, hinweise, feed,
+                              insider_status, verlaeufe, firmen, demo=args.demo)
     if pw:
         html = schutz.dashboard_sperren(html, pw)
     os.makedirs(os.path.dirname(dash_pfad), exist_ok=True)

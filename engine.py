@@ -102,7 +102,28 @@ def berechne_signale(kurse, aktien, insider, cfg, regime_ticker="^GSPC"):
     rc = kurse["Close"][regime_ticker].ffill() if regime_ticker in kurse["Close"] else C.mean(axis=1)
     regime = (rc > rc.rolling(200).mean()).reindex(C.index).fillna(True)
     return {"O": O, "H": H, "L": L, "C": C, "A": A, "M": M, "P": P, "I": I, "score": score, "regime": regime,
-            "letzte": letzte, "evPlus": evPlus, "evVF": evVF, "iinfo": iinfo}
+            "letzte": letzte, "evPlus": evPlus, "evVF": evVF, "iinfo": iinfo, "elig": elig}
+
+
+def kombiniere(s, wM, wP, wI):
+    """Score mit anderen Gewichten neu zusammensetzen (für das Lernmodul)."""
+    return (100 * (wM * s["M"] + wP * s["P"] + wI * s["I"])).where(s["elig"], 0.0).clip(upper=100)
+
+
+def komponenten(s, d, t):
+    j = s["C"].columns.get_loc(t)
+    return {"M": float(s["M"].iat[d, j]), "P": float(s["P"].iat[d, j]), "I": float(s["I"].iat[d, j])}
+
+
+def signal_typen(k):
+    typen = []
+    if k["P"] > 0:
+        typen.append("Zahlen")
+    if k["I"] > 0:
+        typen.append("Insider")
+    if k["M"] > 0:
+        typen.append("Momentum")
+    return typen
 
 
 def gruende(s, d, t):
@@ -124,18 +145,18 @@ def gruende(s, d, t):
     return g
 
 
-def gewicht(score, stop_pct, schwelle, cfg):
+def gewicht(score, stop_pct, schwelle, par):
     x = np.clip((score - schwelle) / max(90 - schwelle, 1), 0, 1)
-    w = cfg.GEWICHT_MIN + x * (cfg.GEWICHT_MAX - cfg.GEWICHT_MIN)
-    return float(min(w, cfg.MAX_VERLUST_PRO_TRADE / max(stop_pct, 1e-6)))
+    w = par.GEWICHT_MIN + x * (par.GEWICHT_MAX - par.GEWICHT_MIN)
+    return float(min(w, par.MAX_VERLUST_PRO_TRADE / max(stop_pct, 1e-6)))
 
 
 # ---------------------------------------------------------------------------
 # Musterdepot
 # ---------------------------------------------------------------------------
 def neues_depot():
-    return {"version": 2, "cash": 100.0, "trades": [], "kurve": [], "naechste_id": 1,
-            "letzter_tag": None, "live_seit": None, "start": None}
+    return {"version": 3, "cash": 100.0, "trades": [], "kurve": [], "naechste_id": 1,
+            "letzter_tag": None, "live_seit": None, "start": None, "parameter": {}, "lernen": {}}
 
 
 def _equity(dep, s, d):
@@ -146,34 +167,48 @@ def _equity(dep, s, d):
     return wert
 
 
-def tag_verarbeiten(dep, s, d, cfg, modus, firmen, bench=None, pruefe_pead=None):
-    """Einen Handelstag d (Index-Position) abarbeiten: Ausführungen, Stopps, neue Signale."""
-    O, H, L, C, A = s["O"], s["H"], s["L"], s["C"], s["A"]
+def tag_verarbeiten(dep, s, d, par, modus, firmen, bench=None, pruefe_pead=None, score=None):
+    """Einen Handelstag d (Index-Position) abarbeiten: Kern-Rendite, Ausführungen, Stopps, neue Signale.
+
+    Nicht investiertes Geld ("Kern") liegt im S&P-500-ETF, solange der Markt über seiner
+    200-Tage-Linie liegt, sonst im Geldmarkt.
+    """
+    O, L, C, A = s["O"], s["L"], s["C"], s["A"]
+    score = s["score"] if score is None else score
     datum = C.index[d]
     iso = datum.date().isoformat()
-    K = cfg.KOSTEN
-    eq_vortag = dep["kurve"][-1][1] if dep["kurve"] else 100.0
+    K = par.KOSTEN
+
+    # 0) Kern: Rendite auf das freie Geld
+    kern_im_markt = False
+    if d > 0 and dep["cash"] > 0:
+        if par.KERN_AKTIV and bench is not None and bool(s["regime"].iat[d - 1]) \
+                and np.isfinite(bench.iat[d]) and np.isfinite(bench.iat[d - 1]):
+            dep["cash"] *= bench.iat[d] / bench.iat[d - 1]
+            kern_im_markt = True
+        else:
+            dep["cash"] *= (1 + par.GELDMARKT_ZINS) ** (1 / 252)
 
     # 1) geplante Verkäufe zur Eröffnung
     for tr in dep["trades"]:
         if tr["status"] == "offen" and tr.get("verkaufen_geplant"):
             px = float(O[tr["ticker"]].iat[d])
             dep["cash"] += tr["stueck"] * px * (1 - K)
-            _schliessen(tr, iso, px, tr["verkaufen_geplant"], K)
+            _schliessen(tr, iso, px, tr["verkaufen_geplant"], K, bench, C.index)
 
     # 2) geplante Käufe zur Eröffnung
     for tr in dep["trades"]:
         if tr["status"] != "geplant":
             continue
         o = float(O[tr["ticker"]].iat[d])
-        if not np.isfinite(o) or o > tr["signal_kurs"] * (1 + cfg.MAX_GAP_EINSTIEG):
+        if not np.isfinite(o) or o > tr["signal_kurs"] * (1 + par.MAX_GAP_EINSTIEG):
             tr.update(status="verpasst", ausstieg_grund="Eröffnung zu hoch – ausgelassen", ausstieg_datum=iso)
             continue
         invest = min(tr["gewicht"] * tr["equity_signal"], dep["cash"])
         tr["stueck"] = invest / (o * (1 + K))
         dep["cash"] -= tr["stueck"] * o * (1 + K)
         tr.update(status="offen", einstieg_datum=iso, einstieg_kurs=o, hoechst=o, tage=0,
-                  stopp=o - cfg.STOPP_ATR_START * tr["atr"])
+                  stopp=o - par.STOPP_ATR_START * tr["atr"], kurs=o)
 
     # 3) offene Positionen: Stopp, Nachziehen, Zeitstopp
     for tr in dep["trades"]:
@@ -185,70 +220,113 @@ def tag_verarbeiten(dep, s, d, cfg, modus, firmen, bench=None, pruefe_pead=None)
         if lo <= tr["stopp"]:
             px = min(op, tr["stopp"])
             dep["cash"] += tr["stueck"] * px * (1 - K)
-            _schliessen(tr, iso, px, "Stopp", K)
+            _schliessen(tr, iso, px, "Stopp", K, bench, C.index)
             continue
         c, a = float(C[t].iat[d]), float(A[t].iat[d])
+        regeln = tr.get("parameter", {})            # offene Trades behalten die Regeln vom Kauftag
+        nz = regeln.get("STOPP_ATR_NACHZIEH", par.STOPP_ATR_NACHZIEH)
+        hd = regeln.get("HALTEDAUER", par.HALTEDAUER)
         tr["hoechst"] = max(tr["hoechst"], c)
         if np.isfinite(a):
-            tr["stopp"] = max(tr["stopp"], tr["hoechst"] - cfg.STOPP_ATR_NACHZIEH * a)
+            tr["stopp"] = max(tr["stopp"], tr["hoechst"] - nz * a)
         tr["tage"] += 1
         tr["kurs"] = c
-        if tr["tage"] >= cfg.HALTEDAUER:
-            tr["verkaufen_geplant"] = f"Zeitstopp ({cfg.HALTEDAUER} Tage)"
+        if tr["tage"] >= hd:
+            tr["verkaufen_geplant"] = f"Zeitstopp ({hd} Tage)"
 
     eq = _equity(dep, s, d)
     b = float(bench.iat[d]) if bench is not None and np.isfinite(bench.iat[d]) else None
-    dep["kurve"].append([iso, round(eq, 4), b, modus])
+    investiert = 1 - dep["cash"] / eq if eq > 0 else 0.0
+    dep["kurve"].append([iso, round(eq, 4), b, modus, round(investiert, 3), 1 if bool(s["regime"].iat[d]) else 0])
 
     # 4) neue Empfehlung(en) auf Basis des heutigen Schlusskurses
-    schwelle = cfg.SCHWELLE if bool(s["regime"].iat[d]) else cfg.SCHWELLE_RISK_OFF
-    reihe = s["score"].iloc[d]
+    schwelle = par.SCHWELLE if bool(s["regime"].iat[d]) else par.SCHWELLE_RISK_OFF
+    reihe = score.iloc[d]
     kand = reihe[reihe >= schwelle].sort_values(ascending=False)
-    belegt = {tr["ticker"] for tr in dep["trades"] if tr["status"] in ("offen", "geplant")}
-    kuerzlich = {tr["ticker"] for tr in dep["trades"] if tr.get("ausstieg_datum")
-                 and (datum - pd.Timestamp(tr["ausstieg_datum"])).days < 14}
-    neu = 0
-    for t, sc in kand.items():
-        if neu >= cfg.MAX_NEU_PRO_TAG:
-            break
-        if t in belegt or t in kuerzlich:
-            continue
-        aktiv = [tr for tr in dep["trades"] if tr["status"] in ("offen", "geplant")]
-        if len(aktiv) >= cfg.MAX_POSITIONEN:
-            break
-        reserviert = sum(tr["gewicht"] * tr["equity_signal"] for tr in aktiv if tr["status"] == "geplant")
-        frei = (dep["cash"] - reserviert) / eq
-        if frei < cfg.MIN_CASH_FUER_KAUF:
-            break
-        j = s["P"].columns.get_loc(t)
-        if pruefe_pead is not None and s["P"].iat[d, j] > 0:
-            ev_d = s["C"].index[int(s["letzte"].iat[d, j])].date()
-            if not pruefe_pead(t, ev_d):
-                sc = sc - 100 * cfg.GEWICHT_PEAD * s["P"].iat[d, j]
-                if sc < schwelle:
-                    continue
-        c, a = float(C[t].iat[d]), float(A[t].iat[d])
-        if not (np.isfinite(c) and np.isfinite(a) and c > 0):
-            continue
-        w = min(gewicht(sc, cfg.STOPP_ATR_START * a / c, schwelle, cfg), frei)
-        dep["trades"].append({
-            "id": dep["naechste_id"], "ticker": t, "firma": firmen.get(t, t), "modus": modus,
-            "signal_datum": iso, "score": round(float(sc), 1), "gewicht": round(w, 4),
-            "gruende": gruende(s, d, t), "signal_kurs": c, "atr": a, "equity_signal": eq,
-            "status": "geplant", "limit": c * (1 + cfg.MAX_GAP_EINSTIEG), "stopp_hinweis": c - cfg.STOPP_ATR_START * a,
-        })
-        dep["naechste_id"] += 1
-        neu += 1
+    if not kand.empty:
+        belegt = {tr["ticker"] for tr in dep["trades"] if tr["status"] in ("offen", "geplant")}
+        kuerzlich = {tr["ticker"] for tr in dep["trades"] if tr.get("ausstieg_datum")
+                     and (datum - pd.Timestamp(tr["ausstieg_datum"])).days < 14}
+        neu = 0
+        for t, sc in kand.items():
+            if neu >= par.MAX_NEU_PRO_TAG:
+                break
+            if t in belegt or t in kuerzlich:
+                continue
+            aktiv = [tr for tr in dep["trades"] if tr["status"] in ("offen", "geplant")]
+            if len(aktiv) >= par.MAX_POSITIONEN:
+                break
+            reserviert = sum(tr["gewicht"] * tr["equity_signal"] for tr in aktiv if tr["status"] == "geplant")
+            frei = (dep["cash"] - reserviert) / eq
+            if frei < par.MIN_CASH_FUER_KAUF:
+                break
+            k = komponenten(s, d, t)
+            if pruefe_pead is not None and k["P"] > 0:
+                ev_d = s["C"].index[int(s["letzte"].iat[d, s["C"].columns.get_loc(t)])].date()
+                if not pruefe_pead(t, ev_d):
+                    sc = sc - 100 * par.GEWICHT_PEAD * k["P"]
+                    k["P"] = 0.0
+                    if sc < schwelle:
+                        continue
+            c, a = float(C[t].iat[d]), float(A[t].iat[d])
+            if not (np.isfinite(c) and np.isfinite(a) and c > 0):
+                continue
+            w = min(gewicht(sc, par.STOPP_ATR_START * a / c, schwelle, par), frei)
+            dep["trades"].append({
+                "id": dep["naechste_id"], "ticker": t, "firma": firmen.get(t, t), "modus": modus,
+                "signal_datum": iso, "score": round(float(sc), 1), "gewicht": round(w, 4),
+                "gruende": gruende(s, d, t), "typen": signal_typen(k), "komp": {x: round(v, 3) for x, v in k.items()},
+                "signal_kurs": c, "atr": a, "equity_signal": eq, "status": "geplant",
+                "limit": c * (1 + par.MAX_GAP_EINSTIEG), "stopp_hinweis": c - par.STOPP_ATR_START * a,
+                "parameter": {"SCHWELLE": schwelle, "HALTEDAUER": par.HALTEDAUER, "STOPP_ATR_NACHZIEH": par.STOPP_ATR_NACHZIEH},
+            })
+            dep["naechste_id"] += 1
+            neu += 1
     dep["letzter_tag"] = iso
     return dep
 
 
-def _schliessen(tr, iso, px, grund, K):
+def _schliessen(tr, iso, px, grund, K, bench=None, idx=None):
     tr.update(status="geschlossen", ausstieg_datum=iso, ausstieg_kurs=px, ausstieg_grund=grund,
-              ergebnis=(px * (1 - K)) / (tr["einstieg_kurs"] * (1 + K)) - 1)
+              ergebnis=(px * (1 - K)) / (tr["einstieg_kurs"] * (1 + K)) - 1, kurs=px)
     tr.pop("verkaufen_geplant", None)
+    if bench is not None and idx is not None:
+        try:
+            b0 = float(bench.iat[idx.get_loc(pd.Timestamp(tr["einstieg_datum"]))])
+            b1 = float(bench.iat[idx.get_loc(pd.Timestamp(iso))])
+            tr["markt"] = b1 / b0 - 1
+            tr["ueber_markt"] = tr["ergebnis"] - tr["markt"]
+        except (KeyError, ZeroDivisionError):
+            pass
 
 
-def kandidaten(s, d, n=5):
-    reihe = s["score"].iloc[d].sort_values(ascending=False).head(n)
-    return [(t, float(v)) for t, v in reihe.items() if v > 0]
+def kandidaten(s, d, n=5, score=None):
+    score = s["score"] if score is None else score
+    reihe = score.iloc[d].sort_values(ascending=False).head(n)
+    return [(t, float(v), komponenten(s, d, t)) for t, v in reihe.items() if v > 0]
+
+
+def insider_feed(insider, s, cfg, tage=45):
+    """Alle Insider-Käufe der letzten Wochen, je Aktie zusammengefasst (für den Insider-Reiter)."""
+    if insider is None or insider.empty:
+        return []
+    ende = s["C"].index[-1]
+    df = insider[(pd.to_datetime(insider["datum"]) > ende - pd.Timedelta(days=tage))
+                 & (insider["wert"] >= cfg.INSIDER_MIN_KAUF)].copy()
+    if df.empty:
+        return []
+    out = []
+    for t, g in df.groupby("ticker"):
+        kurs = float(s["C"][t].iloc[-1]) if t in s["C"].columns else None
+        avg = g["wert"].sum() / (g["wert"] / g["preis"].replace(0, np.nan)).sum()
+        sc = float(s["score"][t].iloc[-1]) if t in s["score"].columns else None
+        out.append({
+            "ticker": t, "n": int(g["insider"].nunique()), "wert": float(g["wert"].sum()),
+            "letzte": pd.to_datetime(g["datum"]).max().date().isoformat(),
+            "rollen": sorted({str(r) for r in g["rolle"] if str(r) not in ("", "nan")})[:3],
+            "namen": sorted({str(r).title() for r in g["name"] if str(r) not in ("", "nan")})[:3],
+            "plan": bool(g["plan"].all()), "preis": float(avg) if np.isfinite(avg) else None,
+            "kurs": kurs, "seit": (kurs / avg - 1) if kurs and np.isfinite(avg) and avg > 0 else None,
+            "score": sc, "cluster": int(g.loc[~g["plan"].astype(bool), "insider"].nunique()) >= 2,
+        })
+    return sorted(out, key=lambda x: (x["cluster"], x["wert"]), reverse=True)

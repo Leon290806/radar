@@ -182,8 +182,8 @@ def _sec(url, ua, ok404=False):
         except requests.RequestException:
             time.sleep(2 * (v + 1))
             continue
-        if r.status_code == 404 and ok404:
-            return None
+        if r.status_code in (403, 404) and ok404:
+            return None      # Datei existiert (noch) nicht – S3 meldet das teils als 403
         if r.status_code in (429, 500, 502, 503):
             time.sleep(3 * (v + 1))
             continue
@@ -320,29 +320,39 @@ def insider_tag(d, ua, ciks):
     return df
 
 
-def lade_insider(von, ua, universum):
-    """Insider-Käufe ab Datum `von` bis heute: Quartalsdatensätze + tägliche Meldungen."""
+def lade_insider(von, ua, universum, meldungen=None):
+    """Insider-Käufe ab Datum `von` bis heute.
+    Abgeschlossene Quartale: offizieller SEC-Datensatz. Laufendes Quartal (und das vorige, falls
+    dessen Datensatz noch nicht veröffentlicht ist): tägliche Form-4-Meldungen."""
+    meldungen = meldungen if meldungen is not None else []
     teile = []
     heute = dt.date.today()
+    jetzt = _quartal(heute)
+    vorher = (jetzt[0] - 1, 4) if jetzt[1] == 1 else (jetzt[0], jetzt[1] - 1)
+    taeglich_ab = dt.date(jetzt[0], 3 * jetzt[1] - 2, 1)
     j, q = _quartal(von)
-    taeglich_ab = None
-    while (j, q) <= _quartal(heute):
-        df = insider_quartal(j, q, ua) if (j, q) < _quartal(heute) else None
-        if df is None:
+    while (j, q) < jetzt:
+        df = insider_quartal(j, q, ua)
+        if df is not None:
+            teile.append(df)
+            print(f"  Quartal {j}Q{q}: {len(df)} Insider-Käufe (SEC-Datensatz)")
+        elif (j, q) == vorher:
             taeglich_ab = dt.date(j, 3 * q - 2, 1)
-            break
-        teile.append(df)
+        else:
+            meldungen.append(f"SEC-Datensatz {j}Q{q} nicht gefunden – Lücke in den Insider-Daten.")
         j, q = (j + 1, 1) if q == 4 else (j, q + 1)
-    if taeglich_ab is not None:
-        ciks = {c for c, t in sec_ciks(ua).items() if t in universum}
-        tage = pd.bdate_range(max(taeglich_ab, von), heute)
-        print(f"  Tägliche Form-4-Meldungen: {len(tage)} Tage (beim ersten Mal dauert das)")
-        for d in tage:
-            teile.append(insider_tag(d.date(), ua, ciks))
+    ciks = {c for c, t in sec_ciks(ua).items() if t in universum}
+    tage = pd.bdate_range(max(taeglich_ab, von), heute)
+    print(f"  Tägliche Form-4-Meldungen ab {tage[0].date() if len(tage) else '-'}: {len(tage)} Tage, {len(ciks)} Firmen")
+    for i, d in enumerate(tage):
+        teile.append(insider_tag(d.date(), ua, ciks))
+        if i % 10 == 9:
+            print(f"    {i + 1}/{len(tage)} Tage")
+    teile = [t for t in teile if t is not None and len(t)]
     if not teile:
         return pd.DataFrame(columns=["datum", "ticker", "insider", "name", "rolle", "wert", "preis", "plan"])
     df = pd.concat(teile, ignore_index=True)
-    df = df[(df["datum"] >= pd.Timestamp(von)) & df["ticker"].isin(universum)]
+    df = df[(pd.to_datetime(df["datum"]) >= pd.Timestamp(von)) & df["ticker"].isin(universum)]
     return df.reset_index(drop=True)
 
 

@@ -22,7 +22,23 @@ Jede Aktie bekommt täglich einen Score von 0 bis 100:
 - **Höchstens 1 neue Empfehlung pro Tag und 5 Positionen.** Mal kommt eine pro Woche, mal mehrere – je nachdem, was der Markt hergibt.
 - **Größe 12–35 %** des Portfolios, je höher der Score, desto mehr. Gedeckelt so, dass ein Stopp höchstens 3 % des Portfolios kostet.
 - **Ausstieg:** Nachzieh-Stopp (höchster Schluss − 3 × ATR) oder spätestens nach 40 Handelstagen.
-- Nicht investiertes Geld liegt als Cash bzw. im Geldmarkt.
+- **Freies Geld arbeitet mit:** Was gerade in keiner Empfehlung steckt, liegt im S&P-500-ETF, solange der Markt über seiner 200-Tage-Linie liegt, sonst im Geldmarkt. Die Empfehlungen müssen also den Markt schlagen, nicht das Sparbuch.
+
+## Lernmodul
+
+Etwa alle 20 Handelstage spielt der Radar die letzten ~400 Tage mit 96 Varianten seiner Einstellungen durch: Schwelle, Haltedauer, Stopp und Gewichtung der Signale. Gewählt wird anhand der ersten zwei Drittel (Lernteil). Übernommen wird eine Variante nur, wenn sie auch im zeitlich danach liegenden Drittel (Prüfteil) klar besser ist. Die neuen Regeln gelten nur für künftige Empfehlungen, offene Positionen behalten ihre Regeln. Jede Änderung steht im Reiter *Lernen*.
+
+## Das Dashboard
+
+| Reiter | Inhalt |
+|---|---|
+| Heute | Empfehlung mit Anteil, Limit, Stopp und Gründen, weitere Aufgaben, Kennzahlen, Kurve gegen den S&P 500 |
+| Portfolio | Aufteilung, jede Position mit Mini-Chart, Stopp, Haltedauer und Gründen |
+| Verlauf | alle Empfehlungen mit Filter (Live, Rückblick, Gewinner …), je Trade Kursverlauf, Ergebnis und Vergleich zum S&P 500 |
+| Insider | aktuelle Insider-Käufe (SEC) und Status des Datenabrufs |
+| Scanner | die 15 stärksten Aktien, aufgeschlüsselt nach Momentum, Zahlen und Insider |
+| Statistik | Radar gegen S&P 500 und „nur Kern“, Kennzahlen, Ergebnis nach Auslöser, Monatsrenditen |
+| Lernen | aktuelle Einstellungen, letzte Prüfung, Änderungshistorie |
 
 Beim ersten Start spielt der Radar die letzten 250 Handelstage mit genau diesen Regeln durch (Rückblick).
 Danach läuft er live, und jede neue Empfehlung wird festgeschrieben.
