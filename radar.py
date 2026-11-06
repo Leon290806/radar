@@ -199,6 +199,8 @@ def main():
     if cfg.FORSCHUNG_AKTIV and (forschung.faellig(dep, idx, cfg.FORSCHUNG_INTERVALL) or args.forschung):
         print("Forschungslabor ...")
         print(forschung.forschen(dep, s, insider if s.get("insider") is None else s["insider"], cfg, bench, dep["start"]))
+        for g in (dep.get("forschung") or {}).get("gedanken", []):     # nur Statistik, keine Positionen
+            print("  - " + g)
     par = lernen.alle_parameter(cfg, dep)
     score = engine.kombiniere(s, par)
     pruefer = None if args.demo else pead_pruefer()

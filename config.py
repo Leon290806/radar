@@ -36,7 +36,7 @@ GEWINNZIEL_ATR = 0         # Gewinnziel: Einstieg + x * ATR (0 = keins). Die For
 
 # Profil: "ruhig" = oft kleine Gewinne, Verluste früh begrenzen (Trefferquote zählt mit)
 #         "rendite" = höchste Rendite bei vertretbarem Rückgang
-PROFIL = "ruhig"
+PROFIL = "rendite"
 PROFIL_MIN_TREFFER = 0.55  # bei "ruhig": nur Varianten mit mind. 55 % Gewinner-Trades
 MAX_GAP_EINSTIEG = 0.04    # Eröffnet die Aktie > 4 % über dem Signal-Schluss: Einstieg auslassen
 KOSTEN = 0.001             # 0,1 % je Kauf/Verkauf (Gebühr + Spread), für das Musterdepot
