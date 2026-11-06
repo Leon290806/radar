@@ -17,6 +17,8 @@ SCHWELLE = 55              # Mindest-Score (0–100) für eine Kaufempfehlung
 SCHWELLE_RISK_OFF = 70     # höhere Hürde, wenn der S&P 500 unter seiner 200-Tage-Linie liegt
 MAX_POSITIONEN = 5         # höchstens so viele Aktien gleichzeitig
 MAX_NEU_PRO_TAG = 1        # höchstens eine neue Empfehlung pro Tag
+MAX_JE_BRANCHE = 1         # Klumpenrisiko: höchstens 1 Aktie je Branche (z. B. nicht zwei Krankenversicherer)
+MAX_JE_SEKTOR = 2          # und höchstens 2 je Sektor (z. B. Gesundheit)
 
 # Positionsgröße wächst mit der Überzeugung: Score an der Schwelle -> GEWICHT_MIN,
 # Score 90+ -> GEWICHT_MAX (aggressiv, aber begrenzt)
@@ -32,7 +34,7 @@ HALTEDAUER = 40            # Zeitstopp in Handelstagen (Effekte wirken meist in 
 MAX_GAP_EINSTIEG = 0.04    # Eröffnet die Aktie > 4 % über dem Signal-Schluss: Einstieg auslassen
 KOSTEN = 0.001             # 0,1 % je Kauf/Verkauf (Gebühr + Spread), für das Musterdepot
 
-RUECKBLICK_TAGE = 250      # beim ersten Start: so viele Handelstage rückwirkend simulieren
+RUECKBLICK_TAGE = 750      # beim ersten Start: ~3 Jahre rückwirkend simulieren (mehr Trades = belastbarere Statistik)
 
 # Kern: Geld, das gerade in keiner Empfehlung steckt, liegt im S&P-500-ETF (Markt über 200-Tage-Linie)
 # bzw. im Geldmarkt (Markt darunter). So arbeitet auch das freie Geld.
@@ -44,7 +46,7 @@ GELDMARKT_ZINS = 0.02      # angenommener Geldmarktzins p.a. für Phasen außerh
 # ---------------------------------------------------------------------------
 LERNEN_AKTIV = True
 LERN_INTERVALL = 20        # alle 20 Handelstage (ca. monatlich) neu prüfen
-LERN_FENSTER = 400         # auf den letzten 400 Handelstagen testen
+LERN_FENSTER = 750         # auf den letzten ~3 Jahren testen (zu kurze Fenster lernen nur Zufall)
 LERN_MARGE = 0.15          # nur wechseln, wenn eine Variante klar (15 %) besser ist – gegen Zufallstreffer
 LERN_MIN_TRADES = 12
 
@@ -75,11 +77,16 @@ PEAD_MAX_ALTER = 15
 INSIDER_AKTIV = True
 INSIDER_FENSTER = 10       # Käufe der letzten 10 Handelstage (nach Meldedatum)
 INSIDER_MIN_KAUF = 25_000  # kleinere Einzelkäufe ignorieren (USD bzw. EUR)
+# Nur echte Anomalien zählen: Bewertung 0–100 aus Cluster, Rolle, Bestandsplus, Größe, Erstkauf und Kursrückgang.
+# Beispiel: CEO kauft für 50 Tsd. bei 50 Mio. Bestand (+0,1 %) -> ca. 30 Punkte = normal, kein Signal.
+INSIDER_MIN_AUFFAELLIG = 50
+INSIDER_HISTORIE_TAGE = 260   # zusätzliche Vorgeschichte, um Erst- und Routinekäufe zu erkennen
 INSIDER_LAENDER = ("USA", "DE")   # USA: SEC Form 4 · DE: BaFin Directors' Dealings (Art. 19 MAR)
 INSIDER_FEED_TAGE = 45     # so viele Tage zeigt der Insider-Reiter
 INSIDER_FEED_MIN_VERKAUF = 250_000   # Verkäufe erst ab dieser Größe anzeigen (es gibt sehr viele kleine)
 
-UNIVERSEN = ["sp500", "nasdaq100", "dax", "mdax"]   # Insider-Daten gibt es nur für US-Aktien
+# Groß + mittel + klein: In mittleren und kleinen Werten wirken Insider- und Zahlen-Effekte am stärksten.
+UNIVERSEN = ["sp500", "nasdaq100", "sp400", "sp600", "dax", "mdax", "sdax"]
 ZUSATZ_TICKER = []
 MIN_PREIS = 5.0
 MIN_UMSATZ = 5_000_000     # Ø Tagesumsatz in Kurswährung

@@ -463,7 +463,7 @@ function detail(t, tradeId) {
   const komp = KOMP.map(k => { const v = 100 * P[k.gew] * (d.komp[k.k] || 0), max = 100 * P[k.gew];
     return `<div class="komp"><b>${k.name}</b><div class="bahn"><i style="width:${max ? v / max * 100 : 0}%;background:var(${k.farbe})"></i></div><span style="text-align:right;font-weight:650">${Math.round(v)}<span class="mute">/${Math.round(max)}</span></span><div class="erk">${KOMP_TEXT[k.k]}</div></div>`; }).join("");
   const sprung = d.sprung ? `Letzter Kurssprung am ${dat(d.sprung.d)}: ${pct(d.sprung.plus)} bei ${zahl(d.sprung.vf, 1)}× Volumen, vor ${d.sprung.tage} Handelstagen.` : "Kein aktueller positiver Kurssprung.";
-  const insSig = d.ins_sig ? `${d.ins_sig.n} Insider kauften zuletzt für ${geld(d.ins_sig.w, d.cur)} (${d.ins_sig.kat.join(", ")}).` : "Kein aktuelles Insider-Kaufsignal.";
+  const insSig = d.ins_sig ? `Insider-Anomalie ${d.ins_sig.a ?? "–"}/100: ${d.ins_sig.n} Insider kauften zuletzt für ${geld(d.ins_sig.w, d.cur)} (${d.ins_sig.kat.join(", ")})${(d.ins_sig.g || []).length ? " – " + d.ins_sig.g.join(", ") : ""}.` : "Kein auffälliger Insider-Kauf (normale Käufe zählen nicht).";
   const radarT = d.trades.map(x => tradeById[x.id]).filter(Boolean);
   $("#m-inhalt").innerHTML = `
   ${tr ? tradeBox(tr) : ""}
@@ -614,11 +614,11 @@ RENDER.insider = el => {
   const fehlerExtra = st.ok && (st.fehler || []).length ? `<div class="box warn" style="margin-top:8px">${st.fehler.map(f => `<div class="klein">• ${esc(f)}</div>`).join("")}</div>` : "";
   const h = I.cluster[0];
   el.innerHTML = `<div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Insider-Radar</h3><div class="cs">USA: SEC Form 4 · Deutschland: BaFin Directors' Dealings (Art. 19 MAR)</div></div></div>
-    <p class="erkl">Vorstände und Aufsichtsräte müssen eigene Käufe und Verkäufe melden. Käufe mit eigenem Geld sind ein starkes Signal – vor allem, wenn mehrere Insider gleichzeitig kaufen („Cluster“). Verkäufe haben viele Gründe (Steuern, Hauskauf) und sind ein schwaches Signal. Käufe aus vorab festgelegten Sparplänen (10b5-1) zählen nicht.</p>${stBox}${fehlerExtra}</div></div>
+    <p class="erkl">Vorstände und Aufsichtsräte müssen eigene Käufe und Verkäufe melden. Die meisten Käufe sind <b>normal</b> und sagen wenig. Der Radar bewertet deshalb jeden Kauf mit einer <b>Auffälligkeit von 0–100</b> und nutzt nur echte Anomalien ab ${I.grenze || 50} Punkten. Punkte gibt es für: mehrere Insider gleichzeitig (bis 25), die Rolle – CEO/CFO am meisten, Fonds/Großaktionäre am wenigsten (bis 15), den Kauf <b>im Verhältnis zum eigenen Bestand</b> (bis 25), die Größe (bis 15), den ersten Kauf seit über einem Jahr (10, Routinekäufe wie im Vorjahr geben Abzug) und Käufe nach deutlichem Kursrückgang (10). Beispiel: Ein CEO kauft für 50 Tsd. $, besitzt aber schon 50 Mio. $ – das sind +0,1 % auf seinen Bestand und bleibt „normal“. Verkäufe und Sparpläne (10b5-1) zählen nie.</p>${stBox}${fehlerExtra}</div></div>
   ${h ? `<div class="grid"><div class="card c12 ins-held"><div class="held"><div>
       <span class="badge b-kauf">Auffälligste Insider-Aktivität</span>
       <div class="gross-tick">${tlink(h.t)}</div><div class="mute">${esc(h.f)} · ${esc(h.land)}</div>
-      <div class="staerke" style="margin-top:16px">${ring(h.staerke)}<div><b>Signalstärke ${Math.round(h.staerke)} / 100</b><div class="cs">aus Anzahl Insider, Summe, Rolle (CEO/CFO), Radar-Insider-Signal und Kurs seit Kauf</div></div></div>
+      <div class="staerke" style="margin-top:16px">${ring(h.staerke)}<div><b>Auffälligkeit ${Math.round(h.staerke)} / 100 · ${esc(h.label)}</b><div class="cs">${h.gruende && h.gruende.length ? esc(h.gruende.join(" · ")) : "keine besonderen Merkmale"}</div></div></div>
       <div class="fakten" style="margin-top:16px"><div><span>Insider</span><b>${h.n}</b></div><div><span>Summe</span><b>${geld(h.w, h.cur)}</b></div>
         <div><span>Rollen</span><b>${esc(h.kat.join(", "))}</b></div><div><span>Ø Kaufpreis</span><b>${zahl(h.avg)} ${sym(h.cur)}</b></div>
         <div><span>Kurs jetzt</span><b>${zahl(h.kurs)} ${sym(h.cur)}</b></div><div><span>seit Kauf</span><b class="${kl(h.seit)}">${pct(h.seit)}</b></div>
@@ -628,35 +628,39 @@ RENDER.insider = el => {
     <div class="grid">${I.cluster.slice(1, 7).map(c => `<div class="card c4 mini-karte" data-ticker="${esc(c.t)}"><div style="display:flex;justify-content:space-between;gap:10px">
       <div><div class="tick" style="font-size:18px">${esc(c.t)}</div><div class="firma">${esc(c.f)}</div></div>${ring(c.staerke).replace('class="ring"', 'class="ring" style="width:48px;height:48px"')}</div>
       <div class="fakten" style="margin-top:10px;grid-template-columns:1fr 1fr"><div><span>Insider</span><b>${c.n} · ${esc(c.kat.join(", "))}</b></div><div><span>Summe</span><b>${geld(c.w, c.cur)}</b></div>
-      <div><span>seit Kauf</span><b class="${kl(c.seit)}">${pct(c.seit)}</b></div><div><span>Letzte</span><b>${dat(c.letzte)}</b></div></div></div>`).join("")}</div>` : ""}
-  <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Alle Transaktionen</h3><div class="cs">Käufe ab 10 Tsd., Verkäufe ab 250 Tsd. · antippen für Details</div></div><span class="cs" id="ins-anz"></span></div>
+      <div><span>seit Kauf</span><b class="${kl(c.seit)}">${pct(c.seit)}</b></div><div><span>Letzte</span><b>${dat(c.letzte)}</b></div></div>
+      <div class="klein mute" style="margin-top:10px">${c.gruende && c.gruende.length ? esc(c.gruende.slice(0, 3).join(" · ")) : esc(c.label)}</div></div>`).join("")}</div>` : ""}
+  ${h && h.staerke < (I.grenze || 50) ? `<div class="grid"><div class="card c12"><div class="box warn">Zurzeit keine echte Insider-Anomalie: Selbst die auffälligste Aktivität liegt unter ${I.grenze || 50} Punkten. Das ist normal – starke Signale gibt es nur ein paar Mal im Monat.</div></div></div>` : ""}
+  <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Alle Transaktionen</h3><div class="cs">Käufe ab 10 Tsd., Verkäufe ab 250 Tsd. · Spalte „Auffällig“: Bewertung je Einzelkauf · antippen für Details</div></div><span class="cs" id="ins-anz"></span></div>
     <div class="steuer" style="align-items:flex-start"><div style="display:flex;flex-direction:column;gap:8px">
       <div class="chips" id="ins-typ">${[["", "Alle"], ["Kauf", "Käufe"], ["Verkauf", "Verkäufe"]].map(([v, n], k) => `<span class="chip ${k === 1 ? "an" : ""}" data-v="${v}">${n}</span>`).join("")}</div>
       <div class="chips" id="ins-rolle">${["CEO", "CFO", "Vorstand", "Direktor", "10%-Eigner", "Sonstige"].map(r => `<span class="chip" data-v="${r}">${r}</span>`).join("")}</div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap"><select class="feld" id="ins-land"><option value="">Alle Länder</option><option value="USA">USA</option><option value="DE">Deutschland</option></select>
         <select class="feld" id="ins-min"><option value="0">Jeder Betrag</option><option value="100000">ab 100 Tsd.</option><option value="1000000">ab 1 Mio.</option><option value="10000000">ab 10 Mio.</option></select>
         <label class="chip" style="cursor:pointer"><input type="checkbox" id="ins-plan" checked style="margin:0"> Sparpläne ausblenden</label>
+        <label class="chip" style="cursor:pointer"><input type="checkbox" id="ins-auff" style="margin:0"> nur auffällige (ab ${I.grenze || 50})</label>
         <input class="feld" id="ins-suche" placeholder="Ticker oder Name …"></div></div>
     <div id="ins-tabelle"></div></div></div>${fuss()}`;
   if (h) tickerChart($("#ins-held-chart"), h.t, { tage: 126, hoehe: 300 });
   let typ = "Kauf"; const rollen = new Set(); let sortK = "d", sortAuf = false, limit = 100;
   const male = () => {
-    const land = $("#ins-land").value, min = +$("#ins-min").value, plan = $("#ins-plan").checked, q = $("#ins-suche").value.trim().toUpperCase();
+    const land = $("#ins-land").value, min = +$("#ins-min").value, plan = $("#ins-plan").checked, auff = $("#ins-auff").checked, q = $("#ins-suche").value.trim().toUpperCase();
     let l = I.feed.filter(x => (!typ || x.typ === typ) && (!rollen.size || rollen.has(x.k)) && (!land || x.land === land) && x.w >= min && !(plan && x.plan)
+      && (!auff || (x.a ?? 0) >= (I.grenze || 50))
       && (!q || x.t.includes(q) || x.n.toUpperCase().includes(q) || x.f.toUpperCase().includes(q)));
     l.sort((a, b) => { const va = a[sortK], vb = b[sortK]; const r = va == null ? 1 : vb == null ? -1 : va < vb ? -1 : va > vb ? 1 : 0; return sortAuf ? r : -r; });
     $("#ins-anz").textContent = `${l.length} Transaktionen · Summe ${geld(l.reduce((a, b) => a + (b.cur === "USD" ? b.w : b.w * (M.eurusd || 1)), 0), "USD")}`;
     const th = (k, n, c) => `<th class="sort ${c || ""}" data-k="${k}">${n}${sortK === k ? (sortAuf ? " ↑" : " ↓") : ""}</th>`;
-    $("#ins-tabelle").innerHTML = l.length ? `<div class="tw"><table class="tbl"><thead><tr>${th("d", "Meldung", "l")}${th("t", "Aktie", "l")}${th("n", "Insider", "l")}${th("k", "Rolle", "l")}<th class="l">Art</th>${th("w", "Wert")}${th("p", "Preis")}${th("seit", "seitdem")}${th("score", "Score")}<th>Land</th></tr></thead><tbody>
+    $("#ins-tabelle").innerHTML = l.length ? `<div class="tw"><table class="tbl"><thead><tr>${th("d", "Meldung", "l")}${th("t", "Aktie", "l")}${th("n", "Insider", "l")}${th("k", "Rolle", "l")}<th class="l">Art</th>${th("w", "Wert")}${th("a", "Auffällig")}${th("p", "Preis")}${th("seit", "seitdem")}${th("score", "Score")}<th>Land</th></tr></thead><tbody>
       ${l.slice(0, limit).map(x => `<tr class="klick" data-ticker="${esc(x.t)}"><td class="l">${dat(x.d, true)}</td><td class="l"><div class="tick">${esc(x.t)}</div><div class="firma">${esc(x.f)}</div></td><td class="l">${esc(x.n)}</td><td class="l">${esc(x.k)}<div class="firma">${esc(x.r)}</div></td>
-      <td class="l"><span class="badge ${x.typ === "Kauf" ? "b-kauf" : "b-verk"}">${x.typ}</span>${x.plan ? ' <span class="mute klein">Plan</span>' : ""}</td><td><b>${geld(x.w, x.cur)}</b></td><td>${zahl(x.p)}</td><td class="${kl(x.seit)}">${pct(x.seit)}</td><td>${ok(x.score) ? Math.round(x.score) : "–"}</td><td>${esc(x.land)}</td></tr>`).join("")}
+      <td class="l"><span class="badge ${x.typ === "Kauf" ? "b-kauf" : "b-verk"}">${x.typ}</span>${x.plan ? ' <span class="mute klein">Plan</span>' : ""}</td><td><b>${geld(x.w, x.cur)}</b></td><td title="${esc((x.ag || []).join(" · "))}">${ok(x.a) ? `<span class="badge ${x.a >= 70 ? "b-kauf" : x.a >= (I.grenze || 50) ? "b-warn" : "b-neutral"}">${Math.round(x.a)} ${x.a >= 70 ? "stark" : x.a >= (I.grenze || 50) ? "auffällig" : "normal"}</span>` : '<span class="mute">–</span>'}</td><td>${zahl(x.p)}</td><td class="${kl(x.seit)}">${pct(x.seit)}</td><td>${ok(x.score) ? Math.round(x.score) : "–"}</td><td>${esc(x.land)}</td></tr>`).join("")}
       </tbody></table></div>${l.length > limit ? `<button class="mehr" id="ins-mehr">Weitere ${Math.min(100, l.length - limit)} anzeigen</button>` : ""}` : '<div class="leer">Keine Transaktionen für diesen Filter</div>';
     const mb = $("#ins-mehr"); if (mb) mb.addEventListener("click", () => { limit += 100; male(); });
     $$("#ins-tabelle th.sort").forEach(t => t.addEventListener("click", () => { if (sortK === t.dataset.k) sortAuf = !sortAuf; else { sortK = t.dataset.k; sortAuf = false; } male(); }));
   };
   $("#ins-typ").addEventListener("click", ev => { const c = ev.target.closest(".chip"); if (!c) return; typ = c.dataset.v; $$("#ins-typ .chip").forEach(x => x.classList.toggle("an", x === c)); limit = 100; male(); });
   $("#ins-rolle").addEventListener("click", ev => { const c = ev.target.closest(".chip"); if (!c) return; rollen.has(c.dataset.v) ? rollen.delete(c.dataset.v) : rollen.add(c.dataset.v); c.classList.toggle("an"); limit = 100; male(); });
-  ["#ins-land", "#ins-min", "#ins-plan"].forEach(s => $(s).addEventListener("change", () => { limit = 100; male(); }));
+  ["#ins-land", "#ins-min", "#ins-plan", "#ins-auff"].forEach(s => $(s).addEventListener("change", () => { limit = 100; male(); }));
   $("#ins-suche").addEventListener("input", () => { limit = 100; male(); });
   male();
 };
@@ -684,6 +688,17 @@ RENDER.scanner = el => {
 };
 
 /* ============================== Statistik ============================== */
+function belastbarkeit(tk) {
+  if (!tk || !tk.anzahl) return "";
+  const n = tk.anzahl, t = tk.t_wert, lo = tk.ki_unten, hi = tk.ki_oben;
+  let urteil, klasse;
+  if (n < 30) { urteil = `Erst ${n} abgeschlossene Trades – dafür lässt sich noch nichts sicher sagen.`; klasse = "warn"; }
+  else if (ok(lo) && lo > 0) { urteil = "Der Vorteil ist statistisch belastbar: Auch im ungünstigen Fall bleibt der Durchschnitt über 0."; klasse = "ok"; }
+  else if (ok(hi) && hi < 0) { urteil = "Die Regeln verlieren belastbar Geld – hier muss sich etwas ändern."; klasse = "fehler"; }
+  else { urteil = "Noch nicht von Zufall zu unterscheiden: Der wahre Durchschnitt kann über oder unter 0 liegen. Erst mit mehr Trades wird es klar."; klasse = "warn"; }
+  return `<div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Ist das Können oder Zufall?</h3><div class="cs">${n} Trades · Ø ${pct(tk.erwartung, 2)} je Trade · 95-%-Bereich ${ok(lo) ? `${pct(lo, 1)} bis ${pct(hi, 1)}` : "–"} · t-Wert ${ok(t) ? zahl(t) : "–"}${ok(tk.t_ueber) ? ` · gegenüber S&amp;P 500: ${pct(tk.ueber_markt, 1)} (95 %: ${pct(tk.ki_u_unten, 1)} bis ${pct(tk.ki_u_oben, 1)})` : ""}</div></div></div>
+    <div class="box ${klasse}">${urteil} Faustregel: Ab etwa 100 Trades und einem t-Wert über 2 kann man einem Vorteil trauen.</div></div></div>`;
+}
 RENDER.statistik = el => {
   const st = D.stats, r = st.radar || {}, tk = st.trades || {}, namen = Object.keys(st.bench);
   const spalten = [["Radar", r]].concat(namen.map(n => [n, st.bench[n]])).concat([["Nur Kern", st.kern || {}]]);
@@ -710,10 +725,13 @@ RENDER.statistik = el => {
     ${zeilen.map(([name, k, t, richtung, tip]) => { const vs = spalten.map(([, s]) => s[k]); const gueltig = vs.filter(ok); const best = gueltig.length ? (richtung > 0 ? Math.max(...gueltig) : Math.min(...gueltig)) : null;
       return `<tr><td class="l">${esc(name)} ${tip ? tippI(tip) : ""}</td>${vs.map(v => `<td class="${ok(v) && v === best ? "pos" : ""}" style="${ok(v) && v === best ? "font-weight:700" : ""}">${fz(v, t)}</td>`).join("")}</tr>`; }).join("")}
     </tbody></table></div></div></div>
+  ${belastbarkeit(tk)}
   <div class="grid">
     <div class="card c6"><h3 class="ct" style="margin-bottom:12px">Trade-Analyse</h3><div class="tw"><table class="tbl"><tbody>
       ${[["Abgeschlossene Trades", tk.anzahl], ["Gewinner / Verlierer", `${tk.gewinner || 0} / ${tk.verlierer || 0}`], ["Trefferquote", pct(tk.trefferquote, 1, false)],
         ["Profit Factor", zahl(tk.profit_factor)], ["Erwartungswert je Trade", `<span class="${kl(tk.erwartung)}">${pct(tk.erwartung, 2)}</span>`],
+        [`Erwartungswert, 95-%-Bereich ${tippI("So weit kann der wahre Durchschnitt allein durch Zufall daneben liegen. Liegt der Bereich komplett über 0, ist der Vorteil belastbar.")}`, ok(tk.ki_unten) ? `${pct(tk.ki_unten, 1)} bis ${pct(tk.ki_oben, 1)}` : "–"],
+        [`t-Wert ${tippI("Durchschnitt geteilt durch seine Unsicherheit. Erst ab etwa 2 spricht wenig für Zufall.")}`, ok(tk.t_wert) ? zahl(tk.t_wert) : "–"],
         ["Ø Gewinn / Ø Verlust", `${pct(tk.avg_gewinn)} / ${pct(tk.avg_verlust)}`], ["Payoff (Ø Gewinn ÷ Ø Verlust)", zahl(tk.payoff)],
         ["Größter Gewinn / Verlust", `${pct(tk.groesster_gewinn)} / ${pct(tk.groesster_verlust)}`], ["Längste Gewinn- / Verlustserie", `${tk.serie_gewinn || 0} / ${tk.serie_verlust || 0}`],
         ["Ø Haltedauer (Handelstage)", `${zahl(tk.haltedauer, 0)} · Gewinner ${zahl(tk.haltedauer_gewinner, 0)} · Verlierer ${zahl(tk.haltedauer_verlierer, 0)}`],

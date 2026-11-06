@@ -47,6 +47,7 @@ def waehrung(t):
 # Universum
 # ---------------------------------------------------------------------------
 def _wiki(url, tick_spalten, name_spalten, min_zeilen):
+    """Liest die Indexliste von Wikipedia. Rückgabe: [(Ticker, Name, Sektor, Branche)]."""
     r = requests.get(url, headers=BROWSER_UA, timeout=30)
     r.raise_for_status()
     for tab in pd.read_html(io.StringIO(r.text)):
@@ -57,36 +58,45 @@ def _wiki(url, tick_spalten, name_spalten, min_zeilen):
         if tc is None:
             continue
         nc = next((namen[n] for n in name_spalten if n in namen), None)
+        sc = next((c for n, c in namen.items() if "sector" in n or n in ("branche", "sektor")), None)
+        bc = next((c for n, c in namen.items() if "sub-industry" in n or "sub industry" in n), None)
         ticks = tab[tc].astype(str).str.strip()
+        leer = pd.Series("", index=tab.index)
         nam = tab[nc].astype(str).str.strip() if nc is not None else ticks
-        return [(t, n) for t, n in zip(ticks, nam) if t and t.lower() != "nan"]
+        sek = tab[sc].astype(str).str.strip() if sc is not None else leer
+        bra = tab[bc].astype(str).str.strip() if bc is not None else sek
+        return [(t, n, s_, b) for t, n, s_, b in zip(ticks, nam, sek, bra) if t and t.lower() != "nan"]
     raise ValueError(f"Keine passende Tabelle auf {url}")
 
 
 def _us(paare):
-    return [(t.replace(".", "-").upper(), n) for t, n in paare]
+    return [(t.replace(".", "-").upper(), *rest) for t, *rest in paare]
 
 
 def _de(paare):
     out = []
-    for t, n in paare:
+    for t, *rest in paare:
         t = t.split(":")[-1].strip().upper()
-        out.append((t if "." in t else t + ".DE", n))
+        out.append((t if "." in t else t + ".DE", *rest))
     return out
 
 
 def lade_universum(namen, max_alter_tage=7):
-    """Rückgabe: (Liste Ticker, dict Ticker->Firmenname, Hinweise)."""
-    pfad = _c("universum.pkl")
+    """Rückgabe: (Liste Ticker, dict Ticker->Firmenname, Hinweise, dict Ticker->(Sektor, Branche))."""
+    pfad = _c("universum_v2.pkl")
     if os.path.exists(pfad):
         c = _lies(pfad)
         if c["namen"] == list(namen) and (dt.date.today() - c["datum"]).days <= max_alter_tage:
-            return c["ticker"], c["firmen"], c["hinweise"]
+            return c["ticker"], c["firmen"], c["hinweise"], c.get("sektoren", {})
     q = {
         "sp500": ("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies", ["symbol", "ticker"], ["security", "company"], 400, _us),
         "nasdaq100": ("https://en.wikipedia.org/wiki/Nasdaq-100", ["ticker", "symbol"], ["company", "security"], 80, _us),
         "dax": ("https://en.wikipedia.org/wiki/DAX", ["ticker", "symbol", "ticker symbol"], ["company", "name"], 30, _de),
         "mdax": ("https://en.wikipedia.org/wiki/MDAX", ["ticker", "symbol", "ticker symbol"], ["company", "name"], 40, _de),
+        # mittlere und kleine Werte: hier wirken Insider- und Zahlen-Effekte laut Forschung am stärksten
+        "sp400": ("https://en.wikipedia.org/wiki/List_of_S%26P_400_companies", ["symbol", "ticker"], ["security", "company"], 300, _us),
+        "sp600": ("https://en.wikipedia.org/wiki/List_of_S%26P_600_companies", ["symbol", "ticker"], ["security", "company"], 400, _us),
+        "sdax": ("https://en.wikipedia.org/wiki/SDAX", ["ticker", "symbol", "ticker symbol"], ["company", "name"], 40, _de),
     }
     paare, hinweise = [], []
     for n in namen:
@@ -97,17 +107,20 @@ def lade_universum(namen, max_alter_tage=7):
             paare += f(_wiki(url, ts, ns, mz))
         except Exception as e:
             if n == "dax":
-                paare += _de([(t, t) for t in DAX_RESERVE])
+                paare += _de([(t, t, "", "") for t in DAX_RESERVE])
                 hinweise.append("DAX-Liste aus Reserve verwendet.")
             else:
                 hinweise.append(f"Universum {n} nicht geladen ({e}).")
-    firmen = {}
-    for t, n in paare:
+    firmen, sektoren = {}, {}
+    for t, n, sek, bra in paare:
         if re.fullmatch(r"[A-Z0-9\-\.]+", t) and t not in firmen:
             firmen[t] = n
+            if sek and sek.lower() != "nan":
+                sektoren[t] = (sek, bra if bra and bra.lower() != "nan" else sek)
     ticker = list(firmen)
-    _schreib(pfad, {"namen": list(namen), "datum": dt.date.today(), "ticker": ticker, "firmen": firmen, "hinweise": hinweise})
-    return ticker, firmen, hinweise
+    _schreib(pfad, {"namen": list(namen), "datum": dt.date.today(), "ticker": ticker, "firmen": firmen,
+                    "hinweise": hinweise, "sektoren": sektoren})
+    return ticker, firmen, hinweise, sektoren
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +189,7 @@ def bereinige(daten):
 # Insider: gemeinsames Format
 # ---------------------------------------------------------------------------
 INSIDER_SPALTEN = ["datum", "handel", "ticker", "insider", "name", "rolle", "kat", "typ", "stueck", "preis",
-                   "wert", "waehrung", "plan", "land"]
+                   "wert", "waehrung", "plan", "land", "bestand"]   # bestand = Stück NACH der Transaktion (nur USA)
 
 
 def rollen_kategorie(text):
@@ -261,7 +274,7 @@ def _datum(s):
 def insider_quartal(jahr, q, ua):
     """Offizieller SEC-Datensatz eines abgeschlossenen Quartals (Käufe und Verkäufe, Form 4).
     Rückgabe None = nicht verfügbar."""
-    pfad = _c(f"insider_v2_{jahr}q{q}.pkl")
+    pfad = _c(f"insider_v3_{jahr}q{q}.pkl")
     if os.path.exists(pfad):
         return _lies(pfad)
     r, fehler = None, []
@@ -313,6 +326,7 @@ def insider_quartal(jahr, q, ua):
         "stueck": stueck, "preis": preis, "wert": stueck * preis, "waehrung": "USD",
         "plan": sp(["AFF10B5ONE"], "0").str.lower().isin(["1", "true", "y"]),
         "land": "USA",
+        "bestand": pd.to_numeric(sp(["SHRS_OWND_FOLWNG_TRANS"]), errors="coerce"),
     }).dropna(subset=["datum", "wert"])
     out = out[out["wert"] > 0].reset_index(drop=True)
     _schreib(pfad, out)
@@ -351,17 +365,21 @@ def _form4_parse(xml_text, datum):
         except ValueError:
             continue
         hd = pd.to_datetime(t.findtext("transactionDate/value"), errors="coerce")
+        try:
+            bestand = float(t.findtext("postTransactionAmounts/sharesOwnedFollowingTransaction/value") or "nan")
+        except ValueError:
+            bestand = float("nan")
         if sh * px > 0:
             out.append({"datum": pd.Timestamp(datum), "handel": hd, "ticker": sym, "insider": cik or name,
                         "name": name.title(), "rolle": rolle, "kat": rollen_kategorie(rolle),
                         "typ": "Kauf" if code == "P" else "Verkauf", "stueck": sh, "preis": px, "wert": sh * px,
-                        "waehrung": "USD", "plan": plan, "land": "USA"})
+                        "waehrung": "USD", "plan": plan, "land": "USA", "bestand": bestand})
     return out
 
 
 def insider_tag(d, ua, ciks):
     """Alle Form-4-Käufe/-Verkäufe eines Tages für Firmen im Universum (täglicher EDGAR-Index)."""
-    pfad = _c(f"form4_v2_{d:%Y%m%d}.pkl")
+    pfad = _c(f"form4_v3_{d:%Y%m%d}.pkl")
     if os.path.exists(pfad):
         return _lies(pfad)
     j, q = _quartal(d)
@@ -528,6 +546,7 @@ def lade_insider_de(von, firmen_de, status):
         "typ": np.where(art.str.contains("kauf") & ~art.str.contains("verkauf"), "Kauf",
                         np.where(art.str.contains("verkauf"), "Verkauf", "Sonstiges")),
         "stueck": vol / preis, "preis": preis, "wert": vol, "waehrung": "EUR", "plan": False, "land": "DE",
+        "bestand": np.nan,
     })
     df = df[df["ticker"].notna() & df["typ"].isin(["Kauf", "Verkauf"]) & (df["wert"] > 0)
             & (pd.to_datetime(df["datum"]) >= pd.Timestamp(von))]
@@ -535,8 +554,19 @@ def lade_insider_de(von, firmen_de, status):
     return df[INSIDER_SPALTEN].reset_index(drop=True)
 
 
+def _alte_caches_loeschen():
+    """Caches im alten Format (ohne Bestandsangabe) entfernen, damit der Zwischenspeicher nicht wächst."""
+    try:
+        for f in os.listdir(CACHE):
+            if f.startswith(("insider_v2_", "form4_v2_")) or f == "universum.pkl":
+                os.remove(os.path.join(CACHE, f))
+    except OSError:
+        pass
+
+
 def lade_insider(von, ua, universum, firmen, laender=("USA", "DE")):
     """Alle Insider-Transaktionen ab `von`. Rückgabe: (DataFrame, Statusdict)."""
+    _alte_caches_loeschen()
     status = {"ok": False, "quellen": [], "luecken": [], "fehler": [], "anzahl": 0}
     teile = []
     us = {t for t in universum if waehrung(t) == "USD"}
@@ -646,7 +676,9 @@ def demo_daten(tage=800, n=160, seed=11):
         return {"datum": idx[d], "handel": idx[max(d - 2, 0)], "ticker": t, "insider": f"P{j}", "name": namen[j % 5],
                 "rolle": "Vorstand" if de and rl[1] in ("CEO", "Vorstand") else ("Aufsichtsrat" if de and rl[1] == "Direktor" else rl[0]),
                 "kat": rl[1], "typ": typ, "stueck": wert / px, "preis": px, "wert": float(wert),
-                "waehrung": "EUR" if de else "USD", "plan": plan, "land": "DE" if de else "USA"}
+                "waehrung": "EUR" if de else "USD", "plan": plan, "land": "DE" if de else "USA",
+                # Bestand danach: mal kleiner Aufstockungskauf, mal starke Aufstockung
+                "bestand": np.nan if de else wert / px * (1 + float(rng.choice([0.3, 2, 8, 40, 400])))}
     for _ in range(60):
         t = aktien[int(rng.integers(0, len(aktien)))]
         k = int(rng.integers(300, tage - 1))
@@ -664,6 +696,10 @@ def demo_daten(tage=800, n=160, seed=11):
             zeilen.append(zeile(tage - 5, t, j, 180_000.0))
     firmen = {t: f"Demo Firma {t[-3:]}" for t in aktien[:n]}
     firmen.update({t: f"Demo AG {t[3:5]}" for t in aktien[n:]})
+    sek = [("Health Care", "Managed Health Care"), ("Health Care", "Biotechnology"), ("Information Technology", "Software"),
+           ("Financials", "Banks"), ("Industrials", "Machinery"), ("Consumer Discretionary", "Retail"),
+           ("Energy", "Oil & Gas"), ("Utilities", "Electric Utilities")]
+    sektoren = {t: sek[i % len(sek)] for i, t in enumerate(aktien)}
     status = {"ok": True, "quellen": ["DEMO: erfundene Insider-Daten"], "luecken": [], "fehler": [],
               "anzahl": len(zeilen), "von": str(idx[300].date()), "bis": str(idx[-2].date())}
-    return kurse, aktien, firmen, pd.DataFrame(zeilen, columns=INSIDER_SPALTEN), status
+    return kurse, aktien, firmen, pd.DataFrame(zeilen, columns=INSIDER_SPALTEN), status, sektoren

@@ -8,7 +8,7 @@ BASIS = os.path.dirname(os.path.abspath(__file__))
 
 def _lies(name):
     """Sucht die Datei im Ordner web/ oder direkt neben diesem Skript."""
-    for pfad in (os.path.join(BASIS, "web", name), os.path.join(BASIS, name)):
+    for pfad in (os.path.join(BASIS, name), os.path.join(BASIS, "web", name)):
         if os.path.exists(pfad):
             with open(pfad, encoding="utf-8") as f:
                 return f.read()

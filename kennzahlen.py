@@ -81,7 +81,14 @@ def trade_kennzahlen(trades, kosten=0.001):
             folge_v, folge_g = folge_v + 1, 0
         best_g, best_v = max(best_g, folge_g), max(best_v, folge_v)
     ueber = [t["ueber_markt"] for t in gz if t.get("ueber_markt") is not None]
+    # Belastbarkeit: Ist der Durchschnitt von null unterscheidbar oder noch Zufall?
+    se = float(erg.std(ddof=1) / np.sqrt(len(erg))) if len(erg) > 2 else None
+    se_u = float(np.std(ueber, ddof=1) / np.sqrt(len(ueber))) if len(ueber) > 2 else None
     return {
+        "t_wert": _f(erg.mean() / se) if se else None, "ki_unten": _f(erg.mean() - 1.96 * se) if se else None,
+        "ki_oben": _f(erg.mean() + 1.96 * se) if se else None,
+        "t_ueber": _f(np.mean(ueber) / se_u) if se_u else None,
+        "ki_u_unten": _f(np.mean(ueber) - 1.96 * se_u) if se_u else None, "ki_u_oben": _f(np.mean(ueber) + 1.96 * se_u) if se_u else None,
         "anzahl": len(gz), "gewinner": int((erg > 0).sum()), "verlierer": int((erg <= 0).sum()),
         "trefferquote": _f((erg > 0).mean()), "profit_factor": _f(gew.sum() / -verl.sum()) if verl.sum() < 0 else None,
         "netto_pnl": _f(pnl.sum()), "brutto_gewinn": _f(gew.sum()), "brutto_verlust": _f(verl.sum()),

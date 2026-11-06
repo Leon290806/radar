@@ -32,44 +32,166 @@ def atr(H, L, C, n=20):
 # ---------------------------------------------------------------------------
 # Signale
 # ---------------------------------------------------------------------------
-def _insider(ins, C, cfg):
+ROLLEN_GEWICHT = {"CEO": 1.0, "CFO": 1.0, "Vorstand": 0.8, "Direktor": 0.6, "10%-Eigner": 0.3, "Sonstige": 0.4}
+_FIRMA = (r"(?i)\b(?:llc|l\.p\.|lp|fund|funds|capital|partners|holdings?|trust|inc|corp|corporation|management|ltd|"
+          r"limited|gmbh|plc|group|investments?|advisors?|ventures|foundation|stiftung|beteiligungs\w*)\b")
+
+
+def insider_merkmale(ins):
+    """Ergänzt je Transaktion die Merkmale für die Anomalie-Bewertung:
+    firma     – Käufer ist ein Investor/eine Gesellschaft, keine Person aus dem Management
+    erstkauf  – erster Kauf dieser Person in dieser Aktie seit über 12 Monaten (nur wenn die Vorgeschichte bekannt ist)
+    routine   – dieselbe Person hat ziemlich genau ein Jahr vorher auch gekauft (Routine, kaum Information)
+    hist      – Vorgeschichte (12 Monate) liegt in den Daten vor"""
+    if ins is None or ins.empty:
+        return ins
+    df = ins.copy()
+    df["datum"] = pd.to_datetime(df["datum"])
+    if "bestand" not in df.columns:
+        df["bestand"] = np.nan
+    df["bestand"] = pd.to_numeric(df["bestand"], errors="coerce")
+    df["firma"] = df["name"].astype(str).str.contains(_FIRMA, regex=True)
+    df["erstkauf"], df["routine"], df["hist"] = False, False, False
+    kauf = (df["typ"] == "Kauf") & ~df["plan"].astype(bool)
+    beginn = df["datum"].min()
+    tag = np.timedelta64(1, "D")
+    for _, g in df[kauf].groupby(["ticker", "insider"]):
+        d = g["datum"].to_numpy()
+        reihen = np.argsort(d, kind="stable")
+        d, ix = d[reihen], g.index.to_numpy()[reihen]
+        for k in range(len(d)):
+            frueher = d[:k][d[:k] < d[k] - 5 * tag]            # Käufe derselben Person davor (nicht dieselbe Meldung)
+            hist = d[k] - 365 * tag >= beginn
+            letzte = frueher.max() if len(frueher) else None
+            df.at[ix[k], "hist"] = bool(hist or letzte is not None)
+            df.at[ix[k], "erstkauf"] = bool(hist and (letzte is None or d[k] - letzte > 365 * tag))
+            df.at[ix[k], "routine"] = bool(((frueher >= d[k] - 400 * tag) & (frueher <= d[k] - 330 * tag)).any())
+    return df
+
+
+def insider_bewertung(f, umsatz=None, abst_hoch=None):
+    """Wie ungewöhnlich ist ein Insider-Kauf? f = Käufe (ohne Sparpläne) einer Aktie im Fenster,
+    mit den Spalten aus insider_merkmale. Rückgabe: (Punkte 0–100, Gründe).
+
+    Bausteine (Forschung: Seyhun; Lakonishok & Lee; Cohen, Malloy & Pomorski 2012):
+      Cluster (bis 25)   – mehrere Insider kaufen gleichzeitig
+      Rolle (bis 15)     – CEO/CFO wissen am meisten, Großaktionäre/Fonds am wenigsten
+      Bestandsplus (25)  – Kauf im Verhältnis zu dem, was die Person schon besitzt (50 Tsd. bei 50 Mio. Bestand = Rauschen)
+      Größe (bis 15)     – absolute Summe und Summe im Verhältnis zum Tagesumsatz der Aktie
+      Erstkauf (bis 10)  – erster Kauf seit über einem Jahr; Routinekäufe (jedes Jahr gleich) geben Abzug
+      Gegen den Trend (10) – Kauf nach deutlichem Kursrückgang
+    """
+    gr = []
+    pers = f[~f["firma"].astype(bool)]
+    n = int(pers["insider"].nunique())
+    wert = float(f["wert"].sum())
+    pkt = {0: 0, 1: 0, 2: 12, 3: 20}.get(n, 25)
+    if n >= 2:
+        gr.append(f"{n} Insider gleichzeitig")
+    if n:
+        kats = set(pers["kat"])
+        pkt += 15 * max(ROLLEN_GEWICHT.get(k, 0.4) for k in kats)
+        top = [k for k in ("CEO", "CFO") if k in kats]
+        if top:
+            gr.append(" und ".join(top) + " kauf" + ("en" if len(top) > 1 else "t"))
+    else:
+        pkt += 3
+        gr.append("nur Investor/Gesellschaft, kein Manager")
+    # Bestandsplus
+    auf = []
+    for _, g in pers.groupby("insider"):
+        b = g["bestand"].max()
+        if not np.isfinite(b) or b <= 0:
+            continue
+        st = g["stueck"].sum()
+        vor = b - st
+        auf.append(st / vor if vor > 0.01 * st else np.inf)
+    if auf:
+        a = max(auf)
+        if not np.isfinite(a):
+            pkt += 15
+            gr.append("neue Position (vorher keine Aktien)")
+        else:
+            pkt += next(p for g_, p in ((1.0, 25), (0.5, 22), (0.2, 18), (0.1, 14), (0.05, 9), (0.02, 4), (-1, 0)) if a >= g_)
+            if a >= 0.1:
+                gr.append(f"Bestand +{a * 100:.0f} %")
+            elif a < 0.02:
+                gr.append(f"klein: nur +{a * 100:.1f} % auf den eigenen Bestand".replace(".", ","))
+    else:
+        pkt += 7                                 # unbekannt (z. B. BaFin-Meldungen)
+    # Größe
+    pkt += 10 * float(np.clip(np.log10(max(wert, 1.0) / 1e4) / 2, 0, 1))
+    if umsatz is not None and np.isfinite(umsatz) and umsatz > 0 and wert / umsatz >= 0.1:
+        pkt += 5
+        gr.append("groß im Verhältnis zum Handelsvolumen")
+    # Erstkauf / Routine
+    if n:
+        if pers["erstkauf"].astype(bool).any():
+            pkt += 10
+            gr.append("erster Kauf seit über 12 Monaten")
+        elif pers["routine"].astype(bool).all():
+            pkt -= 5
+            gr.append("Routinekauf (wie im Vorjahr)")
+        elif not pers["hist"].astype(bool).any():
+            pkt += 4
+    # gegen den Trend
+    if abst_hoch is not None and np.isfinite(abst_hoch):
+        if abst_hoch <= -0.20:
+            pkt += 10
+            gr.append(f"kauft nach Kursrückgang ({abst_hoch * 100:.0f} % vom Hoch)".replace("-", "−"))
+        elif abst_hoch <= -0.10:
+            pkt += 5
+    return float(np.clip(pkt, 0, 100)), gr
+
+
+def auffaellig_text(p):
+    return "stark" if p >= 70 else "auffällig" if p >= 50 else "normal"
+
+
+def _insider(ins, C, umsatz, cfg):
+    """Insider-Baustein: nur echte Anomalien (Bewertung ab INSIDER_MIN_AUFFAELLIG) zählen."""
     I = np.zeros(C.shape)
     info = {}
+    leer = pd.DataFrame(I, index=C.index, columns=C.columns)
     if ins is None or ins.empty:
-        return pd.DataFrame(I, index=C.index, columns=C.columns), info
-    ins = ins[(ins["typ"] == "Kauf") & (~ins["plan"].astype(bool)) & (ins["wert"] >= cfg.INSIDER_MIN_KAUF)
-              & ins["ticker"].isin(C.columns)].copy()
-    if ins.empty:
-        return pd.DataFrame(I, index=C.index, columns=C.columns), info
+        return leer, info
+    k = ins[(ins["typ"] == "Kauf") & (~ins["plan"].astype(bool)) & (ins["wert"] >= cfg.INSIDER_MIN_KAUF)
+            & ins["ticker"].isin(C.columns)].copy()
+    if k.empty:
+        return leer, info
     idx = C.index
     # verfügbar ab dem Handelstag NACH dem Meldedatum (kein Blick in die Zukunft)
-    ins["pos"] = idx.searchsorted(pd.to_datetime(ins["datum"]).values, side="right")
-    ins = ins[ins["pos"] < len(idx)]
+    k["pos"] = idx.searchsorted(pd.to_datetime(k["datum"]).values, side="right")
+    k = k[k["pos"] < len(idx)]
     W = cfg.INSIDER_FENSTER
+    grenze = getattr(cfg, "INSIDER_MIN_AUFFAELLIG", 50)
     Cn = C.to_numpy()
-    for t, g in ins.groupby("ticker"):
+    hoch = C.rolling(252, min_periods=60).max().to_numpy()
+    Un = umsatz.to_numpy()
+    for t, g in k.groupby("ticker"):
         j = C.columns.get_loc(t)
-        tage = sorted({d for p in g["pos"].unique() for d in range(p, min(p + W, len(idx)))})
-        for d in tage:
-            f = g[(g["pos"] <= d) & (g["pos"] > d - W)]
-            n, wert = f["insider"].nunique(), f["wert"].sum()
-            if n >= 3 and wert >= 1e6:
-                s = 1.0
-            elif n >= 3 or (n >= 2 and wert >= 5e5):
-                s = 0.75
-            elif n >= 2 and wert >= 1e5:
-                s = 0.5
-            elif wert >= 1e6:
-                s = 0.4
-            else:
+        p = g["pos"].to_numpy()
+        wechsel = sorted({int(x) for x in np.concatenate([p, p + W]) if x < len(idx)})
+        for a, b in zip(wechsel, wechsel[1:] + [len(idx)]):
+            f = g[(p <= a) & (p > a - W)]
+            if f.empty:
                 continue
-            if f["kat"].isin(["CEO", "CFO"]).any():
-                s = min(1.0, s + 0.1)
-            avg = wert / (f["wert"] / f["preis"].replace(0, np.nan)).sum()
-            if not np.isfinite(avg) or Cn[d, j] < 0.9 * avg:      # Kurs schon deutlich unter Insider-Preis
+            p0 = max(int(f["pos"].max()) - 1, 0)          # Tag der letzten Meldung
+            abst = Cn[p0, j] / hoch[p0, j] - 1 if np.isfinite(hoch[p0, j]) and hoch[p0, j] > 0 else None
+            pk, gr = insider_bewertung(f, Un[p0, j], abst)
+            if pk < grenze:
                 continue
-            I[d, j] = s
-            info[(d, t)] = {"n": int(n), "wert": float(wert), "kat": sorted(set(f["kat"]))[:3]}
+            staerke = float(np.clip((pk - 35) / 45, 0, 1))
+            avg = f["wert"].sum() / (f["wert"] / f["preis"].replace(0, np.nan)).sum()
+            if not np.isfinite(avg):
+                continue
+            inf = {"n": int(f["insider"].nunique()), "wert": float(f["wert"].sum()), "kat": sorted(set(f["kat"]))[:3],
+                   "punkte": round(pk), "gruende": gr}
+            for d in range(a, min(b, len(idx))):
+                if Cn[d, j] < 0.9 * avg:                     # Kurs schon deutlich unter Insider-Preis
+                    continue
+                I[d, j] = staerke
+                info[(d, t)] = inf
     return pd.DataFrame(I, index=C.index, columns=C.columns), info
 
 
@@ -79,7 +201,7 @@ def _regime(c):
     return c > sma, c / sma - 1
 
 
-def berechne_signale(kurse, aktien, insider, cfg, regime_ticker="^GSPC"):
+def berechne_signale(kurse, aktien, insider, cfg, regime_ticker="^GSPC", sektoren=None):
     O, H, L, C, V = (kurse[f][aktien] for f in ("Open", "High", "Low", "Close", "Volume"))
     A = atr(H, L, C)
     umsatz = (C * V).rolling(50, min_periods=30).mean()
@@ -119,7 +241,8 @@ def berechne_signale(kurse, aktien, insider, cfg, regime_ticker="^GSPC"):
         & (C >= 0.97 * C.rolling(252, min_periods=200).max())
     Hs = Hs.astype(float).where(trend, 0.0)
 
-    I, iinfo = _insider(insider, C, cfg) if cfg.INSIDER_AKTIV else (C * 0.0, {})
+    insider = insider_merkmale(insider) if insider is not None else None
+    I, iinfo = _insider(insider, C, umsatz, cfg) if cfg.INSIDER_AKTIV else (C * 0.0, {})
 
     rc = kurse["Close"][regime_ticker] if regime_ticker in kurse["Close"] else C.mean(axis=1)
     regime, regime_abst = _regime(rc)
@@ -128,7 +251,8 @@ def berechne_signale(kurse, aktien, insider, cfg, regime_ticker="^GSPC"):
          "neg_sperre": neg_sperre, "regime": regime, "regime_abst": regime_abst.reindex(C.index),
          "letzte": letzte, "evPlus": evPlus, "evVF": evVF, "iinfo": iinfo, "elig": elig,
          "vola": vola, "dist200": C / sma200 - 1, "m1": m1, "m12": m12, "m6": m6, "sma200": sma200,
-         "plus": plus, "vf": vf, "gap": gap, "ev": ev}
+         "plus": plus, "vf": vf, "gap": gap, "ev": ev, "umsatz": umsatz, "insider": insider,
+         "sektor": {t: v for t, v in (sektoren or {}).items() if t in C.columns}}
     s["score"] = kombiniere(s, cfg)
     return s
 
@@ -180,8 +304,9 @@ def gruende(s, d, t):
     inf = s["iinfo"].get((d, t))
     if inf:
         rollen = f" ({', '.join(inf['kat'])})" if inf["kat"] else ""
-        wert = (f"{inf['wert'] / 1e6:.2f} Mio." if inf["wert"] >= 1e6 else f"{inf['wert'] / 1e3:.0f} Tsd.").replace(".", ",", 1)
-        g.append(f"{inf['n']} Insider kauften für {wert} eigene Aktien{rollen}")
+        wert = f"{inf['wert'] / 1e6:.2f}".replace(".", ",") + " Mio." if inf["wert"] >= 1e6 else f"{inf['wert'] / 1e3:.0f} Tsd."
+        warum = f" – {', '.join(inf.get('gruende', [])[:3])}" if inf.get("gruende") else ""
+        g.append(f"Insider-Anomalie {inf.get('punkte', 0)}/100: {inf['n']} Insider kauften für {wert} eigene Aktien{rollen}{warum}")
     if s["HO"].iat[d, j] > 0:
         g.append("Ausbruch auf ein neues 52-Wochen-Hoch mit erhöhtem Volumen")
     m = s["M"].iat[d, j]
@@ -211,7 +336,7 @@ def filter_ok(mk, filter_liste):
 # ---------------------------------------------------------------------------
 # Musterdepot
 # ---------------------------------------------------------------------------
-VERSION = 4
+VERSION = 5
 
 
 def neues_depot():
@@ -329,6 +454,17 @@ def tag_verarbeiten(dep, s, d, par, modus, firmen, bench=None, pruefe_pead=None,
             if len(aktiv) >= par.MAX_POSITIONEN:
                 status[t] = f"Portfolio voll ({par.MAX_POSITIONEN} Positionen)"
                 continue
+            sek = s.get("sektor") or {}
+            if t in sek:
+                se, br = sek[t]
+                gleich_br = [x["ticker"] for x in aktiv if sek.get(x["ticker"], ("", ""))[1] == br]
+                gleich_se = [x["ticker"] for x in aktiv if sek.get(x["ticker"], ("", ""))[0] == se]
+                if len(gleich_br) >= getattr(par, "MAX_JE_BRANCHE", 1):
+                    status[t] = f"Klumpenrisiko: Branche „{br}“ schon im Portfolio ({', '.join(gleich_br)})"
+                    continue
+                if len(gleich_se) >= getattr(par, "MAX_JE_SEKTOR", 2):
+                    status[t] = f"Klumpenrisiko: schon {len(gleich_se)} Aktien aus „{se}“ ({', '.join(gleich_se)})"
+                    continue
             reserviert = sum(tr["gewicht"] * tr["equity_signal"] for tr in aktiv if tr["status"] == "geplant")
             frei = (dep["cash"] - reserviert) / eq
             if frei < par.MIN_CASH_FUER_KAUF:

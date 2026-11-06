@@ -1,7 +1,7 @@
 # Radar
 
-Ein Musterdepot, das sich jeden Abend selbst aktualisiert. Es scannt rund 650 Aktien (S&P 500, Nasdaq 100,
-DAX, MDAX) und die Insider-Meldungen der SEC. Nur wenn **viel zusammenkommt**, gibt es **eine** Empfehlung:
+Ein Musterdepot, das sich jeden Abend selbst aktualisiert. Es scannt rund 1.700 große, mittlere und kleine Aktien
+(S&P 500/400/600, Nasdaq 100, DAX, MDAX, SDAX) und die Insider-Meldungen von SEC und BaFin. Nur wenn **viel zusammenkommt**, gibt es **eine** Empfehlung:
 welche Aktie, wie viel Prozent des Portfolios, wo der Stopp liegt und wie lange gehalten wird.
 Jede Empfehlung landet im Verlauf, und du siehst, wie sie ausgegangen ist.
 
@@ -14,13 +14,14 @@ Jede Aktie bekommt täglich einen Score von 0 bis 100 aus vier Bausteinen:
 | Baustein | Punkte | Bedingung |
 |---|---|---|
 | Kurssprung nach Zahlen (PEAD) | bis 40 | +5 % mit Gap und 3-fachem Volumen, Niveau gehalten. Live wird geprüft, ob am Sprungtag Quartalszahlen kamen |
-| Insider-Cluster | bis 40 | Vorstände/Direktoren kaufen mit eigenem Geld (USA: SEC Form 4, DE: BaFin Directors' Dealings; keine Sparpläne) |
+| Insider-Anomalie | bis 40 | Nur ungewöhnliche Käufe ab 50 von 100 Punkten: mehrere Insider, CEO/CFO, Kauf groß **im Verhältnis zum eigenen Bestand**, erster Kauf seit 12 Monaten, Kauf nach Kursrückgang. Routine- und Kleinstkäufe zählen nicht |
 | Momentum | bis 30 | Aufwärtstrend und Stärke im Vergleich zu allen Aktien |
 | 52-Wochen-Hoch | bis 15 | Ausbruch auf ein neues Jahreshoch mit erhöhtem Volumen |
 
 - **Ohne Auslöser kein Kauf:** Es braucht immer einen Kurssprung nach Zahlen oder Insider-Käufe. Momentum und 52W-Hoch allein reichen nie, auch nicht nach dem Lernen.
 - **Warnsignal:** Rutscht eine Aktie mit Volumen ab (negativer Kurssprung), wird sie verkauft und 20 Tage gesperrt.
 - **Kauf ab Score 55.** Im Abwärtstrend (S&P 500 unter seiner 200-Tage-Linie) erst ab 70.
+- **Klumpenrisiko:** höchstens 1 Aktie je Branche und 2 je Sektor.
 - **Höchstens 1 neue Empfehlung pro Tag und 5 Positionen.** Größe 12–35 % je nach Score, ein Stopp kostet höchstens 3 % des Portfolios.
 - **Ausstieg:** Nachzieh-Stopp oder Zeitstopp. **Freies Geld** liegt im S&P-500-ETF bzw. im Abwärtstrend im Geldmarkt.
 
@@ -81,6 +82,7 @@ Der PC muss dafür an sein.
 ## Ehrlich
 
 - PEAD, Insider-Käufe und Momentum sind wissenschaftlich belegt, aber bekannt und schwächer als früher. Eine neuere Studie (2022–2026) fand den Insider-Effekt vor allem in den ersten Tagen nach der Meldung, über 1–3 Monate war er nicht mehr sicher nachweisbar. Deshalb zählt Insider hier nur mit anderen Signalen zusammen.
+- Der Rückblick umfasst ~3 Jahre, damit genug Trades für eine belastbare Statistik zusammenkommen (Reiter *Statistik* → „Können oder Zufall?“).
 - Der Rückblick nutzt die **heutigen** Indexmitglieder. Firmen, die inzwischen pleite oder aus dem Index gefallen sind, fehlen. Das Ergebnis ist deshalb geschönt. Zählen tun die Live-Trades.
 - Konzentriert heißt schwankungsreich: 5 Aktien mit bis zu 35 % Gewicht können deutlich stärker fallen als ein ETF.
 - Erst ein paar Monate nur mitlesen, dann mit kleinem Geld starten.

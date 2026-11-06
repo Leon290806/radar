@@ -64,44 +64,54 @@ def marktlage(C_alle, benchmarks):
 # Insider
 # ---------------------------------------------------------------------------
 def insider_daten(ins, status, s, firmen, cfg, score):
+    """Feed (jede Transaktion mit Auffälligkeit) und Rangliste der auffälligsten Kauf-Aktivitäten."""
     C = s["C"]
+    ins = s.get("insider") if s.get("insider") is not None else ins
     if ins is None or ins.empty:
         return {"status": status, "feed": [], "cluster": []}
+    if "firma" not in ins.columns:
+        ins = engine.insider_merkmale(ins)
     ende = pd.Timestamp(C.index[-1])
     df = ins[pd.to_datetime(ins["datum"]) > ende - pd.Timedelta(days=cfg.INSIDER_FEED_TAGE)].copy()
     df = df[((df["typ"] == "Kauf") & (df["wert"] >= 10_000)) | ((df["typ"] == "Verkauf") & (df["wert"] >= cfg.INSIDER_FEED_MIN_VERKAUF))]
     kurs = {t: float(C[t].dropna().iloc[-1]) for t in df["ticker"].unique() if t in C.columns and C[t].notna().any()}
     sc = {t: float(score[t].iloc[-1]) for t in df["ticker"].unique() if t in score.columns}
+    hoch = C.iloc[-252:].max()
+    umsatz = s["umsatz"].iloc[-1] if "umsatz" in s else pd.Series(dtype=float)
+    abst = lambda t: (kurs[t] / hoch[t] - 1) if t in kurs and t in hoch.index and hoch[t] > 0 else None
     df = df.sort_values(["datum", "wert"], ascending=[False, False]).head(1500)
     feed = []
     for z in df.itertuples():
         k = kurs.get(z.ticker)
+        a = gr = None
+        if z.typ == "Kauf" and not z.plan:
+            a, gr = engine.insider_bewertung(df.loc[[z.Index]], umsatz.get(z.ticker), abst(z.ticker))
         feed.append({"d": pd.Timestamp(z.datum).date().isoformat(),
                      "h": pd.Timestamp(z.handel).date().isoformat() if pd.notna(z.handel) else None,
                      "t": z.ticker, "f": firmen.get(z.ticker, z.ticker), "n": str(z.name), "r": str(z.rolle)[:60], "k": z.kat,
                      "typ": z.typ, "st": _r(z.stueck, 0), "p": _r(z.preis, 2), "w": _r(z.wert, 0), "cur": z.waehrung,
-                     "plan": bool(z.plan), "land": z.land, "kurs": _r(k, 2),
-                     "seit": _r(k / z.preis - 1) if k and z.preis and z.preis > 0 else None, "score": _r(sc.get(z.ticker), 1)})
-    # Cluster / stärkste Aktivitäten (nur echte Käufe)
+                     "plan": bool(z.plan), "land": z.land, "kurs": _r(k, 2), "firma": bool(z.firma),
+                     "seit": _r(k / z.preis - 1) if k and z.preis and z.preis > 0 else None, "score": _r(sc.get(z.ticker), 1),
+                     "a": _r(a, 0), "ag": gr or []})
+    # Rangliste: alle echten Käufe der letzten Wochen je Aktie gemeinsam bewertet
     kaeufe = df[(df["typ"] == "Kauf") & ~df["plan"].astype(bool)]
     cluster = []
     for t, g in kaeufe.groupby("ticker"):
+        pk, gr = engine.insider_bewertung(g, umsatz.get(t), abst(t))
         n = g["insider"].nunique()
         wert = float(g["wert"].sum())
         avg = wert / (g["wert"] / g["preis"].replace(0, np.nan)).sum()
         k = kurs.get(t)
         seit = k / avg - 1 if k and avg and np.isfinite(avg) else None
-        topkat = bool(g["kat"].isin(["CEO", "CFO"]).any())
         imax = float(s["I"][t].iloc[-cfg.INSIDER_FENSTER:].max()) if t in s["I"].columns else 0.0
-        staerke = (35 * min(n, 4) / 4 + 30 * min(max(math.log10(max(wert, 1)) - 4, 0), 3) / 3 + 15 * topkat
-                   + 20 * imax - (15 if seit is not None and seit < -0.10 else 0))
         cluster.append({"t": t, "f": firmen.get(t, t), "n": int(n), "w": _r(wert, 0), "cur": g["waehrung"].iloc[0],
                         "kat": sorted(set(g["kat"])), "namen": sorted(set(g["name"].astype(str)))[:4],
                         "letzte": pd.Timestamp(g["datum"].max()).date().isoformat(), "avg": _r(avg, 2), "kurs": _r(k, 2),
-                        "seit": _r(seit), "land": g["land"].iloc[0], "staerke": _r(max(0, min(100, staerke)), 0),
-                        "score": _r(sc.get(t), 1), "imax": _r(imax, 2)})
-    cluster.sort(key=lambda x: x["staerke"], reverse=True)
-    return {"status": status, "feed": feed, "cluster": cluster[:40]}
+                        "seit": _r(seit), "land": g["land"].iloc[0], "staerke": _r(pk, 0), "gruende": gr,
+                        "label": engine.auffaellig_text(pk), "score": _r(sc.get(t), 1), "imax": _r(imax, 2)})
+    cluster.sort(key=lambda x: (x["staerke"], x["w"]), reverse=True)
+    return {"status": status, "feed": feed, "cluster": cluster[:40], "grenze": getattr(cfg, "INSIDER_MIN_AUFFAELLIG", 50),
+            "n_auff": sum(1 for c in cluster if c["staerke"] >= getattr(cfg, "INSIDER_MIN_AUFFAELLIG", 50))}
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +174,8 @@ def ticker_details(ticks, s, score, ins, dep, firmen, status_heute, par):
                                 "tage": int(n - 1 - s["letzte"].iat[n - 1, j])}
         inf = s["iinfo"].get((n - 1, t))
         if inf:
-            out[t]["ins_sig"] = {"n": inf["n"], "w": _r(inf["wert"], 0), "kat": inf["kat"]}
+            out[t]["ins_sig"] = {"n": inf["n"], "w": _r(inf["wert"], 0), "kat": inf["kat"], "a": inf.get("punkte"),
+                                 "g": inf.get("gruende", [])}
     return tdates, out
 
 
@@ -250,7 +261,8 @@ def dashboard_daten(dep, s, score, par, cfg, C_alle, aktionen, kand, ins, ins_st
                                            "GEWICHT_MOMENTUM", "GEWICHT_PEAD", "GEWICHT_INSIDER", "GEWICHT_HOCH",
                                            "MAX_POSITIONEN", "MAX_NEU_PRO_TAG", "GEWICHT_MIN", "GEWICHT_MAX",
                                            "MAX_VERLUST_PRO_TRADE", "KOSTEN", "LERN_INTERVALL", "LERN_FENSTER",
-                                           "LERN_MARGE", "LERN_MIN_TRADES", "FILTER", "MAX_GAP_EINSTIEG")}
+                                           "LERN_MARGE", "LERN_MIN_TRADES", "FILTER", "MAX_GAP_EINSTIEG",
+                                           "MAX_JE_BRANCHE", "MAX_JE_SEKTOR", "INSIDER_MIN_AUFFAELLIG")}
     return _sauber({
         "meta": {"stand": dep["letzter_tag"], "erstellt": dt.datetime.now().strftime("%d.%m.%Y %H:%M"), "demo": demo,
                  "start": dates[0], "live_seit": dep.get("live_seit"), "tage_live": sum(1 for k in kurve if k[3] == "Live"),

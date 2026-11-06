@@ -143,9 +143,9 @@ def main():
     print("Strategie-Radar" + (" – DEMO" if args.demo else ""))
     bench_ticker = [t for _, t in cfg.BENCHMARKS]
     if args.demo:
-        kurse, aktien, firmen, insider, ins_status = daten.demo_daten()
+        kurse, aktien, firmen, insider, ins_status, sektoren = daten.demo_daten()
     else:
-        aktien, firmen, h = daten.lade_universum(cfg.UNIVERSEN)
+        aktien, firmen, h, sektoren = daten.lade_universum(cfg.UNIVERSEN)
         hinweise += h
         offen = [t["ticker"] for t in (dep or {}).get("trades", []) if t["status"] in ("offen", "geplant")]
         aktien = list(dict.fromkeys(aktien + cfg.ZUSATZ_TICKER + offen))
@@ -156,7 +156,7 @@ def main():
         insider, ins_status = None, {"ok": False, "quellen": [], "luecken": [], "fehler": ["Insider-Modul ausgeschaltet"], "anzahl": 0}
         if cfg.INSIDER_AKTIV:
             idx = kurse["Close"].index
-            tage_zurueck = max(args.rueckblick if dep is None else 30, cfg.LERN_FENSTER) + 40
+            tage_zurueck = max(args.rueckblick if dep is None else 30, cfg.LERN_FENSTER) + 40 + cfg.INSIDER_HISTORIE_TAGE
             von = (idx[max(0, len(idx) - tage_zurueck)] - pd.Timedelta(days=20)).date()
             print(f"Insider-Transaktionen ab {von} laden (SEC, BaFin) ...")
             insider, ins_status = daten.lade_insider(von, cfg.SEC_USER_AGENT, set(aktien), firmen, cfg.INSIDER_LAENDER)
@@ -167,7 +167,7 @@ def main():
     C_alle = kurse["Close"]
     aktien = [t for t in aktien if t in C_alle.columns and C_alle[t].notna().sum() > 270]
     print(f"Signale berechnen für {len(aktien)} Aktien ...")
-    s = engine.berechne_signale(kurse, aktien, insider, cfg)
+    s = engine.berechne_signale(kurse, aktien, insider, cfg, sektoren=sektoren)
     idx = s["C"].index
     bench = C_alle["SPY"].reindex(idx).ffill() if "SPY" in C_alle else None
     eurusd = float(C_alle["EURUSD=X"].dropna().iloc[-1]) if "EURUSD=X" in C_alle else 1.1
