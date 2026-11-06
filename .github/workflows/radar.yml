@@ -42,6 +42,8 @@ jobs:
         env:
           CI: "1"
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+          ALPACA_KEY_ID: ${{ secrets.ALPACA_KEY_ID }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
           NTFY_THEMA: ${{ secrets.NTFY_THEMA }}
           RADAR_PASSWORT: ${{ secrets.RADAR_PASSWORT }}
           KAPITAL_EUR: ${{ vars.KAPITAL_EUR }}

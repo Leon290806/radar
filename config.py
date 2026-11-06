@@ -51,6 +51,12 @@ GELDMARKT_ZINS = 0.02      # angenommener Geldmarktzins p.a. für Phasen außerh
 # ---------------------------------------------------------------------------
 # Lernmodul: prüft regelmäßig, ob andere Einstellungen zuletzt besser funktioniert hätten
 # ---------------------------------------------------------------------------
+# Broker (Alpaca): führt die Empfehlungen automatisch aus. Braucht die GitHub-Secrets ALPACA_KEY_ID und ALPACA_SECRET_KEY.
+BROKER_AKTIV = True
+BROKER_LIVE = False            # False = Paper Trading (Spielgeld). Nur bewusst auf True stellen!
+BROKER_KERN = True             # freies Geld im S&P-500-ETF halten (wie im Musterdepot)
+BROKER_KERN_TICKER = "SPY"
+
 # Forschungslabor: wöchentlich Ereignisstudie über die ganze Historie + Wahl des Portfolio-Aufbaus
 FORSCHUNG_AKTIV = True
 FORSCHUNG_JAHRE = 8        # so viele Jahre Kurse und Insider-Daten (mehr Ereignisse = belastbarer)

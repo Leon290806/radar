@@ -275,5 +275,5 @@ def dashboard_daten(dep, s, score, par, cfg, C_alle, aktionen, kand, ins, ins_st
         "markt": regime_txt, "dates": dates, "eq": _liste(eq_n), "bench": benches, "kern": _liste(pd.Series(kern) / kern[0] * 100),
         "invest": [k[4] for k in kurve], "dd": _liste(dd, 4), "live_idx": live_idx,
         "trades": trades, "kern_w": kern_w, "aktionen": akt, "stats": stats, "scanner": scanner,
-        "insider": insd, "tdates": tdates, "tick": details, "lernen": L, "forschung": dep.get("forschung"), "par": par_d, "oddlot": oddlot, "hinweise": hinweise,
+        "insider": insd, "tdates": tdates, "tick": details, "lernen": L, "forschung": dep.get("forschung"), "broker": dep.get("broker"), "par": par_d, "oddlot": oddlot, "hinweise": hinweise,
     })

@@ -28,6 +28,7 @@ import dashboard
 import schutz
 import lernen
 import forschung
+import broker
 
 
 def lade_journal(pfad):
@@ -215,6 +216,13 @@ def main():
         print(lernen.lernen(dep, s, cfg, bench, erzwingen=args.lernen))
         par = lernen.alle_parameter(cfg, dep)
         score = engine.kombiniere(s, par)
+    if not args.demo:
+        try:
+            kt = getattr(cfg, "BROKER_KERN_TICKER", "SPY")
+            kk = float(C_alle[kt].dropna().iloc[-1]) if kt in C_alle.columns and C_alle[kt].notna().any() else None
+            print(broker.synchronisieren(dep, cfg, bool(s["regime"].iloc[-1]), kk))
+        except Exception as e:
+            print(f"Broker: Fehler ({str(e)[:120]})")
     if pw:
         schutz.journal_speichern(dep, journal_pfad, pw)
     else:

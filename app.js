@@ -272,7 +272,7 @@ function perfChart(host, opts) {
 }
 
 /* ============================== Kopf & Tabs ============================== */
-const TABS = [["uebersicht", "Übersicht"], ["portfolio", "Portfolio"], ["verlauf", "Verlauf"], ["insider", "Insider"], ["scanner", "Scanner"], ["statistik", "Statistik"], ["lernen", "Lernen"]];
+const TABS = [["uebersicht", "Übersicht"], ["portfolio", "Portfolio"], ["verlauf", "Verlauf"], ["insider", "Insider"], ["scanner", "Scanner"], ["statistik", "Statistik"], ["lernen", "Lernen"], ["broker", "Broker"]];
 const M = D.meta;
 const sp = D.markt.find(m => m.name === "S&P 500");
 document.body.insertAdjacentHTML("afterbegin", `
@@ -802,6 +802,55 @@ function forschungKarte() {
     ${(F.varianten || []).slice().sort((a, b) => (b.name === F.bester) - (a.name === F.bester) || ((b.lern || {}).ziel ?? -9) - ((a.lern || {}).ziel ?? -9)).slice(0, 20).map(v => `<tr class="${v.name === F.bester ? "hl" : ""}"><td class="l wrap" style="max-width:420px">${v.name === F.bester ? '<span class="badge b-kauf">gewählt</span> ' : ""}${esc(v.name)}</td><td>${k(v.lern)}</td><td>${pct(v.quote_lern, 0, false)}</td><td>${k(v.test)}</td><td>${pct(v.quote_test, 0, false)}</td><td>${v.gv_test ? `<span class="pos">${pct(v.gv_test[0], 1)}</span> / <span class="neg">${pct(v.gv_test[1], 1)}</span>` : "–"}</td><td>${v.trades}</td></tr>`).join("")}
     </tbody></table></div></div></div>`;
 }
+RENDER.broker = el => {
+  const B = D.broker;
+  if (!B || !B.verbunden) {
+    el.innerHTML = `<div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Broker verbinden</h3><div class="cs">Alpaca Paper Trading · Spielgeld, kein echtes Geld</div></div></div>
+      <p class="erkl">Der Radar kann seine Empfehlungen automatisch in einem Alpaca-Konto ausführen: Limit-Käufe zur Eröffnung, echte Stopp-Orders, die jeden Abend nachgezogen werden, Verkäufe nach Zeitstopp – und freies Geld im S&amp;P-500-ETF. Hier siehst du dann Kontostand, Positionen und Orders.</p>
+      <ol class="gedanken">
+        <li>Bei Alpaca einloggen und oben links <b>Paper Trading</b> wählen.</li>
+        <li>Auf der Startseite rechts unten im Kasten <b>API Keys</b> auf <b>Generate New Keys</b> klicken. Du bekommst eine <b>Key ID</b> und einen <b>Secret Key</b> (der Secret Key wird nur einmal angezeigt).</li>
+        <li>Auf GitHub im Repository <b>radar</b>: <b>Settings → Secrets and variables → Actions → New repository secret</b>. Zwei Secrets anlegen: <code>ALPACA_KEY_ID</code> und <code>ALPACA_SECRET_KEY</code>.</li>
+        <li>Unter <b>Actions → Radar → Run workflow</b> einmal starten – oder bis zum Abendlauf warten.</li>
+      </ol>
+      <div class="box warn" style="margin-top:14px">Nur US-Aktien (deutsche Werte bleiben im Musterdepot). Orders werden nur gesendet, wenn die US-Börse geschlossen ist. Der Radar fasst nur Aktien an, die er selbst gekauft hat.</div></div></div>`;
+    return;
+  }
+  const K = B.konto || {}, cur = K.waehrung || "USD";
+  const bt = w => ok(w) ? zahl(w, 2) + " " + sym(cur) : "–";
+  const start = B.start || {};
+  const seit = start.equity ? K.equity / start.equity - 1 : null;
+  const heute = K.vortag ? K.equity / K.vortag - 1 : null;
+  const inv = (B.positionen || []).reduce((a, p) => a + (p.wert || 0), 0);
+  const typ = { kaufen: ["b-kauf", "Kauf"], verkaufen: ["b-verk", "Verkauf"], stopp: ["b-neutral", "Stopp"], kern: ["b-neutral", "Kern"], hinweis: ["b-warn", "Hinweis"], info: ["b-neutral", "Info"] };
+  const radarPos = TRADES.filter(t => t.status === "offen" && !/[.^]/.test(t.ticker));
+  const fehlt = radarPos.filter(t => !(B.positionen || []).some(p => p.t === t.ticker));
+  el.innerHTML = `<div class="kpis">
+    <div class="kpi"><div class="k">Kontowert · ${esc(B.modus)}</div><div class="v">${bt(K.equity)}</div><div class="n">heute <span class="${kl(heute)}">${pct(heute)}</span></div></div>
+    <div class="kpi"><div class="k">Seit Verbindung ${start.datum ? datKurz(start.datum) : ""}</div><div class="v ${kl(seit)}">${pct(seit)}</div><div class="n">Start ${bt(start.equity)}</div></div>
+    <div class="kpi"><div class="k">In Wertpapieren</div><div class="v">${pct(K.equity ? inv / K.equity : null, 0, false)}</div><div class="n">${bt(inv)} · ${(B.positionen || []).length} Positionen</div></div>
+    <div class="kpi"><div class="k">Cash</div><div class="v">${bt(K.cash)}</div><div class="n">Kaufkraft ${bt(K.kaufkraft)}</div></div>
+    <div class="kpi"><div class="k">Offene Orders</div><div class="v">${(B.orders || []).length}</div><div class="n">Abgleich ${esc(B.zeit)}</div></div>
+  </div>
+  ${(B.fehler || []).length ? `<div class="grid"><div class="card c12"><div class="box fehler">${B.fehler.map(esc).join("<br>")}</div></div></div>` : ""}
+  ${B.verlauf && B.verlauf.t.length > 4 ? `<div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Kontoverlauf</h3><div class="cs">Wert des Broker-Kontos je Handelstag</div></div></div><div id="br-chart"></div></div></div>` : ""}
+  <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Positionen im Broker-Konto</h3><div class="cs">Live-Kurse von Alpaca · Stopp = aktive Stopp-Order</div></div></div>
+    ${(B.positionen || []).length ? `<div class="tw"><table class="tbl"><thead><tr><th class="l">Aktie</th><th>Stück</th><th>Einstand</th><th>Kurs</th><th>Wert</th><th>Anteil</th><th>G/V</th><th>heute</th><th>Stopp-Order</th></tr></thead><tbody>
+    ${B.positionen.map(p => `<tr ${D.tick[p.t] ? `class="klick" data-ticker="${esc(p.t)}"` : ""}><td class="l"><div class="tick">${esc(p.t)} ${p.radar ? "" : '<span class="badge b-neutral">nicht vom Radar</span>'}</div><div class="firma">${esc((D.tick[p.t] || {}).f || (p.t === "SPY" ? "S&P-500-ETF (Kern)" : ""))}</div></td>
+      <td>${zahl(p.qty, 0)}</td><td>${zahl(p.einstand)}</td><td>${zahl(p.kurs)}</td><td>${bt(p.wert)}</td><td>${pct(K.equity ? p.wert / K.equity : null, 1, false)}</td>
+      <td class="${kl(p.gv)}"><b>${pct(p.gv_pct)}</b><div class="klein">${bt(p.gv)}</div></td><td class="${kl(p.heute)}">${pct(p.heute)}</td><td>${p.stopp ? zahl(p.stopp) + `<div class="klein neg">${pct(p.stopp / p.kurs - 1)}</div>` : '<span class="mute">–</span>'}</td></tr>`).join("")}
+    </tbody></table></div>` : '<div class="leer">Noch keine Positionen. Neue Käufe werden zur nächsten Eröffnung ausgeführt.</div>'}
+    ${fehlt.length ? `<div class="box warn" style="margin-top:12px">Im Musterdepot offen, im Broker-Konto nicht: ${fehlt.map(t => esc(t.ticker)).join(", ")} – meist, weil das Limit nicht erreicht wurde oder die Position vor der Verbindung eröffnet wurde.</div>` : ""}</div></div>
+  <div class="grid">
+    <div class="card c6"><div class="ch"><div><h3 class="ct">Offene Orders</h3><div class="cs">werden jeden Abend neu gesetzt</div></div></div>
+      ${(B.orders || []).length ? `<div class="tw"><table class="tbl"><thead><tr><th class="l">Aktie</th><th class="l">Art</th><th>Stück</th><th>Preis</th><th class="l">Gültig</th></tr></thead><tbody>
+      ${B.orders.map(o => `<tr><td class="l"><b>${esc(o.t)}</b></td><td class="l"><span class="badge ${o.seite === "buy" ? "b-kauf" : "b-verk"}">${o.seite === "buy" ? "Kauf" : "Verkauf"}</span> ${esc({ limit: "Limit", stop: "Stopp", market: "Markt", stop_limit: "Stopp-Limit" }[o.typ] || o.typ)}</td><td>${zahl(o.qty, 0)}</td><td>${o.limit ? zahl(o.limit) : o.stopp ? zahl(o.stopp) : "–"}</td><td class="l">${esc((o.tif || "").toUpperCase())}</td></tr>`).join("")}
+      </tbody></table></div>` : '<div class="leer">Keine offenen Orders.</div>'}</div>
+    <div class="card c6"><div class="ch"><div><h3 class="ct">Letzter Abgleich</h3><div class="cs">${esc(B.zeit)} · was der Radar an den Broker gesendet hat</div></div></div>
+      ${(B.aktionen || []).length ? `<ul class="liste">${B.aktionen.map(x => `<li class="aufgabe"><span class="badge ${(typ[x.typ] || typ.info)[0]}">${(typ[x.typ] || typ.info)[1]}</span><div>${x.t ? `<b>${esc(x.t)}</b> ` : ""}${x.qty ? zahl(x.qty, 0) + " Stück · " : ""}${esc(x.text)}${x.preis ? " · " + zahl(x.preis) : ""}</div></li>`).join("")}</ul>` : '<div class="leer">Nichts zu tun.</div>'}</div>
+  </div>`;
+  if ($("#br-chart")) linie($("#br-chart"), { x: B.verlauf.t, series: [{ name: "Konto", farbe: "--s1", v: B.verlauf.eq, flaeche: true }], hoehe: 260, pr: 80, yfmt: v => zahl(v, 0) });
+};
 RENDER.lernen = el => {
   const L = D.lernen || {};
   const fl = P.FILTER || [];
