@@ -54,6 +54,17 @@ LERN_MIN_TRADES = 12
 GEWICHT_MOMENTUM = 0.30    # Stärke der letzten 6–12 Monate, nur im Aufwärtstrend
 GEWICHT_PEAD = 0.40        # Kurssprung auf Quartalszahlen, der gehalten wird
 GEWICHT_INSIDER = 0.40     # mehrere Vorstände kaufen mit eigenem Geld
+GEWICHT_HOCH = 0.15        # Ausbruch auf neues 52-Wochen-Hoch mit Volumen
+# Momentum + 52W-Hoch allein (max. 45) erreichen nie die Schwelle – es braucht Zahlen oder Insider.
+
+HOCH_VOLUMEN_FAKTOR = 1.5  # Ausbruchstag mit mind. 1,5-fachem Volumen
+HOCH_FENSTER = 5           # Signal gilt 5 Handelstage nach dem Ausbruch
+
+# Warnsignal: negativer Kurssprung (Gap und Tagesminus mit Volumen, Schwellen wie beim PEAD)
+EXIT_NEG_SPRUNG = True     # gehaltene Aktie am nächsten Tag verkaufen
+NEG_SPERRE = 20            # danach 20 Handelstage keine Käufe in dieser Aktie
+
+FILTER = []                # wird vom Lernmodul gefüllt (z. B. "Schwankung p.a. höchstens 60 %")
 
 PEAD_GAP_MIN = 0.03
 PEAD_TAGESPLUS_MIN = 0.05
@@ -63,12 +74,25 @@ PEAD_MAX_ALTER = 15
 
 INSIDER_AKTIV = True
 INSIDER_FENSTER = 10       # Käufe der letzten 10 Handelstage (nach Meldedatum)
-INSIDER_MIN_KAUF = 25_000  # kleinere Einzelkäufe ignorieren (USD)
+INSIDER_MIN_KAUF = 25_000  # kleinere Einzelkäufe ignorieren (USD bzw. EUR)
+INSIDER_LAENDER = ("USA", "DE")   # USA: SEC Form 4 · DE: BaFin Directors' Dealings (Art. 19 MAR)
+INSIDER_FEED_TAGE = 45     # so viele Tage zeigt der Insider-Reiter
+INSIDER_FEED_MIN_VERKAUF = 250_000   # Verkäufe erst ab dieser Größe anzeigen (es gibt sehr viele kleine)
 
 UNIVERSEN = ["sp500", "nasdaq100", "dax", "mdax"]   # Insider-Daten gibt es nur für US-Aktien
 ZUSATZ_TICKER = []
 MIN_PREIS = 5.0
 MIN_UMSATZ = 5_000_000     # Ø Tagesumsatz in Kurswährung
+
+# ---------------------------------------------------------------------------
+# Vergleichsindizes im Dashboard (Name, Yahoo-Ticker) – im Dashboard ein-/ausschaltbar
+# ---------------------------------------------------------------------------
+BENCHMARKS = [
+    ("S&P 500", "SPY"),
+    ("Nasdaq 100", "QQQ"),
+    ("MSCI World", "URTH"),
+    ("DAX", "^GDAXI"),
+]
 
 # ---------------------------------------------------------------------------
 # Odd-Lot-Tender (Sonderchancen, separat vom Portfolio)

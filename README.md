@@ -9,39 +9,35 @@ Der Radar handelt nicht selbst. Ordern musst du bei deinem Broker.
 
 ## Wie eine Empfehlung entsteht
 
-Jede Aktie bekommt täglich einen Score von 0 bis 100:
+Jede Aktie bekommt täglich einen Score von 0 bis 100 aus vier Bausteinen:
 
 | Baustein | Punkte | Bedingung |
 |---|---|---|
 | Kurssprung nach Zahlen (PEAD) | bis 40 | +5 % mit Gap und 3-fachem Volumen, Niveau gehalten. Live wird geprüft, ob am Sprungtag Quartalszahlen kamen |
-| Insider-Cluster | bis 40 | mehrere Vorstände kaufen mit eigenem Geld (SEC Form 4, keine Sparpläne nach 10b5-1) |
+| Insider-Cluster | bis 40 | Vorstände/Direktoren kaufen mit eigenem Geld (USA: SEC Form 4, DE: BaFin Directors' Dealings; keine Sparpläne) |
 | Momentum | bis 30 | Aufwärtstrend und Stärke im Vergleich zu allen Aktien |
+| 52-Wochen-Hoch | bis 15 | Ausbruch auf ein neues Jahreshoch mit erhöhtem Volumen |
 
-- **Momentum allein reicht nie.** Es braucht einen Auslöser (Zahlen oder Insider).
-- **Kauf ab Score 55.** Liegt der S&P 500 unter seiner 200-Tage-Linie, erst ab 70.
-- **Höchstens 1 neue Empfehlung pro Tag und 5 Positionen.** Mal kommt eine pro Woche, mal mehrere – je nachdem, was der Markt hergibt.
-- **Größe 12–35 %** des Portfolios, je höher der Score, desto mehr. Gedeckelt so, dass ein Stopp höchstens 3 % des Portfolios kostet.
-- **Ausstieg:** Nachzieh-Stopp (höchster Schluss − 3 × ATR) oder spätestens nach 40 Handelstagen.
-- **Freies Geld arbeitet mit:** Was gerade in keiner Empfehlung steckt, liegt im S&P-500-ETF, solange der Markt über seiner 200-Tage-Linie liegt, sonst im Geldmarkt. Die Empfehlungen müssen also den Markt schlagen, nicht das Sparbuch.
+- **Ohne Auslöser kein Kauf:** Es braucht immer einen Kurssprung nach Zahlen oder Insider-Käufe. Momentum und 52W-Hoch allein reichen nie, auch nicht nach dem Lernen.
+- **Warnsignal:** Rutscht eine Aktie mit Volumen ab (negativer Kurssprung), wird sie verkauft und 20 Tage gesperrt.
+- **Kauf ab Score 55.** Im Abwärtstrend (S&P 500 unter seiner 200-Tage-Linie) erst ab 70.
+- **Höchstens 1 neue Empfehlung pro Tag und 5 Positionen.** Größe 12–35 % je nach Score, ein Stopp kostet höchstens 3 % des Portfolios.
+- **Ausstieg:** Nachzieh-Stopp oder Zeitstopp. **Freies Geld** liegt im S&P-500-ETF bzw. im Abwärtstrend im Geldmarkt.
 
 ## Lernmodul
 
-Etwa alle 20 Handelstage spielt der Radar die letzten ~400 Tage mit 96 Varianten seiner Einstellungen durch: Schwelle, Haltedauer, Stopp und Gewichtung der Signale. Gewählt wird anhand der ersten zwei Drittel (Lernteil). Übernommen wird eine Variante nur, wenn sie auch im zeitlich danach liegenden Drittel (Prüfteil) klar besser ist. Die neuen Regeln gelten nur für künftige Empfehlungen, offene Positionen behalten ihre Regeln. Jede Änderung steht im Reiter *Lernen*.
+Etwa alle 20 Handelstage passiert Folgendes:
+1. **Fehleranalyse:** Was hatten die Verlierer gemeinsam? Daraus entstehen Filter-Ideen.
+2. **~180 Varianten:** Gewichtung, Schwelle, Haltedauer und Stopp werden durchgespielt.
+3. **Robustheit:** Eine Variante zählt nur, wenn auch leicht veränderte Einstellungen gut sind.
+4. **Filter-Tests:** Jede Filter-Idee wird erneut simuliert.
+5. **Bestätigung:** Gewählt wird auf dem älteren Teil, übernommen nur, was auch im neueren Teil klar besser ist.
 
-## Das Dashboard
+Alles, was der Radar dabei „denkt“, steht im Reiter *Lernen*.
 
-| Reiter | Inhalt |
-|---|---|
-| Heute | Empfehlung mit Anteil, Limit, Stopp und Gründen, weitere Aufgaben, Kennzahlen, Kurve gegen den S&P 500 |
-| Portfolio | Aufteilung, jede Position mit Mini-Chart, Stopp, Haltedauer und Gründen |
-| Verlauf | alle Empfehlungen mit Filter (Live, Rückblick, Gewinner …), je Trade Kursverlauf, Ergebnis und Vergleich zum S&P 500 |
-| Insider | aktuelle Insider-Käufe (SEC) und Status des Datenabrufs |
-| Scanner | die 15 stärksten Aktien, aufgeschlüsselt nach Momentum, Zahlen und Insider |
-| Statistik | Radar gegen S&P 500 und „nur Kern“, Kennzahlen, Ergebnis nach Auslöser, Monatsrenditen |
-| Lernen | aktuelle Einstellungen, letzte Prüfung, Änderungshistorie |
+## Dashboard
 
-Beim ersten Start spielt der Radar die letzten 250 Handelstage mit genau diesen Regeln durch (Rückblick).
-Danach läuft er live, und jede neue Empfehlung wird festgeschrieben.
+Die Reiter heißen Übersicht · Portfolio · Verlauf · Insider · Scanner · Statistik · Lernen. Ein Klick auf einen Ticker öffnet die Detailansicht mit Chart, Ereignissen, Score-Aufschlüsselung und Insider-Transaktionen.
 
 ## Variante A: automatisch in der Cloud (empfohlen, kein PC nötig)
 

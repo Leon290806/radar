@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Strategie-Radar 2 – täglicher Lauf.
+Strategie-Radar – täglicher Lauf.
 
   python radar.py                 normaler Tageslauf (holt Daten, aktualisiert Journal + Dashboard)
   python radar.py --demo          Probelauf mit erfundenen Daten
@@ -23,6 +23,7 @@ import requests
 import config as cfg
 import daten
 import engine
+import aufbereiten
 import dashboard
 import schutz
 import lernen
@@ -67,29 +68,6 @@ def pead_pruefer():
         except Exception:
             return True
     return pruefe
-
-
-def kursverlaeufe(dep, C, bench):
-    """Kurze Kursverläufe je Empfehlung für die Mini-Charts im Dashboard."""
-    idx = C.index
-    out = {}
-    for tr in dep["trades"]:
-        t = tr["ticker"]
-        if t not in C.columns:
-            continue
-        try:
-            i_sig = idx.get_loc(pd.Timestamp(tr["signal_datum"]))
-        except KeyError:
-            continue
-        i_ein = idx.get_loc(pd.Timestamp(tr["einstieg_datum"])) if tr.get("einstieg_datum") else None
-        i_aus = idx.get_loc(pd.Timestamp(tr["ausstieg_datum"])) if tr.get("ausstieg_datum") and tr["status"] == "geschlossen" else None
-        a = max(0, i_sig - 15)
-        e = min(len(idx) - 1, (i_aus if i_aus is not None else len(idx) - 1) + 5)
-        werte = [round(float(v), 4) for v in C[t].iloc[a:e + 1].ffill().bfill()]
-        out[tr["id"]] = {"c": werte, "sig": i_sig - a, "ein": None if i_ein is None else i_ein - a,
-                         "aus": None if i_aus is None else i_aus - a,
-                         "von": idx[a].date().isoformat(), "bis": idx[e].date().isoformat()}
-    return out
 
 
 def baue_aktionen(dep, eurusd):
@@ -142,6 +120,7 @@ def main():
     ap.add_argument("--demo", action="store_true")
     ap.add_argument("--neu", action="store_true", help="Journal neu beginnen")
     ap.add_argument("--rueckblick", type=int, default=cfg.RUECKBLICK_TAGE)
+    ap.add_argument("--lernen", action="store_true", help="Lernmodul sofort ausführen")
     ap.add_argument("--kein-browser", action="store_true")
     args = ap.parse_args()
 
@@ -157,41 +136,34 @@ def main():
         except Exception:
             raise SystemExit("Journal lässt sich nicht öffnen – Passwort geändert? Mit --neu neu beginnen.")
     hinweise = []
-    if dep is not None and dep.get("version", 2) < 3:
+    if dep is not None and dep.get("version", 2) < engine.VERSION:
         dep = None
-        hinweise.append("Journal wurde mit den neuen Regeln (Version 3) neu aufgebaut.")
-    insider_status = {"ok": False, "anzahl": 0, "fehler": "Insider-Modul ausgeschaltet" if not cfg.INSIDER_AKTIV else ""}
+        hinweise.append(f"Journal wurde mit den neuen Regeln (Version {engine.VERSION}) neu aufgebaut.")
 
     print("Strategie-Radar" + (" – DEMO" if args.demo else ""))
+    bench_ticker = [t for _, t in cfg.BENCHMARKS]
     if args.demo:
-        kurse, aktien, firmen, insider = daten.demo_daten()
+        kurse, aktien, firmen, insider, ins_status = daten.demo_daten()
     else:
         aktien, firmen, h = daten.lade_universum(cfg.UNIVERSEN)
         hinweise += h
         offen = [t["ticker"] for t in (dep or {}).get("trades", []) if t["status"] in ("offen", "geplant")]
         aktien = list(dict.fromkeys(aktien + cfg.ZUSATZ_TICKER + offen))
-        jahre = 2 + math.ceil((args.rueckblick if dep is None else 5) / 250)
+        jahre = max(3, 2 + math.ceil((max(args.rueckblick, cfg.LERN_FENSTER) if dep is None else cfg.LERN_FENSTER) / 250))
         print(f"{len(aktien)} Aktien – Kurse laden ({jahre} Jahre) ...")
-        kurse = daten.lade_kurse(aktien + ["SPY", "^GSPC", "^GDAXI", "EURUSD=X"], jahre=jahre)
+        kurse = daten.lade_kurse(list(dict.fromkeys(aktien + ["SPY", "^GSPC", "EURUSD=X"] + bench_ticker)), jahre=jahre)
         kurse = unfertigen_tag_entfernen(kurse)
-        insider = None
+        insider, ins_status = None, {"ok": False, "quellen": [], "luecken": [], "fehler": ["Insider-Modul ausgeschaltet"], "anzahl": 0}
         if cfg.INSIDER_AKTIV:
             idx = kurse["Close"].index
-            start_pos = max(0, len(idx) - (args.rueckblick if dep is None else 30) - 40)
-            von = (idx[start_pos] - pd.Timedelta(days=20)).date()
-            print(f"Insider-Käufe ab {von} laden (SEC) ...")
-            try:
-                insider = daten.lade_insider(von, cfg.SEC_USER_AGENT, set(aktien), hinweise)
-                print(f"  {len(insider)} Insider-Käufe gefunden")
-            except Exception as e:
-                print(f"  FEHLER Insider-Daten: {type(e).__name__}: {e}")
-                insider_status["fehler"] = f"{type(e).__name__}: {e}"
-                hinweise.append(f"Insider-Daten nicht verfügbar ({e}).")
+            tage_zurueck = max(args.rueckblick if dep is None else 30, cfg.LERN_FENSTER) + 40
+            von = (idx[max(0, len(idx) - tage_zurueck)] - pd.Timedelta(days=20)).date()
+            print(f"Insider-Transaktionen ab {von} laden (SEC, BaFin) ...")
+            insider, ins_status = daten.lade_insider(von, cfg.SEC_USER_AGENT, set(aktien), firmen, cfg.INSIDER_LAENDER)
+            print(f"  {ins_status['anzahl']} Transaktionen · Fehler: {ins_status['fehler'] or 'keine'}")
+            for f in ins_status["fehler"]:
+                hinweise.append(f"Insider-Daten: {f}")
 
-    if insider is not None:
-        insider_status.update(ok=True, anzahl=int(len(insider)), fehler="",
-                              von=str(pd.to_datetime(insider["datum"]).min().date()) if len(insider) else None,
-                              bis=str(pd.to_datetime(insider["datum"]).max().date()) if len(insider) else None)
     C_alle = kurse["Close"]
     aktien = [t for t in aktien if t in C_alle.columns and C_alle[t].notna().sum() > 270]
     print(f"Signale berechnen für {len(aktien)} Aktien ...")
@@ -213,29 +185,26 @@ def main():
         if fehlend:
             hinweise.append("Keine Kurse für offene Position(en): " + ", ".join(fehlend))
     par = lernen.parameter(cfg, dep.get("parameter"))
-    score = engine.kombiniere(s, par.GEWICHT_MOMENTUM, par.GEWICHT_PEAD, par.GEWICHT_INSIDER)
+    score = engine.kombiniere(s, par)
     pruefer = None if args.demo else pead_pruefer()
     for d in tage:
         letzter_tag = d == len(idx) - 1
         modus = "Live" if (dep["live_seit"] or letzter_tag) else "Rückblick"
-        engine.tag_verarbeiten(dep, s, d, par, modus, firmen, bench,
-                               pruefe_pead=pruefer if letzter_tag else None, score=score)
+        engine.tag_verarbeiten(dep, s, d, par, modus, firmen, bench, pruefe_pead=pruefer if letzter_tag else None,
+                               score=score, status_merken=letzter_tag)
     if dep["live_seit"] is None:
         dep["live_seit"] = dep["letzter_tag"]
-    if tage:
-        print(lernen.lernen(dep, s, cfg, bench))
+    if tage or args.lernen:
+        print(lernen.lernen(dep, s, cfg, bench, erzwingen=args.lernen))
         par = lernen.parameter(cfg, dep.get("parameter"))
-        score = engine.kombiniere(s, par.GEWICHT_MOMENTUM, par.GEWICHT_PEAD, par.GEWICHT_INSIDER)
+        score = engine.kombiniere(s, par)
     if pw:
         schutz.journal_speichern(dep, journal_pfad, pw)
     else:
         speichere_journal(dep, journal_pfad)
 
     aktionen = baue_aktionen(dep, eurusd)
-    belegt = {tr["ticker"] for tr in dep["trades"] if tr["status"] in ("offen", "geplant")}
-    kand = [k for k in engine.kandidaten(s, len(idx) - 1, 25, score) if k[0] not in belegt][:15]
-    feed = engine.insider_feed(insider, s, cfg)
-    verlaeufe = kursverlaeufe(dep, s["C"], bench)
+    kand = engine.kandidaten(s, len(idx) - 1, 30, score)
 
     oddlot = []
     if cfg.ODDLOT_AKTIV and not args.demo:
@@ -244,8 +213,10 @@ def main():
         except Exception as e:
             hinweise.append(f"Odd-Lot-Suche fehlgeschlagen ({e}).")
 
-    html = dashboard.erstelle(dep, aktionen, kand, par, bool(s["regime"].iat[-1]), oddlot, hinweise, feed,
-                              insider_status, verlaeufe, firmen, demo=args.demo)
+    print("Dashboard bauen ...")
+    D = aufbereiten.dashboard_daten(dep, s, score, par, cfg, C_alle, aktionen, kand, insider, ins_status, firmen,
+                                    oddlot, hinweise, args.demo, eurusd)
+    html = dashboard.erstelle(D)
     if pw:
         html = schutz.dashboard_sperren(html, pw)
     os.makedirs(os.path.dirname(dash_pfad), exist_ok=True)
@@ -258,7 +229,7 @@ def main():
     for a in aktionen:
         tr = a["trade"]
         print(f"  {a['typ'].upper():10s} {tr['ticker']}  " + (f"{tr['gewicht']:.0%}" if a["typ"] == "kaufen" else ""))
-    print(f"Dashboard: {os.path.abspath(dash_pfad)}")
+    print(f"Dashboard: {os.path.abspath(dash_pfad)} ({len(html) / 1e6:.1f} MB)")
 
     if tage and not args.demo:
         benachrichtigen(aktionen)
