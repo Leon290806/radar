@@ -357,6 +357,13 @@ def forschen(dep, s, ins, cfg, bench, grenze):
     varianten, ref = portfolio_aufbau(s, cfg, bench, grenze, regeln, start)
     aktiv = any(regeln.get(k) for k in ("PEAD_AKTIV", "INSIDER_TRIGGER", "MOMENTUM_TRIGGER", "HOCH_TRIGGER", "UMKEHR_TRIGGER", "NEG_KAUF_TRIGGER"))
     bester, wie = waehle(varianten, cfg, ref) if aktiv else (None, "")
+    # Mindestziel: Im Lernteil muss die gewählte Variante den S&P 500 schlagen – sonst lieber den Index halten
+    if bester and ref and ref.get("lern") and bester["lern"]["cagr"] <= ref["lern"]["cagr"]:
+        gedanken.append(f"Keine Variante hat im Lernteil den S&P 500 geschlagen (beste: {_pz(bester['lern']['cagr'])} gegenüber "
+                        f"{_pz(ref['lern']['cagr'])} pro Jahr). Der Radar kauft deshalb keine Einzelaktien – das Geld bleibt im ETF.")
+        for f in ("PEAD_AKTIV", "INSIDER_TRIGGER", "MOMENTUM_TRIGGER", "HOCH_TRIGGER", "UMKEHR_TRIGGER", "NEG_KAUF_TRIGGER"):
+            regeln[f] = False
+        bester = None
     parameter = dict(regeln)
     if bester:
         parameter.update(bester["parameter"])
