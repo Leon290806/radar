@@ -90,32 +90,87 @@ def baue_aktionen(dep, eurusd):
     return out
 
 
-def benachrichtigen(aktionen):
-    if not cfg.NTFY_THEMA or not aktionen:
-        return
-    teile = []
+def _p(x, n=1):
+    return f"{x * 100:+.{n}f} %".replace(".", ",")
+
+
+def _lauf(tr):
+    try:
+        return tr["kurs"] / tr["einstieg_kurs"] - 1
+    except (KeyError, TypeError, ZeroDivisionError):
+        return 0.0
+
+
+def tagesfazit(dep, aktionen, s, par):
+    """Kurzer Text: was der Radar heute getan hat und was er gerade denkt."""
+    z = []
     for a in aktionen:
         tr = a["trade"]
         if a["typ"] == "kaufen":
-            teile.append(f"KAUFEN {tr['ticker']}: {tr['gewicht']:.0%} des Portfolios (ca. {a['eur']:.0f} EUR), "
-                         f"Limit {tr['limit']:.2f}, Stopp {tr['stopp_hinweis']:.2f}"
-                         + (f", Gewinnziel {tr['ziel_hinweis']:.2f}" if tr.get("ziel_hinweis") else ""))
+            z.append(f"🟢 KAUFEN {tr['ticker']}: {tr['gewicht']:.0%} des Portfolios zur Eröffnung, Limit {tr['limit']:.2f}, "
+                     f"Stopp {tr['stopp_hinweis']:.2f}. Grund: {(tr.get('gruende') or ['–'])[0]}")
         elif a["typ"] == "verkaufen":
-            teile.append(f"VERKAUFEN {tr['ticker']} zur Eröffnung ({tr['verkaufen_geplant']})")
+            z.append(f"🔴 VERKAUFEN {tr['ticker']} zur Eröffnung ({tr['verkaufen_geplant']}), Stand {_p(_lauf(tr))}")
         elif a["typ"] == "gestoppt":
-            teile.append(f"AUSGESTOPPT {tr['ticker']} ({tr['ergebnis']:+.1%})")
+            z.append(f"⛔ AUSGESTOPPT {tr['ticker']}: {_p(tr['ergebnis'])}")
         elif a["typ"] == "stopp":
-            teile.append(f"Stopp {tr['ticker']} auf {tr['stopp']:.2f} anheben")
-    wichtig = any(a["typ"] != "stopp" for a in aktionen)
-    titel = "Radar: neue Empfehlung" if any(a["typ"] == "kaufen" for a in aktionen) else "Radar: Update"
-    headers = {"Title": titel, "Priority": "high" if wichtig else "low", "Tags": "chart_with_upwards_trend"}
-    if cfg.DASHBOARD_URL:
-        headers["Click"] = cfg.DASHBOARD_URL
+            z.append(f"↗ Stopp {tr['ticker']} nachgezogen auf {tr['stopp']:.2f}")
+    if not z:
+        z.append("Heute keine Änderung.")
+    # Depot
+    k = dep["kurve"]
+    offen = [t for t in dep["trades"] if t["status"] == "offen"]
+    if len(k) >= 2:
+        heute = k[-1][1] / k[-2][1] - 1
+        live = next((x for x in k if x[0] >= (dep.get("live_seit") or k[0][0])), k[0])
+        z.append(f"\n📊 Musterdepot heute {_p(heute)} · seit Live-Start {_p(k[-1][1] / live[1] - 1)} · {len(offen)}/{par.MAX_POSITIONEN} Positionen")
+    if offen:
+        best, schlecht = max(offen, key=_lauf), min(offen, key=_lauf)
+        z.append(f"Bester: {best['ticker']} {_p(_lauf(best))} · Schwächster: {schlecht['ticker']} {_p(_lauf(schlecht))}")
+    # Markt und Gedanke
+    reg = bool(s["regime"].iloc[-1])
+    abst = float(s["regime_abst"].iloc[-1]) if "regime_abst" in s else None
+    z.append(f"🌍 Markt: {'Aufwärtstrend' if reg else 'Abwärtstrend'}" + (f" (S&P 500 {_p(abst)} zur 200-Tage-Linie)" if abst is not None else "")
+             + ("" if reg else " – freies Geld im Geldmarkt"))
+    status = dep.get("kandidaten_status") or {}
+    if not any(a["typ"] == "kaufen" for a in aktionen):
+        if len(offen) >= par.MAX_POSITIONEN:
+            gedanke = "Portfolio ist voll – neue Signale erst, wenn eine Position schließt."
+        else:
+            warte = [f"{t}: {v}" for t, v in status.items() if "KAUF" not in v and "Bereits" not in v][:1]
+            gedanke = "Kein Signal stark genug." + (f" Nächster Kandidat – {warte[0]}" if warte else "")
+        z.append(f"💭 {gedanke}")
+    # Broker
+    b = dep.get("broker") or {}
+    if b.get("verbunden"):
+        kt, st = b.get("konto") or {}, b.get("start") or {}
+        if kt.get("equity"):
+            z.append(f"🏦 Alpaca: {kt['equity']:,.0f} $".replace(",", ".")
+                     + (f" ({_p(kt['equity'] / st['equity'] - 1)} seit Start)" if st.get("equity") else "")
+                     + f" · {len(b.get('positionen') or [])} Positionen · {len(b.get('orders') or [])} offene Orders")
+        if b.get("fehler"):
+            z.append("⚠ Broker-Fehler: " + b["fehler"][0][:150])
+    return "\n".join(z)
+
+
+def benachrichtigen(dep, aktionen, s, par):
+    """Push-Nachricht nach jedem Tageslauf: Aktionen + Kurzfazit. Wichtig = Kauf, Verkauf, Stopp ausgelöst, Broker-Fehler."""
+    if not cfg.NTFY_THEMA:
+        return
     try:
-        requests.post(f"https://ntfy.sh/{cfg.NTFY_THEMA}", data="\n".join(teile).encode("utf-8"),
-                      headers=headers, timeout=20)
+        text = tagesfazit(dep, aktionen, s, par)
+        kauf = sum(a["typ"] == "kaufen" for a in aktionen)
+        raus = sum(a["typ"] in ("verkaufen", "gestoppt") for a in aktionen)
+        fehler = bool((dep.get("broker") or {}).get("fehler"))
+        teile = ([f"{kauf} Kauf"] if kauf else []) + ([f"{raus} Verkauf"] if raus else [])
+        titel = f"Radar {pd.Timestamp(dep['letzter_tag']):%d.%m.}: " + (", ".join(teile) if teile else "Tagesfazit")
+        headers = {"Title": titel.encode("utf-8"), "Priority": "high" if (kauf or raus or fehler) else "default",
+                   "Tags": "chart_with_upwards_trend"}
+        if cfg.DASHBOARD_URL:
+            headers["Click"] = cfg.DASHBOARD_URL
+        requests.post(f"https://ntfy.sh/{cfg.NTFY_THEMA}", data=text.encode("utf-8"), headers=headers, timeout=20)
     except Exception as e:
-        print(f"Push-Nachricht fehlgeschlagen: {e}")
+        print(f"Push-Nachricht fehlgeschlagen: {str(e)[:120]}")
 
 
 def main():
@@ -261,7 +316,7 @@ def main():
     print(f"Dashboard: {os.path.abspath(dash_pfad)} ({len(html) / 1e6:.1f} MB)")
 
     if tage and not args.demo:
-        benachrichtigen(aktionen)
+        benachrichtigen(dep, aktionen, s, par)
     if not args.kein_browser and not os.environ.get("CI"):
         webbrowser.open("file://" + os.path.abspath(dash_pfad))
 
