@@ -410,7 +410,9 @@ def _equity(dep, s, d):
     wert = dep["cash"]
     for tr in dep["trades"]:
         if tr["status"] == "offen":
-            wert += tr["stueck"] * float(n["C"][d, n["J"][tr["ticker"]]])
+            j = n["J"].get(tr["ticker"])
+            px = float(n["C"][d, j]) if j is not None else float("nan")
+            wert += tr["stueck"] * (px if np.isfinite(px) else float(tr.get("kurs") or tr.get("einstieg_kurs") or 0))
     return wert
 
 
@@ -441,6 +443,8 @@ def tag_verarbeiten(dep, s, d, par, modus, firmen, bench=None, pruefe_pead=None,
     # 1) geplante Verkäufe zur Eröffnung
     for tr in dep["trades"]:
         if tr["status"] == "offen" and tr.get("verkaufen_geplant"):
+            if tr["ticker"] not in J or not np.isfinite(O[d, J[tr["ticker"]]]):
+                continue                                # heute keine Kursdaten – Verkauf morgen erneut
             px = float(O[d, J[tr["ticker"]]])
             dep["cash"] += tr["stueck"] * px * (1 - K)
             _schliessen(tr, iso, px, tr["verkaufen_geplant"], K, bench, C.index)
@@ -449,7 +453,7 @@ def tag_verarbeiten(dep, s, d, par, modus, firmen, bench=None, pruefe_pead=None,
     for tr in dep["trades"]:
         if tr["status"] != "geplant":
             continue
-        o = float(O[d, J[tr["ticker"]]])
+        o = float(O[d, J[tr["ticker"]]]) if tr["ticker"] in J else float("nan")
         if not np.isfinite(o) or o > tr["signal_kurs"] * (1 + par.MAX_GAP_EINSTIEG):
             tr.update(status="verpasst", ausstieg_grund="Eröffnung zu hoch – ausgelassen", ausstieg_datum=iso)
             continue
@@ -467,6 +471,13 @@ def tag_verarbeiten(dep, s, d, par, modus, firmen, bench=None, pruefe_pead=None,
         if tr["status"] != "offen" or tr.get("verkaufen_geplant"):
             continue
         t = tr["ticker"]
+        if t not in J or not np.isfinite(Cn[d, J[t]]):  # Kursdaten fehlen heute (Download-Fehler) – Position unverändert lassen
+            tr["fehlt_tage"] = tr.get("fehlt_tage", 0) + 1
+            if tr["fehlt_tage"] >= 5 and tr.get("kurs"):  # dauerhaft keine Daten: zum letzten Kurs schließen
+                dep["cash"] += tr["stueck"] * tr["kurs"] * (1 - K)
+                _schliessen(tr, iso, tr["kurs"], "Kursdaten fehlen", K, bench, C.index)
+            continue
+        tr["fehlt_tage"] = 0
         j = J[t]
         tr["stopp_vortag"] = tr["stopp"]
         lo, op, hi = float(L[d, j]), float(O[d, j]), float(N["H"][d, j])
