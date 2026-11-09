@@ -57,6 +57,10 @@ BROKER_LIVE = False            # False = Paper Trading (Spielgeld). Nur bewusst 
 BROKER_KERN = True             # freies Geld im S&P-500-ETF halten (wie im Musterdepot)
 BROKER_KERN_TICKER = "SPY"
 
+# Krypto: Funding-Rate-Arbitrage – nur Simulation (keine Orders)
+KRYPTO_AKTIV = True
+KRYPTO_COINS = 25              # die liquidesten Hyperliquid-Perps
+
 # Forschungslabor: wöchentlich Ereignisstudie über die ganze Historie + Wahl des Portfolio-Aufbaus
 FORSCHUNG_AKTIV = True
 FORSCHUNG_JAHRE = 8        # so viele Jahre Kurse und Insider-Daten (mehr Ereignisse = belastbarer)

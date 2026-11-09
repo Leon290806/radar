@@ -29,6 +29,7 @@ import schutz
 import lernen
 import forschung
 import broker
+import krypto
 
 
 def lade_journal(pfad):
@@ -140,6 +141,11 @@ def tagesfazit(dep, aktionen, s, par):
             warte = [f"{t}: {v}" for t, v in status.items() if "KAUF" not in v and "Bereits" not in v][:1]
             gedanke = "Kein Signal stark genug." + (f" Nächster Kandidat – {warte[0]}" if warte else "")
         z.append(f"💭 {gedanke}")
+    # Krypto-Simulation
+    kr = dep.get("krypto") or {}
+    if kr.get("kurve"):
+        haelt = ", ".join((kr.get("zustand") or {}).get("pos") or {}) or "Stablecoin"
+        z.append(f"🪙 Krypto-Sim: hält {haelt} · seit Start {_p(kr['kurve'][-1][1] / kr['kurve'][0][1] - 1, 2)}")
     # Broker
     b = dep.get("broker") or {}
     if b.get("verbunden"):
@@ -278,6 +284,12 @@ def main():
             print(broker.synchronisieren(dep, cfg, bool(s["regime"].iloc[-1]), kk))
         except Exception as e:
             print(f"Broker: Fehler ({str(e)[:120]})")
+    if not args.demo and getattr(cfg, "KRYPTO_AKTIV", False):
+        try:
+            print(krypto.lauf(dep, cfg)[0])
+        except Exception as e:
+            print(f"Krypto: Fehler ({str(e)[:150]})")
+            (dep.setdefault("krypto", {}))["fehler"] = str(e)[:300]
     if pw:
         schutz.journal_speichern(dep, journal_pfad, pw)
     else:
