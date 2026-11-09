@@ -305,6 +305,19 @@ def forschen(F, P, H, name):
             "funding_jahre": {str(y): round(float(v), 4) for y, v in (F.mean(axis=1) * 365).groupby(F.index.year).mean().items()}}
 
 
+def bericht(f):
+    """Nur Statistik (keine Positionen) fürs Protokoll."""
+    if not f or f.get("fehler"):
+        return f"{(f or {}).get('name', '?')}: {(f or {}).get('fehler', 'keine Daten')}"
+    k = lambda v: "–" if not v else f"{v['cagr'] * 100:+6.1f}% DD{v['maxdd'] * 100:6.1f}% S{v['sharpe']:5.1f}"
+    z = [f"KRYPTO {f['name']} {f['von']}–{f['bis']} (Lernteil bis {f['grenze']}), {len(f['coins'])} Coins",
+         "Ø Funding je Jahr (alle Coins, ohne Hebel): " + " ".join(f"{j}:{v * 100:+.1f}%" for j, v in f["funding_jahre"].items()),
+         "Strategie je Jahr: " + " ".join(f"{j}:{v * 100:+.1f}%" for j, v in f["jahre"].items())]
+    for v in f["varianten"][:12]:
+        z.append(f"  {json.dumps(v['par'])} Lern {k(v['lern'])} | Test {k(v['test'])} | Liq {v['liq']} Wechsel {v['wechsel']} inv {v['investiert'] * 100:.0f}%")
+    return "\n".join(z)
+
+
 # ---------------------------------------------------------------------------
 # Täglicher Lauf (Simulation „live“ ab Start)
 # ---------------------------------------------------------------------------

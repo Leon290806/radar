@@ -244,6 +244,14 @@ def main():
         grenze = idx[max(300, len(idx) - 1 - cfg.RUECKBLICK_TAGE)]
         print(forschung.forschen(tmp, s, s.get("insider"), cfg, bench, grenze))
         print(forschung.bericht(tmp["forschung"], s, bench))
+        if getattr(cfg, "KRYPTO_AKTIV", False):
+            try:
+                F, P, H, _ = krypto.lade_hl(getattr(cfg, "KRYPTO_COINS", 25))
+                print(krypto.bericht(krypto.forschen(F, P, H, "Hyperliquid")))
+                Fb, Pb, Hb = krypto.lade_binance()
+                print(krypto.bericht(krypto.forschen(Fb, Pb, Hb, "Binance")))
+            except Exception as e:
+                print(f"Krypto-Bericht fehlgeschlagen: {str(e)[:200]}")
         return
 
     if dep is None:
