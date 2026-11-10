@@ -142,10 +142,14 @@ def tagesfazit(dep, aktionen, s, par):
             gedanke = "Kein Signal stark genug." + (f" Nächster Kandidat – {warte[0]}" if warte else "")
         z.append(f"💭 {gedanke}")
     # Krypto-Simulation
-    kr = dep.get("krypto") or {}
-    if kr.get("kurve"):
-        haelt = ", ".join((kr.get("zustand") or {}).get("pos") or {}) or "Stablecoin"
-        z.append(f"🪙 Krypto-Sim: hält {haelt} · seit Start {_p(kr['kurve'][-1][1] / kr['kurve'][0][1] - 1, 2)}")
+    kr = ((dep.get("krypto") or {}).get("live") or {})
+    for pid, name in (("h2", "Krypto 2×"), ("profi", "Krypto Profi")):
+        L = kr.get(pid) or {}
+        if L.get("kurve"):
+            j = L.get("jetzt") or {}
+            haelt = ", ".join(h["coin"] for h in j.get("halten") or []) or "Stablecoin"
+            z.append(f"🪙 {name}: hält {haelt} · erwartet {_p(j.get('erwartet') or 0)} p.a. · seit Start "
+                     f"{_p(L['kurve'][-1][1] / L['kurve'][0][1] - 1, 2)}")
     # Broker
     b = dep.get("broker") or {}
     if b.get("verbunden"):

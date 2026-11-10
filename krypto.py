@@ -192,38 +192,72 @@ def lade_binance(coins=BINANCE_COINS, start="2020-01"):
 # ---------------------------------------------------------------------------
 # Simulation
 # ---------------------------------------------------------------------------
-STANDARD = {"N": 3, "LOOKBACK": 3, "SCHWELLE": 0.10, "HEBEL": 2, "TRAEGHEIT": 0.05,
-            "KOSTEN": 0.0015, "STABLE": 0.04, "LIQ_KOSTEN": 0.025}
+STANDARD = {"N": 3, "LOOKBACK": 3, "SCHWELLE": 0.10, "HEBEL": 2, "TRAEGHEIT": 0.05, "KOSTEN": 0.0015, "STABLE": 0.04,
+            "LIQ_KOSTEN": 0.025, "MODUS": "standard", "STAKING": False, "ZINS": False,
+            "MARGIN_ZINS": 0.04, "LEIH_ZINS": 0.08}
+# Staking-Rendite des gekauften Coins (nur bei Coins, die man staken kann – grobe, vorsichtige Werte)
+STAKING_RENDITE = {"ETH": 0.03, "SOL": 0.065}
+
+# Alle Varianten, die nebeneinander laufen. Das Labor wählt je Variante Coins, Signal-Länge und Mindest-Funding.
+PROFILE = [
+    {"id": "h1", "name": "Sicher · ohne Hebel", "kurz": "1×", "par": {"MODUS": "standard", "HEBEL": 1},
+     "text": "Spot kaufen, Perp leerverkaufen, keine Leihe. Kaum Zwangsschließungen."},
+    {"id": "h2", "name": "Standard · Hebel 2×", "kurz": "2×", "par": {"MODUS": "standard", "HEBEL": 2},
+     "text": "Ein Drittel des Kapitals als Sicherheit auf der Short-Seite, zwei Drittel arbeiten."},
+    {"id": "h3", "name": "Offensiv · Hebel 3×", "kurz": "3×", "par": {"MODUS": "standard", "HEBEL": 3},
+     "text": "Mehr Kapital arbeitet, aber Zwangsschließung schon ab ca. +30 % Tagesanstieg."},
+    {"id": "profi", "name": "Profi · Portfolio-Margin + Staking + Zins", "kurz": "PM 2×",
+     "par": {"MODUS": "pm", "HEBEL": 2, "STAKING": True, "ZINS": True},
+     "text": "Der gekaufte Coin dient als Sicherheit (Portfolio-Margin), ETH/SOL werden gestakt, Leihe kostet 8 % p.a."},
+    {"id": "max", "name": "Maximal · Portfolio-Margin 5×", "kurz": "PM 5×",
+     "par": {"MODUS": "pm", "HEBEL": 5, "STAKING": True, "ZINS": True},
+     "text": "Fünffache Position mit geliehenem Geld – zeigt, was Hebel bringt und kostet."},
+    {"id": "cross", "name": "Cross-Exchange · Hyperliquid vs. Binance", "kurz": "Cross 2×",
+     "par": {"MODUS": "cross", "HEBEL": 2},
+     "text": "Short-Perp auf Hyperliquid, Long-Perp auf Binance – verdient den Funding-Unterschied, ohne Spot."},
+]
+GRID = {"N": (1, 3, 5), "LOOKBACK": (1, 3, 7), "SCHWELLE": (0.05, 0.10, 0.20)}
 
 
 def _auswahl(sj, pos, p):
     """Welche Coins halten? sj = erwartete Funding-Rendite p.a. je Coin (Signal), pos = bisher gehaltene Coins."""
     kand = sorted([(v, c) for c, v in sj.items() if np.isfinite(v) and v >= p["SCHWELLE"]], reverse=True)
     ziel = [c for _, c in kand[:p["N"]]]
-    # Trägheit: gehaltene Coins behalten, solange sie über der halben Schwelle liegen und nicht deutlich schlechter sind
     behalten = [c for c in pos if np.isfinite(sj.get(c, np.nan)) and sj[c] >= p["SCHWELLE"] / 2
                 and (not ziel or sj[c] >= sj[ziel[-1]] - p["TRAEGHEIT"])]
     return (behalten + [c for c in ziel if c not in behalten])[:p["N"]]
 
 
+def _aufbau(p):
+    """Nominal je Kapital, geliehener Anteil, Sicherheit in USDC und Liquidationsgrenze je nach Modus."""
+    h = p["HEBEL"]
+    if p["MODUS"] == "pm":                       # Spot dient als Sicherheit; über 1× wird USDC geliehen
+        nominal = 0.95 * h
+        return nominal, max(0.0, nominal - 1.0), 0.0, 1.2 / h
+    if p["MODUS"] == "cross":                    # zwei Perps auf zwei Börsen, je Seite Margin = Nominal / Hebel
+        nominal = h / 2
+        return nominal, 0.0, 1.0, 0.9 / h
+    nominal = h / (h + 1)                        # Spot + Short-Margin
+    return nominal, 0.0, nominal / h, 0.9 / h
+
+
 def simulieren(F, P, H, par, von=None, bis=None, zustand=None, protokoll=False):
-    """Tageweise Simulation. F = tägliche Funding-Summe (Anteil), P/H = Schluss/Tageshoch.
-    Signal aus Daten bis gestern, Ertrag heute. Rückgabe: dict mit Kurve, Ereignissen und Endzustand."""
+    """Tageweise Simulation. F = tägliche Funding-Summe (bei cross: Differenz der Börsen), P/H = Schluss/Tageshoch.
+    Signal aus Daten bis gestern, Ertrag heute."""
     p = {**STANDARD, **(par or {})}
     idx = F.index
     a = idx.searchsorted(pd.Timestamp(von)) if von is not None else 0
     b = idx.searchsorted(pd.Timestamp(bis), side="right") if bis is not None else len(idx)
     a = max(a, p["LOOKBACK"] + 1)
-    sig = F.rolling(p["LOOKBACK"], min_periods=p["LOOKBACK"]).mean().shift(1) * 365      # erwartete Rendite p.a.
+    sig = F.rolling(p["LOOKBACK"], min_periods=p["LOOKBACK"]).mean().shift(1) * 365
     Fn, Sn = F.to_numpy(), sig.to_numpy()
-    Pn = P.reindex(columns=F.columns).to_numpy()
-    Hn = H.reindex(columns=F.columns).to_numpy()
+    Pn = P.reindex(index=idx, columns=F.columns).to_numpy()
+    Hn = H.reindex(index=idx, columns=F.columns).to_numpy()
     cols = list(F.columns)
     ci = {c: k for k, c in enumerate(cols)}
     z = zustand or {"eq": 1.0, "pos": {}}
     eq, pos, meta = z["eq"], dict(z["pos"]), dict(z.get("meta") or {})
-    h = p["HEBEL"]
-    nominal = h / (h + 1)                                   # Spot + Margin: so viel Nominal je Kapital-Einheit
+    nominal, leihe, margin, liq_grenze = _aufbau(p)
     kurve, ereignisse, gehalten, tage = [], [], [], []
     for d in range(a, b):
         iso = idx[d].date().isoformat()
@@ -247,11 +281,17 @@ def simulieren(F, P, H, par, von=None, bis=None, zustand=None, protokoll=False):
                 continue
             f = Fn[d, k] if np.isfinite(Fn[d, k]) else 0.0
             e = w * nominal * f
+            if p["STAKING"] and p["MODUS"] != "cross":
+                e += w * nominal * STAKING_RENDITE.get(c, 0.0) / 365
+            if p["ZINS"]:
+                e += w * margin * p["MARGIN_ZINS"] / 365 - w * leihe * p["LEIH_ZINS"] / 365
             ertrag += e
             meta.setdefault(c, {"seit": iso, "ertrag": 0.0})["ertrag"] += e
-            # Zwangsschließung der Short-Seite, wenn das Tageshoch über der Liquidationsgrenze liegt
-            if d > 0 and np.isfinite(Hn[d, k]) and np.isfinite(Pn[d - 1, k]) and Pn[d - 1, k] > 0:
-                if Hn[d, k] / Pn[d - 1, k] - 1 >= 0.9 / h:
+            # Zwangsschließung: Tagesbewegung über der Grenze (Short: Anstieg; bei cross auch Absturz für die Long-Seite)
+            if d > 0 and np.isfinite(Pn[d - 1, k]) and Pn[d - 1, k] > 0:
+                hoch = Hn[d, k] / Pn[d - 1, k] - 1 if np.isfinite(Hn[d, k]) else 0.0
+                tief = 1 - Pn[d, k] / Pn[d - 1, k] if (p["MODUS"] == "cross" and np.isfinite(Pn[d, k])) else 0.0
+                if max(hoch, tief) >= liq_grenze:
                     kosten += w * nominal * p["LIQ_KOSTEN"]
                     meta[c]["ertrag"] -= w * nominal * p["LIQ_KOSTEN"]
                     ereignisse.append((idx[d], "liquidiert", c, sj.get(c), None, None))
@@ -287,34 +327,28 @@ def jahre_tabelle(kurve):
     return {str(t.year): round(float(v / a - 1), 4) for t, v, a in zip(j.index, j.to_numpy(), vor)}
 
 
-GRID = {"N": (1, 3, 5), "LOOKBACK": (1, 3, 7), "SCHWELLE": (0.05, 0.10, 0.20), "HEBEL": (1, 2, 3)}
-
-
-def forschen(F, P, H, name):
-    """Alle Varianten auf dem Lernteil (ältere 2/3) wählen, auf dem Testteil (neueres 1/3) prüfen."""
+def forschen(F, P, H, name, basis=None, grenze=None):
+    """Alle Grid-Varianten mit festem Modus/Hebel (basis): gewählt nach Lernteil, geprüft auf Testteil."""
     idx = F.index
     if len(idx) < 200:
         return {"name": name, "fehler": "zu wenig Daten"}
-    g = idx[len(idx) * 2 // 3]
+    g = pd.Timestamp(grenze) if grenze is not None else idx[len(idx) * 2 // 3]
     erg = []
     for werte in itertools.product(*GRID.values()):
-        par = dict(zip(GRID.keys(), werte))
+        par = {**(basis or {}), **dict(zip(GRID.keys(), werte))}
         sim = simulieren(F, P, H, par)
         lern = kennzahlen([k for k in sim["kurve"] if k[0] < g])
         test = kennzahlen([k for k in sim["kurve"] if k[0] >= g])
-        liq = sum(1 for e in sim["ereignisse"] if e[1] == "liquidiert")
-        wechsel = sum(1 for e in sim["ereignisse"] if e[1] == "rein")
-        erg.append({"par": par, "lern": lern, "test": test, "gesamt": kennzahlen(sim["kurve"]), "liq": liq,
-                    "wechsel": wechsel, "investiert": sim["investiert"]})
+        erg.append({"par": par, "lern": lern, "test": test, "gesamt": kennzahlen(sim["kurve"]),
+                    "liq": sum(1 for e in sim["ereignisse"] if e[1] == "liquidiert"),
+                    "wechsel": sum(1 for e in sim["ereignisse"] if e[1] == "rein"), "investiert": sim["investiert"]})
     gueltig = [e for e in erg if e["lern"]]
     bester = max(gueltig, key=lambda e: e["lern"]["ziel"]) if gueltig else None
     sim = simulieren(F, P, H, bester["par"]) if bester else None
-    btc = P["BTC"].dropna() if "BTC" in P.columns else None
     return {"name": name, "von": idx[0].date().isoformat(), "bis": idx[-1].date().isoformat(), "grenze": g.date().isoformat(),
-            "coins": list(F.columns), "varianten": sorted(erg, key=lambda e: -(e["lern"] or {}).get("ziel", -9))[:25],
+            "coins": list(F.columns), "varianten": sorted(erg, key=lambda e: -(e["lern"] or {}).get("ziel", -9))[:10],
             "bester": bester, "jahre": jahre_tabelle(sim["kurve"]) if sim else {},
             "kurve": [[k[0].date().isoformat(), round(k[1], 5)] for k in sim["kurve"]][::2] if sim else [],
-            "btc": [[t.date().isoformat(), round(float(v), 2)] for t, v in btc.iloc[::2].items()] if btc is not None else [],
             "funding_jahre": {str(y): round(float(v), 4) for y, v in (F.mean(axis=1) * 365).groupby(F.index.year).mean().items()}}
 
 
@@ -323,17 +357,12 @@ def bericht(f):
     if not f or f.get("fehler"):
         return f"{(f or {}).get('name', '?')}: {(f or {}).get('fehler', 'keine Daten')}"
     k = lambda v: "–" if not v else f"{v['cagr'] * 100:+6.1f}% DD{v['maxdd'] * 100:6.1f}% S{v['sharpe']:5.1f}"
-    z = [f"KRYPTO {f['name']} {f['von']}–{f['bis']} (Lernteil bis {f['grenze']}), {len(f['coins'])} Coins",
-         "Ø Funding je Jahr (alle Coins, ohne Hebel): " + " ".join(f"{j}:{v * 100:+.1f}%" for j, v in f["funding_jahre"].items()),
-         "Strategie je Jahr: " + " ".join(f"{j}:{v * 100:+.1f}%" for j, v in f["jahre"].items())]
-    for v in f["varianten"][:12]:
-        z.append(f"  {json.dumps(v['par'])} Lern {k(v['lern'])} | Test {k(v['test'])} | Liq {v['liq']} Wechsel {v['wechsel']} inv {v['investiert'] * 100:.0f}%")
-    return "\n".join(z)
+    b = f.get("bester") or {}
+    return (f"KRYPTO {f['name']} {f['von']}–{f['bis']} (Lern bis {f['grenze']}) · {json.dumps(b.get('par'))} "
+            f"Lern {k(b.get('lern'))} | Test {k(b.get('test'))} | Liq {b.get('liq')} · Jahre "
+            + " ".join(f"{j}:{v * 100:+.1f}%" for j, v in f["jahre"].items()))
 
 
-# ---------------------------------------------------------------------------
-# Täglicher Lauf (Simulation „live“ ab Start)
-# ---------------------------------------------------------------------------
 def _r(x, n=4):
     try:
         x = float(x)
@@ -343,7 +372,7 @@ def _r(x, n=4):
 
 
 def _vergleich(kurve, serien):
-    """Indizes auf die Daten der Kurve legen (Wochenenden mit letztem Kurs), Start = 0 %."""
+    """Vergleichsreihen auf die Daten der Kurve legen (Wochenenden mit letztem Kurs), Start = 0 %."""
     if not kurve:
         return {}
     tage = pd.DatetimeIndex([x[0] for x in kurve])
@@ -363,70 +392,113 @@ def _vergleich(kurve, serien):
     return out
 
 
+def _cross_daten(F, Fb):
+    """Funding-Differenz Hyperliquid minus Binance für gemeinsame Coins (nur Tage mit beiden Daten)."""
+    gem = [c for c in F.columns if c in Fb.columns]
+    if not gem:
+        return pd.DataFrame()
+    a, b = F[gem], Fb[gem].reindex(F.index)
+    return (a - b).where(a.notna() & b.notna()).dropna(how="all")
+
+
+def _jetzt(F, zustand, par, letzter):
+    p = {**STANDARD, **par}
+    sig = (F.tail(p["LOOKBACK"]).mean() * 365).dropna()
+    halten = _auswahl(sig.to_dict(), (zustand or {}).get("pos") or {}, p)
+    nominal, leihe, margin, liq = _aufbau(p)
+    meta = (zustand or {}).get("meta") or {}
+    alt = list(((zustand or {}).get("pos") or {}).keys())
+    erw = 0.0
+    for c in halten:
+        e = sig.get(c, 0) * nominal
+        if p["STAKING"] and p["MODUS"] != "cross":
+            e += STAKING_RENDITE.get(c, 0) * nominal
+        if p["ZINS"]:
+            e += margin * p["MARGIN_ZINS"] - leihe * p["LEIH_ZINS"]
+        erw += e / p["N"]
+    erw += (1 - len(halten) / p["N"]) * p["STABLE"]
+    return {"ab": (pd.Timestamp(letzter) + pd.Timedelta(days=1)).date().isoformat(), "nominal": nominal, "leihe": leihe,
+            "hebel": p["HEBEL"], "modus": p["MODUS"], "liq": liq,
+            "halten": [{"coin": c, "signal": _r(sig.get(c)), "anteil": round(1 / p["N"], 4), "seit": (meta.get(c) or {}).get("seit"),
+                        "ertrag": _r((meta.get(c) or {}).get("ertrag")),
+                        "staking": STAKING_RENDITE.get(c) if p["STAKING"] and p["MODUS"] != "cross" else None} for c in halten],
+            "rein": [c for c in halten if c not in alt], "raus": [c for c in alt if c not in halten],
+            "erwartet": _r(erw), "schwelle": p["SCHWELLE"], "n": p["N"], "lookback": p["LOOKBACK"]}
+
+
+# ---------------------------------------------------------------------------
+# Täglicher Lauf: alle Profile forschen (wöchentlich) und live simulieren (täglich)
+# ---------------------------------------------------------------------------
 def lauf(dep, cfg, forschung_faellig=None, bench=None):
     k = dep.get("krypto") or {}
+    if k.get("version") != 2:                               # Umstellung auf mehrere Profile: neu beginnen
+        k = {"version": 2}
     if forschung_faellig is None:
         fd = k.get("forschung_datum")
         forschung_faellig = not fd or (pd.Timestamp.utcnow().tz_localize(None) - pd.Timestamp(fd)).days >= 7
     F, P, H, markt = lade_hl(getattr(cfg, "KRYPTO_COINS", 25))
     if F.empty:
         raise RuntimeError("Keine Hyperliquid-Daten")
-    meldungen = []
-    if forschung_faellig or not k.get("forschung_hl"):
-        k["forschung_hl"] = forschen(F, P, H, "Hyperliquid")
+    Fb = Pb = Hb = None
+    if forschung_faellig or not k.get("profile"):
         try:
             Fb, Pb, Hb = lade_binance()
-            k["forschung_bn"] = forschen(Fb, Pb, Hb, "Binance") if not Fb.empty else {"fehler": "keine Binance-Daten"}
         except Exception as e:
-            k["forschung_bn"] = {"fehler": str(e)[:200]}
+            k["binance_fehler"] = str(e)[:200]
+        grenze = F.index[len(F.index) * 2 // 3]
+        profile = {}
+        for pr in PROFILE:
+            if pr["par"]["MODUS"] == "cross":
+                D = _cross_daten(F, Fb) if Fb is not None and not Fb.empty else pd.DataFrame()
+                res = forschen(D, P, H, pr["name"], pr["par"], grenze) if len(D) > 200 else {"name": pr["name"], "fehler": "keine Binance-Daten"}
+            else:
+                res = forschen(F, P, H, pr["name"], pr["par"], grenze)
+            profile[pr["id"]] = res
+        k["profile"] = profile
+        if Fb is not None and not Fb.empty:
+            k["binance"] = forschen(Fb, Pb, Hb, "Binance ab 2020 · Standard 2×", {"MODUS": "standard", "HEBEL": 2})
         k["forschung_datum"] = F.index[-1].date().isoformat()
-        meldungen.append("Krypto-Forschung aktualisiert")
-    bester = (k["forschung_hl"] or {}).get("bester")
-    par = (bester or {}).get("par") or {}
-    k["par"] = par
-    # Live-Simulation ab Start
-    if not k.get("start"):
-        k["start"] = F.index[-1].date().isoformat()
-        k["zustand"] = {"eq": 1.0, "pos": {}}
-        k["kurve"] = [[k["start"], 1.0]]
-        k["letzter_tag"] = k["start"]
-    neue = F.index[F.index > pd.Timestamp(k["letzter_tag"])]
-    if len(neue):
-        sim = simulieren(F, P, H, par, von=neue[0], zustand=k["zustand"], protokoll=True)
-        k["zustand"] = sim["zustand"]
-        k["kurve"] += [[t.date().isoformat(), round(v, 6)] for t, v in sim["kurve"]]
-        k["ereignisse"] = (k.get("ereignisse") or [])[-300:] + [
-            [t.date().isoformat(), a, c, _r(sg), _r(er), seit] for t, a, c, sg, er, seit in sim["ereignisse"]]
-        k["protokoll"] = ((k.get("protokoll") or []) + sim["tage"])[-120:]
-        k["letzter_tag"] = F.index[-1].date().isoformat()
-    # Was der Bot jetzt (für den nächsten Tag) halten würde
-    pp = {**STANDARD, **par}
-    sig_jetzt = (F.tail(pp["LOOKBACK"]).mean() * 365).dropna()
-    halten = _auswahl(sig_jetzt.to_dict(), k["zustand"].get("pos") or {}, pp)
-    nominal = pp["HEBEL"] / (pp["HEBEL"] + 1)
-    alt = list((k["zustand"].get("pos") or {}).keys())
-    k["jetzt"] = {"ab": (F.index[-1] + pd.Timedelta(days=1)).date().isoformat(), "nominal": nominal, "hebel": pp["HEBEL"],
-                  "halten": [{"coin": c, "signal": _r(sig_jetzt.get(c)), "anteil": round(1 / pp["N"], 4),
-                              "seit": ((k["zustand"].get("meta") or {}).get(c) or {}).get("seit"),
-                              "ertrag": _r(((k["zustand"].get("meta") or {}).get(c) or {}).get("ertrag"))} for c in halten],
-                  "rein": [c for c in halten if c not in alt], "raus": [c for c in alt if c not in halten],
-                  "erwartet": _r(sum(sig_jetzt.get(c, 0) for c in halten) / pp["N"] * nominal
-                                 + (1 - len(halten) / pp["N"]) * pp["STABLE"]),
-                  "schwelle": pp["SCHWELLE"], "n": pp["N"], "lookback": pp["LOOKBACK"]}
-    # Vergleich mit Indizes (Aktien) und Bitcoin – gleicher Zeitraum
+    # Live-Simulation je Profil (Cross nur im Backtest – Binance-Livedaten sind von GitHub aus gesperrt)
     serien = dict(bench or {})
     if "BTC" in P.columns:
         serien["Bitcoin"] = P["BTC"]
-    k["vergleich_bt"] = _vergleich((k.get("forschung_hl") or {}).get("kurve") or [], serien)
-    k["vergleich_live"] = _vergleich(k.get("kurve") or [], serien)
-    # aktueller Markt + was der Bot morgen halten würde
+    live = k.get("live") or {}
+    letzter = F.index[-1].date().isoformat()
+    for pr in PROFILE:
+        res = (k["profile"] or {}).get(pr["id"]) or {}
+        par = ((res.get("bester") or {}).get("par")) or {**pr["par"]}
+        L = live.get(pr["id"])
+        if pr["par"]["MODUS"] == "cross":
+            live[pr["id"]] = {"nur_backtest": True, "par": par}
+            continue
+        if not L:
+            L = {"start": letzter, "zustand": {"eq": 1.0, "pos": {}}, "kurve": [[letzter, 1.0]], "letzter_tag": letzter,
+                 "ereignisse": [], "protokoll": []}
+        neue = F.index[F.index > pd.Timestamp(L["letzter_tag"])]
+        if len(neue):
+            sim = simulieren(F, P, H, par, von=neue[0], zustand=L["zustand"], protokoll=True)
+            L["zustand"] = sim["zustand"]
+            L["kurve"] += [[t.date().isoformat(), round(v, 6)] for t, v in sim["kurve"]]
+            L["ereignisse"] = (L["ereignisse"] + [[t.date().isoformat(), a, c, _r(sg), _r(er), seit]
+                                                  for t, a, c, sg, er, seit in sim["ereignisse"]])[-200:]
+            L["protokoll"] = (L["protokoll"] + sim["tage"])[-90:]
+            L["letzter_tag"] = letzter
+        L["par"] = par
+        L["jetzt"] = _jetzt(F, L["zustand"], par, letzter)
+        live[pr["id"]] = L
+    k["live"] = live
+    # Vergleichsreihen (gleiche Tage wie die Kurven)
+    k["vergleich_bt"] = _vergleich((k["profile"].get("h2") or {}).get("kurve") or [], serien)
+    erste_live = next((L for L in live.values() if L.get("kurve")), None)
+    k["vergleich_live"] = _vergleich(erste_live["kurve"], serien) if erste_live else {}
+    sig7 = (F.tail(7).mean() * 365)
     m = markt.sort_values("apr", ascending=False)
-    sig = (F.tail(par.get("LOOKBACK", 3)).mean() * 365).sort_values(ascending=False)
-    k["markt"] = [{"coin": r.coin, "apr": round(r.apr, 4), "signal": round(float(sig.get(r.coin, np.nan)), 4) if r.coin in sig else None,
-                   "oi": round(r.oi_usd), "vol": round(r.vol_usd), "preis": r.preis} for r in m.head(40).itertuples()
-                  if r.vol_usd >= 5e6]
+    k["markt"] = [{"coin": r.coin, "apr": round(r.apr, 4), "signal": _r(sig7.get(r.coin)) if r.coin in sig7 else None,
+                   "oi": round(r.oi_usd), "vol": round(r.vol_usd), "preis": r.preis} for r in m.head(60).itertuples() if r.vol_usd >= 5e6]
+    k["profil_info"] = [{"id": p["id"], "name": p["name"], "kurz": p["kurz"], "text": p["text"]} for p in PROFILE]
     k["stand"] = dt.datetime.now().strftime("%d.%m.%Y %H:%M")
+    k.pop("fehler", None)
     dep["krypto"] = k
-    pos = ", ".join(k["zustand"]["pos"]) or "Stablecoin"
-    meldungen.append(f"Krypto-Simulation: {len(neue)} neue(r) Tag(e)")
-    return " · ".join(meldungen), pos
+    h2 = live.get("h2") or {}
+    return f"Krypto: {len(PROFILE)} Profile simuliert" + (" · Forschung aktualisiert" if forschung_faellig else ""), \
+        ", ".join(((h2.get("zustand") or {}).get("pos") or {}).keys()) or "Stablecoin"
