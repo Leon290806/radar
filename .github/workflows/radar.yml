@@ -57,7 +57,7 @@ jobs:
           git config user.email "radar-bot@users.noreply.github.com"
           git add speicher/journal.enc docs/index.html
           git diff --cached --quiet || git commit -m "Radar $(date -u +%F)"
-          git push
+          git pull --rebase -X theirs origin main && git push || (sleep 20 && git pull --rebase -X theirs origin main && git push)
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
