@@ -836,7 +836,7 @@ RENDER.krypto = el => {
     return;
   }
   const INFO = K.profil_info || [], PR = K.profile || {}, LV = K.live || {};
-  const FARBE = { h1: "--s3", h2: "--s1", h3: "--s4", profi: "--s7", max: "--bad", cross: "--s5" };
+  const FARBE = { h1: "--s3", h2: "--s1", h3: "--s4", profi: "--s7", max: "--warn", h5: "--bad", cross: "--s5" };
   const BFARBE = { "S&P 500": "--s2", "MSCI World": "--s6", "DAX": "--s5", "Nasdaq 100": "--ink3", "Bitcoin": "--warn" };
   let wahl = lies("krypto_profil", "h2"); if (!INFO.some(p => p.id === wahl)) wahl = "h2";
   const kap = 10000;
@@ -925,8 +925,8 @@ RENDER.krypto = el => {
     </tbody></table></div></div></div>
   <div class="grid"><div class="card c12"><h3 class="ct" style="margin-bottom:8px">Risiken und Annahmen</h3><ul class="liste">
     <li class="aufgabe"><span class="badge b-warn">Börse</span><span>Das Geld liegt bei der Börse bzw. im Smart Contract. Fällt sie aus (wie FTX 2022), ist es weg – das größte Risiko. Cross-Exchange verteilt es auf zwei Börsen.</span></li>
-    <li class="aufgabe"><span class="badge b-warn">Hebel</span><span>Je höher der Hebel, desto kleiner der Kurssprung, der die Short-Seite zwangsschließt (2×: ~45 %, 3×: ~30 %, Portfolio-Margin 5×: ~24 %). Simuliert mit 2,5 % Kosten je Zwangsschließung. Profis steuern rund um die Uhr nach – dieser Bot prüft einmal am Abend.</span></li>
-    <li class="aufgabe"><span class="badge b-warn">Leihe</span><span>Portfolio-Margin über 1× arbeitet mit geliehenem USDC (angenommen 8 % p.a.). Lohnt sich nur, wenn das Funding höher ist.</span></li>
+    <li class="aufgabe"><span class="badge b-warn">Hebel</span><span>Je höher der Hebel, desto kleiner der Kurssprung, der die Short-Seite zwangsschließt (2×: ~45 %, 3×: ~30 %, 5×: ~18 %). Simuliert mit 2,5 % Kosten je Zwangsschließung. Profis steuern rund um die Uhr nach – dieser Bot prüft einmal am Abend.</span></li>
+    <li class="aufgabe"><span class="badge b-warn">Portfolio-Margin</span><span>Auf Hyperliquid zählen nur BTC (Beleihung 50 %) und HYPE (65 %) als Sicherheit, ab 10.000 $ Kontowert. Über 1× wird USDC geliehen (angenommen 8 % p.a.) – lohnt sich nur, wenn das Funding höher ist.</span></li>
     <li class="aufgabe"><span class="badge b-warn">Staking</span><span>Gestakte Coins (z. B. stETH) können kurzzeitig unter dem Coin-Preis notieren. Angenommen: ETH 3 %, SOL 6,5 % p.a.</span></li>
     <li class="aufgabe"><span class="badge b-neutral">Modell</span><span>Tageswerte, Gebühren 0,15 % je Seite und Wechsel. Kursabweichungen zwischen Spot und Perp, Spreads und Börsen-Details sind vereinfacht – real schwankt es mehr. Portfolio-Margin und Margin-Zinsen gibt es nicht auf jeder Börse.</span></li>
   </ul></div></div>`;

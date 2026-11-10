@@ -197,6 +197,8 @@ STANDARD = {"N": 3, "LOOKBACK": 3, "SCHWELLE": 0.10, "HEBEL": 2, "TRAEGHEIT": 0.
             "MARGIN_ZINS": 0.04, "LEIH_ZINS": 0.08}
 # Staking-Rendite des gekauften Coins (nur bei Coins, die man staken kann – grobe, vorsichtige Werte)
 STAKING_RENDITE = {"ETH": 0.03, "SOL": 0.065}
+# Hyperliquid Portfolio-Margin: nur diese Coins zählen als Sicherheit (Beleihungswert laut Hyperliquid-Doku)
+PM_LTV = {"BTC": 0.5, "HYPE": 0.65}
 
 # Alle Varianten, die nebeneinander laufen. Das Labor wählt je Variante Coins, Signal-Länge und Mindest-Funding.
 PROFILE = [
@@ -206,12 +208,14 @@ PROFILE = [
      "text": "Ein Drittel des Kapitals als Sicherheit auf der Short-Seite, zwei Drittel arbeiten."},
     {"id": "h3", "name": "Offensiv · Hebel 3×", "kurz": "3×", "par": {"MODUS": "standard", "HEBEL": 3},
      "text": "Mehr Kapital arbeitet, aber Zwangsschließung schon ab ca. +30 % Tagesanstieg."},
-    {"id": "profi", "name": "Profi · Portfolio-Margin + Staking + Zins", "kurz": "PM 2×",
-     "par": {"MODUS": "pm", "HEBEL": 2, "STAKING": True, "ZINS": True},
-     "text": "Der gekaufte Coin dient als Sicherheit (Portfolio-Margin), ETH/SOL werden gestakt, Leihe kostet 8 % p.a."},
-    {"id": "max", "name": "Maximal · Portfolio-Margin 5×", "kurz": "PM 5×",
-     "par": {"MODUS": "pm", "HEBEL": 5, "STAKING": True, "ZINS": True},
-     "text": "Fünffache Position mit geliehenem Geld – zeigt, was Hebel bringt und kostet."},
+    {"id": "profi", "name": "Profi · Portfolio-Margin BTC/HYPE", "kurz": "PM",
+     "par": {"MODUS": "pm", "HEBEL": 1.5, "STAKING": True, "ZINS": True},
+     "text": "Gekaufter BTC/HYPE dient als Sicherheit (nur diese erlaubt Hyperliquid), 1,5-fache Position, Leihe 8 % p.a."},
+    {"id": "max", "name": "Maximal · Portfolio-Margin am Limit", "kurz": "PM max",
+     "par": {"MODUS": "pm", "HEBEL": 3, "STAKING": True, "ZINS": True},
+     "text": "So viel Position, wie der Beleihungswert erlaubt (BTC bis ~1,8×, HYPE bis ~2,6×) – maximaler Hebel."},
+    {"id": "h5", "name": "Extrem · Hebel 5× ohne Portfolio-Margin", "kurz": "5×", "par": {"MODUS": "standard", "HEBEL": 5},
+     "text": "Zum Vergleich: klassisch 5× – Zwangsschließung schon ab ca. +18 % Tagesanstieg."},
     {"id": "cross", "name": "Cross-Exchange · Hyperliquid vs. Binance", "kurz": "Cross 2×",
      "par": {"MODUS": "cross", "HEBEL": 2},
      "text": "Short-Perp auf Hyperliquid, Long-Perp auf Binance – verdient den Funding-Unterschied, ohne Spot."},
@@ -228,12 +232,13 @@ def _auswahl(sj, pos, p):
     return (behalten + [c for c in ziel if c not in behalten])[:p["N"]]
 
 
-def _aufbau(p):
+def _aufbau(p, coin=None):
     """Nominal je Kapital, geliehener Anteil, Sicherheit in USDC und Liquidationsgrenze je nach Modus."""
     h = p["HEBEL"]
     if p["MODUS"] == "pm":                       # Spot dient als Sicherheit; über 1× wird USDC geliehen
-        nominal = 0.95 * h
-        return nominal, max(0.0, nominal - 1.0), 0.0, 1.2 / h
+        ltv = PM_LTV.get(coin, 0.5)
+        nominal = min(0.95 * h, 0.9 / (1 - ltv))  # nicht mehr, als der Beleihungswert hergibt (10 % Puffer)
+        return nominal, max(0.0, nominal - 1.0), 0.0, 1.2 / max(nominal, 1.0)
     if p["MODUS"] == "cross":                    # zwei Perps auf zwei Börsen, je Seite Margin = Nominal / Hebel
         nominal = h / 2
         return nominal, 0.0, 1.0, 0.9 / h
@@ -261,15 +266,18 @@ def simulieren(F, P, H, par, von=None, bis=None, zustand=None, protokoll=False):
     kurve, ereignisse, gehalten, tage = [], [], [], []
     for d in range(a, b):
         iso = idx[d].date().isoformat()
-        sj = {cols[k]: Sn[d, k] for k in range(len(cols)) if np.isfinite(Fn[d, k])}
+        sj = {cols[k]: Sn[d, k] for k in range(len(cols)) if np.isfinite(Fn[d, k])
+              and (p["MODUS"] != "pm" or cols[k] in PM_LTV)}
         neu = _auswahl(sj, pos, p)
         anteil = 1.0 / p["N"]
         kosten = 0.0
         for c in [c for c in pos if c not in neu]:
+            nominal, leihe, margin, liq_grenze = _aufbau(p, c)
             kosten += pos[c] * nominal * p["KOSTEN"]
             m = meta.pop(c, {})
             ereignisse.append((idx[d], "raus", c, sj.get(c), m.get("ertrag", 0.0), m.get("seit")))
         for c in [c for c in neu if c not in pos]:
+            nominal, leihe, margin, liq_grenze = _aufbau(p, c)
             kosten += anteil * nominal * p["KOSTEN"]
             meta[c] = {"seit": iso, "ertrag": -anteil * nominal * p["KOSTEN"]}
             ereignisse.append((idx[d], "rein", c, sj.get(c), None, None))
@@ -279,6 +287,7 @@ def simulieren(F, P, H, par, von=None, bis=None, zustand=None, protokoll=False):
             k = ci.get(c)
             if k is None:
                 continue
+            nominal, leihe, margin, liq_grenze = _aufbau(p, c)
             f = Fn[d, k] if np.isfinite(Fn[d, k]) else 0.0
             e = w * nominal * f
             if p["STAKING"] and p["MODUS"] != "cross":
@@ -404,12 +413,15 @@ def _cross_daten(F, Fb):
 def _jetzt(F, zustand, par, letzter):
     p = {**STANDARD, **par}
     sig = (F.tail(p["LOOKBACK"]).mean() * 365).dropna()
+    if p["MODUS"] == "pm":
+        sig = sig[[c for c in sig.index if c in PM_LTV]]
     halten = _auswahl(sig.to_dict(), (zustand or {}).get("pos") or {}, p)
-    nominal, leihe, margin, liq = _aufbau(p)
+    nominal, leihe, margin, liq = _aufbau(p, halten[0] if halten else "BTC")
     meta = (zustand or {}).get("meta") or {}
     alt = list(((zustand or {}).get("pos") or {}).keys())
     erw = 0.0
     for c in halten:
+        nominal, leihe, margin, liq = _aufbau(p, c)
         e = sig.get(c, 0) * nominal
         if p["STAKING"] and p["MODUS"] != "cross":
             e += STAKING_RENDITE.get(c, 0) * nominal
@@ -444,8 +456,8 @@ def bericht_alle(cfg):
 # ---------------------------------------------------------------------------
 def lauf(dep, cfg, forschung_faellig=None, bench=None):
     k = dep.get("krypto") or {}
-    if k.get("version") != 2:                               # Umstellung auf mehrere Profile: neu beginnen
-        k = {"version": 2}
+    if k.get("version") != 3:                               # geänderte Profile: Simulation neu beginnen
+        k = {"version": 3}
     if forschung_faellig is None:
         fd = k.get("forschung_datum")
         forschung_faellig = not fd or (pd.Timestamp.utcnow().tz_localize(None) - pd.Timestamp(fd)).days >= 7
