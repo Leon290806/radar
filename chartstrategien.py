@@ -348,8 +348,9 @@ ERKENNER = {"lsob": setups_lsob, "delfin": setups_delfin, "guss": setups_guss, "
 # ---------------------------------------------------------------------------
 # Trades simulieren
 # ---------------------------------------------------------------------------
-def simuliere(D, setups, p):
-    """Ein Trade gleichzeitig je Coin. Rückgabe: Liste Trades mit R und Konto-Rendite (1 % Risiko)."""
+def simuliere(D, setups, p, offen=None):
+    """Ein Trade gleichzeitig je Coin. Rückgabe: Liste Trades mit R und Konto-Rendite (1 % Risiko).
+    offen (Liste) bekommt den noch laufenden Trade am Datenende."""
     h, l, c, e21, n, t = D["h"], D["l"], D["c"], D["e21"], D["n"], D["t"]
     trades, frei_ab = [], -1
     for s in setups:
@@ -391,7 +392,10 @@ def simuliere(D, setups, p):
         if aus is None:
             aus = min(n - 1, start + MAX_KERZEN - 1)
             if aus == n - 1 and start + MAX_KERZEN - 1 > n - 1:
-                continue                                               # noch offen – nicht werten
+                if offen is not None:                                  # noch offen – nicht werten, aber anzeigen
+                    offen.append({"zeit": t[i].isoformat(), "seite": seite, "art": s["art"], "entry": entry, "stopp": float(sl),
+                                  "ziel": float(ziel) if ziel is not None else None, "kurs": float(c[-1])})
+                break
             aus_px, grund = c[aus], "Zeit"
         bewegung = (aus_px - entry) / entry * seite
         hebel = min(RISIKO / (risiko / entry), MAX_HEBEL)
@@ -537,17 +541,12 @@ def live(F, start):
                     if D["t"][s["i"]] >= start:
                         signale.append({"coin": coin, "zeit": D["t"][s["i"]].isoformat(), "seite": s["seite"], "art": s["art"],
                                         "entry": s["entry"], "stopp": s["stopp"]})
-                tr = simuliere(D, [s for s in st if D["t"][s["i"]] >= start], r["par"])
-                for x in tr:
+                lauf_offen = []
+                tr = simuliere(D, [s for s in st if D["t"][s["i"]] >= start], r["par"], lauf_offen)
+                for x in tr + lauf_offen:
                     x["coin"] = coin
                 trades += tr
-                # offen: letztes Signal ohne abgeschlossenen Trade
-                letzte = [s for s in st if D["t"][s["i"]] >= start]
-                if letzte:
-                    s = letzte[-1]
-                    if not any(x["ein"] == D["t"][s["i"]].isoformat() for x in tr):
-                        offen.append({"coin": coin, "zeit": D["t"][s["i"]].isoformat(), "seite": s["seite"], "art": s["art"],
-                                      "entry": s["entry"], "stopp": s["stopp"], "kurs": float(D["c"][-1])})
+                offen += lauf_offen
             out[sid][tf] = {"trades": sorted(trades, key=lambda x: x["ein"])[-60:], "offen": offen,
                             "signale": sorted(signale, key=lambda x: x["zeit"])[-60:], "stat": statistik(trades),
                             "kurve": _kurve(trades)}

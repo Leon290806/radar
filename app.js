@@ -829,7 +829,7 @@ function multiChart(host, defs, key) {
   male();
 }
 
-RENDER.krypto = el => {
+function kryptoArbitrage(el) {
   const K = D.krypto;
   if (!K || !K.profile) {
     el.innerHTML = `<div class="grid"><div class="card c12"><h3 class="ct">Krypto · Funding-Arbitrage</h3>${K && K.fehler ? `<div class="box fehler">${esc(K.fehler)}</div>` : '<div class="leer">Startet mit dem nächsten Abendlauf.</div>'}</div></div>`;
@@ -933,7 +933,83 @@ RENDER.krypto = el => {
   if ($("#kr-bt")) multiChart($("#kr-bt"), btDefs.concat(vglDefs(K.vergleich_bt, h2k.map(x => x[0]))), "krypto_bt");
   if ($("#kr-live")) multiChart($("#kr-live"), liveDefs.concat(vglDefs(K.vergleich_live, (erster ? erster.kurve : []).map(x => x[0]))), "krypto_live");
   el.querySelectorAll("[data-profil]").forEach(z => z.onclick = () => { merke("krypto_profil", z.dataset.profil); RENDER.krypto(el); });
+}
+
+RENDER.krypto = el => {
+  let unter = lies("krypto_unter", "chart");
+  el.innerHTML = `<div class="unterreiter seg" style="margin-bottom:16px"><button data-u="chart" class="${unter === "chart" ? "an" : ""}">Chart-Strategien · LSOB, GUSS, Delfin, Ausbruch</button><button data-u="arb" class="${unter === "arb" ? "an" : ""}">Funding-Arbitrage</button></div><div id="kr-inhalt"></div>`;
+  el.querySelectorAll("[data-u]").forEach(b => b.onclick = () => { merke("krypto_unter", b.dataset.u); RENDER.krypto(el); });
+  const inhalt = $("#kr-inhalt");
+  if (unter === "arb") kryptoArbitrage(inhalt); else kryptoChart(inhalt, el);
 };
+
+function kryptoChart(el, wurzel) {
+  const C = (D.krypto || {}).chart;
+  if (!C || !C.forschung) { el.innerHTML = `<div class="grid"><div class="card c12"><h3 class="ct">Chart-Strategien</h3><div class="leer">Werden beim nächsten Lauf berechnet.</div></div></div>`; return; }
+  const F = C.forschung, S = F.strategien || {}, INFO = C.info || {}, LV = C.live || {};
+  const TFS = F.timeframes || ["15m", "1h", "4h"], IDS = Object.keys(INFO);
+  let wahl = lies("chart_wahl", { s: "lsob", tf: "1h" });
+  if (!S[wahl.s] || !S[wahl.s][wahl.tf]) wahl = { s: IDS.find(i => S[i] && S[i]["1h"]) || IDS[0], tf: "1h" };
+  const FARBE = { lsob: "--s1", delfin: "--s3", guss: "--s7", ausbruch: "--s4" };
+  const R = x => ok(x) ? (x >= 0 ? "+" : "−") + zahl(Math.abs(x), 2) + " R" : "–";
+  const urteil = st => !st || !st.n ? ["b-neutral", "–"] : st.n < 30 ? ["b-neutral", "zu wenig Trades"] : (st.avgR > 0 && (st.t || 0) >= 2) ? ["b-kauf", "belegt"] : st.avgR > 0 ? ["b-warn", "schwach"] : ["b-verk", "kein Vorteil"];
+  const zelle = (sid, tf) => { const r = (S[sid] || {})[tf]; if (!r) return `<td>–</td>`; const t = r.test || {}, u = urteil(t);
+    return `<td class="klick ${sid === wahl.s && tf === wahl.tf ? "hl" : ""}" data-s="${sid}" data-tf="${tf}" style="cursor:pointer"><b class="${kl(t.avgR)}">${R(t.avgR)}</b><div class="klein mute">PF ${zahl(t.pf, 2)} · ${pct(t.treffer, 0, false)} Treffer · ${t.n || 0} Trades</div><span class="badge ${u[0]}" style="margin-top:4px">${u[1]}</span></td>`; };
+  const r = S[wahl.s][wahl.tf], T = r.test || {}, Lr = r.lern || {}, lv = (LV[wahl.s] || {})[wahl.tf] || {};
+  const regeln = {
+    lsob: ["Liquidity Sweep: Ein Hoch nimmt ein früheres Pivot-Hoch (Länge 5) deutlich mit – gleiche Hochs zählen nicht.", "Danach zwei Gegenkerzen → die Sweep-Kerze ist der Orderblock (Zone von Tief bis Hoch).", "Preis verlässt die Zone, kommt zurück und lehnt ab: Docht in die Zone (max. 50 %), Schluss außerhalb → Short zum Schluss.", "Ungültig: neuer Sweep über die Zone, Schluss mehr als 20 % in der Zone, oder nach 150 Kerzen.", "Stopp knapp über der Zone, Ziel als Vielfaches des Risikos. Long gespiegelt."],
+    delfin: ["Vorher Schluss über der EMA21, dann Rückgang darunter.", "Rücklauf: Kerze berührt die EMA21 mit dem Docht von unten, schließt darunter, mit deutlichem oberem Docht.", "Ungültig, wenn sich EMA21 und EMA50 in den letzten 10 Kerzen gekreuzt haben.", "Stopp über dem Docht, Ziel = letztes Tief (mind. 1,5 R) oder 2 R. Long gespiegelt."],
+    guss: ["Neues höheres Hoch (Strukturbruch), weit über der EMA21 (mind. K × ATR) – Überdehnung, EMA50 über EMA200.", "Danach Korrektur OHNE bullishe Gegenkerze bis zur EMA50 → Long an der EMA50.", "Optional: EMA50 liegt im Fibonacci-Bereich 0,5–0,786 der Bewegung.", "Stopp unter dem letzten Tief; Ziel EMA21 (Scalp) oder Stopp auf Einstand an der EMA21 und Ziel 3 R. Short gespiegelt."],
+    ausbruch: ["Widerstände = die letzten 3 Pivot-Körperenden.", "Kerzenkörper schließt überwiegend über dem Widerstand, oberer Docht max. 30 % des Körpers, Kerze nicht riesig (max. 2,5 ATR).", "Nächster Widerstand lässt mind. 1:2 zu; Stopp unter dem Docht der Ausbruchskerze, Ziel als Vielfaches des Risikos. Short gespiegelt."]
+  }[wahl.s] || [];
+  const trTab = (liste, live) => liste && liste.length ? `<div class="tw"><table class="tbl"><thead><tr><th class="l">Einstieg</th><th class="l">Coin</th><th class="l">Art</th><th>Einstieg</th><th>Stopp</th><th>Ausstieg</th><th class="l">Grund</th><th>Ergebnis</th><th>Konto</th></tr></thead><tbody>
+    ${liste.slice().reverse().map(x => `<tr><td class="l">${esc(x.ein.slice(0, 16).replace("T", " "))}</td><td class="l"><b>${esc(x.coin || "")}</b></td><td class="l"><span class="badge ${x.seite > 0 ? "b-kauf" : "b-verk"}">${x.seite > 0 ? "Long" : "Short"}</span> ${esc(x.art.split(" ")[0])}</td>
+      <td>${zahl(x.entry, x.entry < 10 ? 4 : 2)}</td><td>${zahl(x.stopp, x.stopp < 10 ? 4 : 2)}</td><td>${zahl(x.exit, x.exit < 10 ? 4 : 2)}</td><td class="l">${esc(x.grund)}</td><td class="${kl(x.R)}"><b>${R(x.R)}</b></td><td class="${kl(x.konto)}">${pct(x.konto, 2)}</td></tr>`).join("")}
+    </tbody></table></div>` : `<div class="leer">${live ? "Seit Start der Live-Simulation noch keine abgeschlossenen Trades." : "Keine Trades."}</div>`;
+  const kurven = IDS.filter(i => S[i] && S[i][wahl.tf] && S[i][wahl.tf].kurve.length).map(i => ({ name: INFO[i].kurz, farbe: FARBE[i] || "--s6", punkte: S[i][wahl.tf].kurve, an: true, breite: i === wahl.s ? 2.6 : 1.6 }))
+    .concat(Object.keys(F.vergleich || {}).map(n => ({ name: n, farbe: "--warn", punkte: F.vergleich[n].filter(p => p[0] >= ((S[wahl.s][wahl.tf] || {}).von || "")), an: false, breite: 1.3, strich: "5 4" })));
+  el.innerHTML = `<div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Chart-Strategien · nachgebaut und geprüft <span class="badge b-neutral">Simulation</span></h3>
+      <div class="cs">${F.coins.length} Coins (${F.coins.join(", ")}) · Timeframes ${TFS.join(", ")} · Binance-Archiv bis ${datKurz(r.bis)} · gewählt auf den älteren 2/3, geprüft auf dem neueren 1/3 · Stand ${esc(C.stand || "")}</div></div></div>
+    <p class="erkl">LSOB und GUSS sind auf TradingView geschützt – der Code ist nicht einsehbar. Die Regeln hier sind aus den Strategie-PDFs und den Indikator-Einstellungen nachgebaut und für jeden Coin und Timeframe auf echten Kursen getestet: Einstieg erst nach Kerzenschluss, Stopp zuerst, wenn Stopp und Ziel in derselben Kerze liegen, 0,07 % Kosten je Seite, 1 % Risiko je Trade. <b>R</b> = Gewinn oder Verlust in Vielfachen des Risikos (−1 R = Stopp). Liquidation-Heatmaps gibt es nicht als freie Historie und sind deshalb nicht Teil des Tests.</p></div></div>
+  <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Ergebnis im Testteil · Ø je Trade</h3><div class="cs">Daten, die bei der Wahl der Einstellungen unbekannt waren · Zelle antippen für Details · „belegt“ = Ø über 0 und t-Wert ab 2</div></div></div>
+    <div class="tw"><table class="tbl"><thead><tr><th class="l">Strategie</th>${TFS.map(tf => `<th>${tf}</th>`).join("")}</tr></thead><tbody>
+    ${IDS.map(sid => `<tr><td class="l"><i class="dot" style="background:var(${FARBE[sid]});display:inline-block;margin-right:6px"></i><b>${esc(INFO[sid].name)}</b></td>${TFS.map(tf => zelle(sid, tf)).join("")}</tr>`).join("")}
+    </tbody></table></div></div></div>
+  <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Equity-Kurven · alle Strategien auf ${esc(wahl.tf)}</h3><div class="cs">alle Coins zusammen, 1 % Risiko je Trade, ganzer Zeitraum (Lern- und Testteil)</div></div>
+      <div class="seg" id="ch-tf">${TFS.map(tf => `<button data-tf="${tf}" class="${tf === wahl.tf ? "an" : ""}">${tf}</button>`).join("")}</div></div><div id="ch-kurven"></div></div></div>
+  <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Was der Bot gerade macht · ${esc(INFO[wahl.s].kurz)} ${esc(wahl.tf)}</h3><div class="cs">Live-Simulation auf Hyperliquid-Kerzen seit ${datKurz(C.start)} · keine echten Orders</div></div>
+      <div class="seg" id="ch-s">${IDS.map(i => `<button data-s="${i}" class="${i === wahl.s ? "an" : ""}">${esc(INFO[i].kurz)}</button>`).join("")}</div></div>
+    ${(lv.offen || []).length ? `<div class="tw"><table class="tbl"><thead><tr><th class="l">Coin</th><th class="l">Signal</th><th class="l">seit</th><th>Einstieg</th><th>Stopp</th><th>Kurs jetzt</th><th>Stand</th></tr></thead><tbody>
+      ${lv.offen.map(o => { const st = (o.kurs - o.entry) / (o.entry - o.stopp);
+        return `<tr><td class="l"><b>${esc(o.coin)}</b></td><td class="l"><span class="badge ${o.seite > 0 ? "b-kauf" : "b-verk"}">${o.seite > 0 ? "Long" : "Short"}</span> ${esc(o.art)}</td><td class="l">${esc(o.zeit.slice(0, 16).replace("T", " "))}</td><td>${zahl(o.entry, o.entry < 10 ? 4 : 2)}</td><td>${zahl(o.stopp, o.stopp < 10 ? 4 : 2)}</td><td>${zahl(o.kurs, o.kurs < 10 ? 4 : 2)}</td><td class="${kl(st)}">${R(st)}</td></tr>`; }).join("")}
+      </tbody></table></div>` : `<div class="box">Gerade keine offene Position. Neue Signale prüft der Bot bei jedem Lauf.</div>`}
+    <div class="kpis" style="margin-top:14px">
+      <div class="kpi"><div class="k">Live seit ${datKurz(C.start)}</div><div class="v ${kl((lv.stat || {}).rendite)}">${pct((lv.stat || {}).rendite, 1)}</div><div class="n">${(lv.stat || {}).n || 0} Trades · Ø ${R((lv.stat || {}).avgR)}</div></div>
+      <div class="kpi"><div class="k">Testteil · Ø je Trade</div><div class="v ${kl(T.avgR)}">${R(T.avgR)}</div><div class="n">t-Wert ${zahl(T.t, 1)} · ${T.n || 0} Trades</div></div>
+      <div class="kpi"><div class="k">Testteil · Rendite</div><div class="v ${kl(T.rendite)}">${pct(T.rendite, 0)}</div><div class="n">größter Rückgang ${pct(T.maxdd, 0)}</div></div>
+      <div class="kpi"><div class="k">Trefferquote · PF</div><div class="v">${pct(T.treffer, 0, false)}</div><div class="n">Profit Factor ${zahl(T.pf, 2)} · Ø Gewinn ${R(T.gewinnR)} / Verlust ${R(T.verlustR)}</div></div>
+      <div class="kpi"><div class="k">Lernteil · Ø je Trade</div><div class="v ${kl(Lr.avgR)}">${R(Lr.avgR)}</div><div class="n">${Lr.n || 0} Trades · Einstellungen ${esc(Object.entries(r.par).map(([k, v]) => k + " " + v).join(", "))}</div></div>
+    </div></div></div>
+  <div class="grid">
+    <div class="card c6"><div class="ch"><div><h3 class="ct">Je Coin · Testteil</h3><div class="cs">${esc(INFO[wahl.s].kurz)} ${esc(wahl.tf)} · Long ${R((r.long || {}).avgR)} · Short ${R((r.short || {}).avgR)} (ganzer Zeitraum)</div></div></div>
+      <div class="tw"><table class="tbl"><thead><tr><th class="l">Coin</th><th>Trades</th><th>Treffer</th><th>Ø je Trade</th><th>PF</th><th>Rendite</th><th>Lernteil Ø</th></tr></thead><tbody>
+      ${Object.entries(r.coins || {}).sort((a, b) => ((b[1].test || {}).avgR ?? -9) - ((a[1].test || {}).avgR ?? -9)).map(([c, v]) => `<tr><td class="l"><b>${esc(c)}</b></td><td>${v.test.n || 0}</td><td>${pct(v.test.treffer, 0, false)}</td><td class="${kl(v.test.avgR)}"><b>${R(v.test.avgR)}</b></td><td>${zahl(v.test.pf, 2)}</td><td class="${kl(v.test.rendite)}">${pct(v.test.rendite, 0)}</td><td class="${kl(v.lern.avgR)}">${R(v.lern.avgR)}</td></tr>`).join("")}
+      </tbody></table></div></div>
+    <div class="card c6"><div class="ch"><div><h3 class="ct">Regeln · ${esc(INFO[wahl.s].name)}</h3><div class="cs">so wurde die Strategie nachgebaut</div></div></div>
+      <ol class="gedanken">${regeln.map(x => `<li>${esc(x)}</li>`).join("")}</ol>
+      <h4 class="ct" style="margin:14px 0 8px;font-size:14px">Getestete Einstellungen</h4>
+      <div class="tw"><table class="tbl"><thead><tr><th class="l">Einstellungen</th><th>Lernteil</th><th>Testteil</th><th>Trades</th></tr></thead><tbody>
+      ${(r.varianten || []).slice().sort((a, b) => (b.lern.avgR ?? -9) - (a.lern.avgR ?? -9)).map(v => `<tr class="${JSON.stringify(v.par) === JSON.stringify(r.par) ? "hl" : ""}"><td class="l">${JSON.stringify(v.par) === JSON.stringify(r.par) ? '<span class="badge b-kauf">gewählt</span> ' : ""}${esc(Object.entries(v.par).map(([k, x]) => k + " " + x).join(" · "))}</td><td class="${kl(v.lern.avgR)}">${R(v.lern.avgR)}</td><td class="${kl(v.test.avgR)}">${R(v.test.avgR)}</td><td>${(v.lern.n || 0) + (v.test.n || 0)}</td></tr>`).join("")}
+      </tbody></table></div></div>
+  </div>
+  <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Live-Trades · ${esc(INFO[wahl.s].kurz)} ${esc(wahl.tf)}</h3><div class="cs">seit ${datKurz(C.start)}, alle Coins</div></div></div>${trTab(lv.trades, true)}</div></div>
+  <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Letzte Trades im Backtest · ${esc(INFO[wahl.s].kurz)} ${esc(wahl.tf)}</h3><div class="cs">zur Kontrolle der Regeln – im Chart nachprüfbar</div></div></div>${trTab(r.letzte, false)}</div></div>`;
+  multiChart($("#ch-kurven"), kurven, "chart_kurven_" + wahl.tf);
+  const setze = w => { merke("chart_wahl", w); kryptoChart(el, wurzel); };
+  el.querySelectorAll("td[data-s]").forEach(z => z.onclick = () => setze({ s: z.dataset.s, tf: z.dataset.tf }));
+  el.querySelectorAll("#ch-tf [data-tf]").forEach(b => b.onclick = () => setze({ s: wahl.s, tf: b.dataset.tf }));
+  el.querySelectorAll("#ch-s [data-s]").forEach(b => b.onclick = () => setze({ s: b.dataset.s, tf: wahl.tf }));
+}
 
 RENDER.broker = el => {
   const B = D.broker;
