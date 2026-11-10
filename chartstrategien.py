@@ -34,7 +34,9 @@ COINS = ["BTC", "ETH", "SOL", "XRP", "BNB", "DOGE", "LINK", "AVAX", "ADA", "SUI"
 TIMEFRAMES = {"15m": {"quelle": "15m", "monate": 24, "ms": 900_000},
               "1h": {"quelle": "1h", "monate": 70, "ms": 3_600_000},
               "4h": {"quelle": "1h", "monate": 70, "ms": 14_400_000, "resample": "4h"}}
-KOSTEN = 0.0007              # Gebühr + Schlupf je Seite
+KOSTEN = 0.0006              # Einstieg/Stopp: Taker-Gebühr 0,04 % + Schlupf 0,02 %
+KOSTEN_ZIEL = 0.0002         # Gewinnziel als Limit-Order (Maker 0,014 % + Rest)
+MIN_ZIEL = 0.005             # Ziel muss mind. 0,5 % entfernt sein (sonst fressen Gebühren den Gewinn – Regel aus dem Bootcamp)
 RISIKO = 0.01                # 1 % des Kontos je Trade
 MAX_HEBEL = 5.0
 MAX_KERZEN = 300             # Trade wird spätestens nach so vielen Kerzen geschlossen
@@ -44,12 +46,15 @@ STRATEGIEN = {
     "delfin": {"name": "Delfin · EMA21-Rücklauf", "kurz": "Delfin"},
     "guss": {"name": "GUSS · Sniper an der EMA50", "kurz": "GUSS"},
     "ausbruch": {"name": "Ausbruch · Old Money Stacks", "kurz": "Ausbruch"},
+    "wicks": {"name": "Advancing/Retracing Wicks an der EMA21", "kurz": "Wicks"},
 }
 GRID = {
-    "lsob": {"TP": [1.5, 2.0, 3.0], "TREND": [False, True]},
+    "lsob": {"TP": [1.5, 2.0, 3.0], "REAKTION": [1, 2], "SL": ["docht", "block"], "WAND": [False, True],
+             "TEIL": [False, True]},                       # TEIL: halbe Position bei 1 R raus, Rest Stopp auf Einstand
     "delfin": {"TP": ["swing", 2.0], "TREND": [False, True]},
     "guss": {"K": [1.5, 3.0], "EXIT": ["ema21", "be3"], "FIB": [False, True]},
     "ausbruch": {"TP": [1.5, 2.0, 3.0], "TREND": [False, True]},
+    "wicks": {"TP": [1.5, 2.0], "DOCHT": [0.3, 0.5]},
 }
 
 
@@ -127,66 +132,86 @@ def _pivots(x, L, hoch=True):
 # ---------------------------------------------------------------------------
 # Setups erkennen. Rückgabe: Liste von dict(i=Einstiegs-Kerze, seite=+1/-1, entry, stopp, ziel(optional), art)
 # ---------------------------------------------------------------------------
+def _wand(D, i, seite, entry, risiko):
+    """Liegt eine EMA (21/50/200) zwischen Einstieg und 1 R? Dann hat der Trade „keinen Platz zum Atmen“."""
+    for e in (D["e21"][i], D["e50"][i], D["e200"][i]):
+        if seite > 0 and entry < e < entry + risiko:
+            return True
+        if seite < 0 and entry - risiko < e < entry:
+            return True
+    return False
+
+
 def setups_lsob(D, p, L=5, inval=0.20, retest=0.10, docht=0.50, ablauf=150):
-    o, h, l, c, atr, e200, n = D["o"], D["h"], D["l"], D["c"], D["atr"], D["e200"], D["n"]
+    """Nach Bootcamp Tag 7: Sweep eines Pivot-Hochs/-Tiefs, 1–2 Gegenkerzen (Reaktion), Box = Kerze mit dem extremsten
+    Docht. Preis verlässt die Box, kommt zurück (Berührung mit Docht oder Körper minimal drin), dann Ablehnungskerze in
+    Trade-Richtung MIT Docht → Einstieg nach Kerzenschluss, Stopp hinter dem Docht der Ablehnungskerze (oder hinter
+    der Box). Ungültig: Körper schließt zu tief in die Box, neuer Sweep, Kerze zu groß, Wand (EMA) vor der Nase."""
+    o, h, l, c, atr, n = D["o"], D["h"], D["l"], D["c"], D["atr"], D["n"]
     ph, _ = _pivots(h, L, True)
     pl, _ = _pivots(l, L, False)
+    rk = int(p.get("REAKTION", 2))
     out = []
     letzt_h = letzt_l = np.nan
-    zonen = []                                   # [seite, unten, oben, bestätigt_ab, verlassen]
+    zonen = []                                   # [seite, unten, oben, bestätigt_ab, verlassen, beruehrt]
     for i in range(n):
         if not np.isnan(ph[i]):
             letzt_h = ph[i]
         if not np.isnan(pl[i]):
             letzt_l = pl[i]
         a = atr[i] if np.isfinite(atr[i]) else 0
-        # neue Zone: Sweep-Kerze s = i-2, danach zwei Gegenkerzen (i-1, i)
-        s = i - 2
+        s = i - rk
         if s > 0 and a > 0:
-            if np.isfinite(letzt_h) and h[s] > letzt_h + 0.1 * a and h[s] == max(h[s - 1:i + 1]) and c[i - 1] < o[i - 1] and c[i] < o[i]:
-                zonen.append([-1, l[s], h[s], i, False, s])
+            gegen_b = all(c[k] < o[k] for k in range(s + 1, i + 1))
+            gegen_s = all(c[k] > o[k] for k in range(s + 1, i + 1))
+            if np.isfinite(letzt_h) and h[s] > letzt_h + 0.05 * a and h[s] == max(h[s - 1:i + 1]) and gegen_b:
+                zonen.append([-1, l[s], h[s], i, False, False])
                 letzt_h = np.nan
-            if np.isfinite(letzt_l) and l[s] < letzt_l - 0.1 * a and l[s] == min(l[s - 1:i + 1]) and c[i - 1] > o[i - 1] and c[i] > o[i]:
-                zonen.append([1, l[s], h[s], i, False, s])
+            if np.isfinite(letzt_l) and l[s] < letzt_l - 0.05 * a and l[s] == min(l[s - 1:i + 1]) and gegen_s:
+                zonen.append([1, l[s], h[s], i, False, False])
                 letzt_l = np.nan
         neu = []
         for z in zonen:
-            seite, un, ob, ab, verlassen, s0 = z
+            seite, un, ob, ab, verlassen, beruehrt = z
             hoehe = max(ob - un, 1e-12)
-            if i <= ab:
-                neu.append(z)
+            if i <= ab or i - ab > ablauf:
+                if i <= ab:
+                    neu.append(z)
                 continue
-            if i - ab > ablauf:
-                continue
+            rng = h[i] - l[i]
             if seite < 0:
-                if h[i] > ob:                                 # neuer Sweep über die Zone -> ungültig
-                    continue
-                if c[i] > un + inval * hoehe:                 # schließt zu weit rein
+                if h[i] > ob or c[i] > un + inval * hoehe:          # neuer Sweep / zu tief reingeschlossen
                     continue
                 if not verlassen:
-                    z[4] = c[i] < un
+                    z[4] = c[i] < un and h[i] < un
                     neu.append(z)
                     continue
-                if h[i] >= un - retest * hoehe:               # Retest
-                    if h[i] <= un + docht * hoehe and c[i] < un and (not p.get("TREND") or c[i] < e200[i]):
-                        stopp = ob + 0.1 * a
-                        out.append({"i": i, "seite": -1, "entry": c[i], "stopp": stopp, "art": "LSOB Short", "zone": [un, ob], "s": s0})
-                        continue
+                if h[i] >= un - retest * hoehe:
+                    z[5] = True
+                if z[5] and c[i] < o[i] and (h[i] - o[i]) > 0.1 * rng:   # bärische Ablehnung mit oberem Docht
+                    if rng <= 2.0 * a:                                    # Kerze nicht zu groß
+                        stopp = (h[i] if p.get("SL", "docht") == "docht" else ob) + 0.05 * a
+                        risk = stopp - c[i]
+                        if risk > 0 and not (p.get("WAND") and _wand(D, i, -1, c[i], risk)):
+                            out.append({"i": i, "seite": -1, "entry": c[i], "stopp": stopp, "art": "LSOB Short", "zone": [un, ob]})
+                    continue                                              # Zone verbraucht
                 neu.append(z)
             else:
-                if l[i] < un:
-                    continue
-                if c[i] < ob - inval * hoehe:
+                if l[i] < un or c[i] < ob - inval * hoehe:
                     continue
                 if not verlassen:
-                    z[4] = c[i] > ob
+                    z[4] = c[i] > ob and l[i] > ob
                     neu.append(z)
                     continue
                 if l[i] <= ob + retest * hoehe:
-                    if l[i] >= ob - docht * hoehe and c[i] > ob and (not p.get("TREND") or c[i] > e200[i]):
-                        stopp = un - 0.1 * a
-                        out.append({"i": i, "seite": 1, "entry": c[i], "stopp": stopp, "art": "LSOB Long", "zone": [un, ob], "s": s0})
-                        continue
+                    z[5] = True
+                if z[5] and c[i] > o[i] and (o[i] - l[i]) > 0.1 * rng:
+                    if rng <= 2.0 * a:
+                        stopp = (l[i] if p.get("SL", "docht") == "docht" else un) - 0.05 * a
+                        risk = c[i] - stopp
+                        if risk > 0 and not (p.get("WAND") and _wand(D, i, 1, c[i], risk)):
+                            out.append({"i": i, "seite": 1, "entry": c[i], "stopp": stopp, "art": "LSOB Long", "zone": [un, ob]})
+                    continue
                 neu.append(z)
         zonen = neu[-20:]
     return out
@@ -342,7 +367,37 @@ def setups_ausbruch(D, p, L=5, anzahl=3):
     return out
 
 
-ERKENNER = {"lsob": setups_lsob, "delfin": setups_delfin, "guss": setups_guss, "ausbruch": setups_ausbruch}
+def setups_wicks(D, p, abstand=3):
+    """Bootcamp Tag 5: zwei Kerzen mit langen unteren Dochten (mind. DOCHT der Kerzengröße) an der EMA21, der zweite Docht
+    etwas höher (max. ~10 % Unterschied), Körper über der EMA21, zweite Kerze bullish → Long nach Kerzenschluss,
+    Stopp unter dem Docht. Retracing Wicks = Short gespiegelt (obere Dochte, zweiter tiefer, Körper unter EMA21)."""
+    o, h, l, c, atr, e21, n = D["o"], D["h"], D["l"], D["c"], D["atr"], D["e21"], D["n"]
+    q = p.get("DOCHT", 0.3)
+    rng = np.maximum(h - l, 1e-12)
+    ud = (np.minimum(o, c) - l) / rng
+    od = (h - np.maximum(o, c)) / rng
+    out = []
+    for i in range(2, n):
+        a = atr[i]
+        if not np.isfinite(a) or a <= 0:
+            continue
+        for j in range(max(1, i - abstand), i):
+            # Advancing Wicks (Long)
+            if (ud[j] >= q and ud[i] >= q and c[i] > o[i] and l[j] <= e21[j] and l[i] <= e21[i]
+                    and min(o[j], c[j]) > e21[j] and min(o[i], c[i]) > e21[i]
+                    and l[i] >= l[j] and (l[i] - l[j]) <= 0.1 * max(h[j] - l[j], 1e-12) and rng[i] <= 2 * a):
+                out.append({"i": i, "seite": 1, "entry": c[i], "stopp": l[i] - 0.05 * a, "art": "Wicks Long"})
+                break
+            # Retracing Wicks (Short)
+            if (od[j] >= q and od[i] >= q and c[i] < o[i] and h[j] >= e21[j] and h[i] >= e21[i]
+                    and max(o[j], c[j]) < e21[j] and max(o[i], c[i]) < e21[i]
+                    and h[i] <= h[j] and (h[j] - h[i]) <= 0.1 * max(h[j] - l[j], 1e-12) and rng[i] <= 2 * a):
+                out.append({"i": i, "seite": -1, "entry": c[i], "stopp": h[i] + 0.05 * a, "art": "Wicks Short"})
+                break
+    return out
+
+
+ERKENNER = {"wicks": setups_wicks, "lsob": setups_lsob, "delfin": setups_delfin, "guss": setups_guss, "ausbruch": setups_ausbruch}
 
 
 # ---------------------------------------------------------------------------
@@ -371,7 +426,11 @@ def simuliere(D, setups, p, offen=None):
             ziel = None
         else:
             ziel = entry + seite * float(tp_art) * risiko
+        if ziel is not None and abs(ziel - entry) / entry < MIN_ZIEL:
+            continue                                                   # Ziel zu nah – Gebühren fressen den Gewinn
         sl = stopp
+        teil = bool(p.get("TEIL")) and ziel is not None
+        halb = False
         start = i if s.get("intrabar") else i + 1
         aus, aus_px, grund = None, None, None
         for j in range(start, min(n, start + MAX_KERZEN)):
@@ -379,6 +438,8 @@ def simuliere(D, setups, p, offen=None):
                 if (seite > 0 and l[j] <= sl) or (seite < 0 and h[j] >= sl):
                     aus, aus_px, grund = j, sl, ("Einstand" if sl == entry else "Stopp")
                     break
+            if teil and not halb and j > i and ((seite > 0 and h[j] >= entry + risiko) or (seite < 0 and l[j] <= entry - risiko)):
+                halb, sl = True, entry                                 # Teilgewinn 1 R, Rest risikofrei
             if exit_art == "ema21" and j > i:
                 if (seite > 0 and h[j] >= e21[j]) or (seite < 0 and l[j] <= e21[j]):
                     aus, aus_px, grund = j, e21[j], "Ziel EMA21"
@@ -398,11 +459,16 @@ def simuliere(D, setups, p, offen=None):
                 break
             aus_px, grund = c[aus], "Zeit"
         bewegung = (aus_px - entry) / entry * seite
+        kosten = KOSTEN + (KOSTEN_ZIEL if grund in ("Ziel", "Ziel EMA21") else KOSTEN)
+        if halb:                                                       # Hälfte bei 1 R (Limit) + Rest
+            bewegung = 0.5 * (risiko / entry) + 0.5 * bewegung
+            kosten = KOSTEN + 0.5 * KOSTEN_ZIEL + 0.5 * (KOSTEN_ZIEL if grund == "Ziel" else KOSTEN)
+            grund = grund + " (½ bei 1R)"
         hebel = min(RISIKO / (risiko / entry), MAX_HEBEL)
-        konto = hebel * (bewegung - 2 * KOSTEN)
+        konto = hebel * (bewegung - kosten)
         trades.append({"ein": t[i if s.get("intrabar") else i].isoformat(), "aus": t[aus].isoformat(), "seite": seite,
                        "art": s["art"], "entry": entry, "stopp": stopp, "exit": float(aus_px), "grund": grund,
-                       "R": float(bewegung * entry / risiko - 2 * KOSTEN * entry / risiko), "konto": float(konto),
+                       "R": float((bewegung - kosten) * entry / risiko), "konto": float(konto),
                        "kerzen": int(aus - i)})
         frei_ab = aus
     return trades
@@ -458,13 +524,16 @@ def forschen(log=print):
             reihen = {coin: D for (coin, t), D in daten.items() if t == tf}
             if not reihen:
                 continue
-            varianten = []
+            varianten, cache = [], {}
             for werte in itertools.product(*GRID[sid].values()):
                 p = dict(zip(GRID[sid].keys(), werte))
+                sk = tuple((k, v) for k, v in p.items() if k not in (("TEIL", "EXIT") if sid == "delfin" else ("TP", "TEIL", "EXIT")))
                 alle = {}
                 for coin, D in reihen.items():
                     grenze = D["t"][int(D["n"] * 2 / 3)]
-                    tr = simuliere(D, erk(D, p), p)
+                    if (coin, sk) not in cache:
+                        cache[(coin, sk)] = erk(D, p)
+                    tr = simuliere(D, cache[(coin, sk)], p)
                     for x in tr:
                         x["coin"] = coin
                         x["teil"] = "lern" if pd.Timestamp(x["ein"]) < grenze else "test"
@@ -554,9 +623,14 @@ def live(F, start):
     return out
 
 
+VERSION = 2   # 2 = LSOB nach Bootcamp-Videos, Advancing Wicks, getrennte Kosten, Mindestziel
+
+
 def lauf(dep, cfg, faellig=None):
     k = dep.setdefault("krypto", {})
     C = k.get("chart") or {}
+    if C.get("version") != VERSION:                       # neue Regeln -> neu forschen, Live neu starten
+        C = {"version": VERSION}
     if faellig is None:
         faellig = not C.get("forschung") or (dt.date.today() - dt.date.fromisoformat(C["forschung"]["datum"])).days >= 7
     if faellig:
