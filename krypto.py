@@ -426,6 +426,19 @@ def _jetzt(F, zustand, par, letzter):
             "erwartet": _r(erw), "schwelle": p["SCHWELLE"], "n": p["N"], "lookback": p["LOOKBACK"]}
 
 
+def bericht_alle(cfg):
+    """Alle Profile rechnen und nur die Statistik ausgeben (für den Forschungs-Workflow)."""
+    F, P, H, _ = lade_hl(getattr(cfg, "KRYPTO_COINS", 25))
+    Fb, Pb, Hb = lade_binance()
+    g = F.index[len(F.index) * 2 // 3]
+    z = []
+    for pr in PROFILE:
+        D = _cross_daten(F, Fb) if pr["par"]["MODUS"] == "cross" else F
+        z.append(bericht(forschen(D, P, H, pr["name"], pr["par"], g)))
+    z.append(bericht(forschen(Fb, Pb, Hb, "Binance ab 2020 · 2×", {"MODUS": "standard", "HEBEL": 2})))
+    return "\n".join(z)
+
+
 # ---------------------------------------------------------------------------
 # Täglicher Lauf: alle Profile forschen (wöchentlich) und live simulieren (täglich)
 # ---------------------------------------------------------------------------
