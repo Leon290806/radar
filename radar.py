@@ -30,6 +30,7 @@ import lernen
 import forschung
 import broker
 import krypto
+import chartstrategien
 
 
 def lade_journal(pfad):
@@ -253,6 +254,10 @@ def main():
                 print(krypto.bericht_alle(cfg))
             except Exception as e:
                 print(f"Krypto-Bericht fehlgeschlagen: {str(e)[:200]}")
+            try:
+                print(chartstrategien.bericht(chartstrategien.forschen()))
+            except Exception as e:
+                print(f"Krypto-Bericht fehlgeschlagen: {str(e)[:200]}")
         return
 
     if dep is None:
@@ -297,6 +302,7 @@ def main():
         try:
             kb = {n: C_alle[t] for n, t in cfg.BENCHMARKS if t in C_alle.columns}
             print(krypto.lauf(dep, cfg, bench=kb)[0])
+            print(chartstrategien.lauf(dep, cfg))
         except Exception as e:
             print(f"Krypto: Fehler ({str(e)[:150]})")
             (dep.setdefault("krypto", {}))["fehler"] = str(e)[:300]
