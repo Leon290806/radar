@@ -59,7 +59,7 @@ BROKER_KERN_TICKER = "SPY"
 
 # Krypto: Funding-Rate-Arbitrage – nur Simulation (keine Orders)
 KRYPTO_AKTIV = True
-KRYPTO_COINS = 25              # die liquidesten Hyperliquid-Perps
+KRYPTO_COINS = 40              # die liquidesten Hyperliquid-Perps (davon nur Coins mit kaufbarem Spot)
 
 # Forschungslabor: wöchentlich Ereignisstudie über die ganze Historie + Wahl des Portfolio-Aufbaus
 FORSCHUNG_AKTIV = True

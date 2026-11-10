@@ -197,6 +197,12 @@ STANDARD = {"N": 3, "LOOKBACK": 3, "SCHWELLE": 0.10, "HEBEL": 2, "TRAEGHEIT": 0.
             "MARGIN_ZINS": 0.04, "LEIH_ZINS": 0.08}
 # Staking-Rendite des gekauften Coins (nur bei Coins, die man staken kann – grobe, vorsichtige Werte)
 STAKING_RENDITE = {"ETH": 0.03, "SOL": 0.065}
+# Nur Coins, deren Spot man als Absicherung auch wirklich kaufen kann (Hyperliquid-Spot oder große Börsen, in der EU handelbar).
+# Privacy-Coins (XMR, ZEC) und reine Hyperliquid-Perps ohne Spot-Markt fallen raus.
+HEDGEBAR = {"BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "LINK", "LTC", "DOT", "TRX", "BCH", "ATOM", "NEAR",
+            "SUI", "APT", "ARB", "OP", "TON", "kPEPE", "WIF", "HYPE", "ENA", "TIA", "SEI", "INJ", "AAVE", "UNI", "FIL",
+            "ETC", "HBAR", "XLM", "ONDO", "TAO", "WLD", "JUP", "PENDLE", "RENDER", "FET", "CRV", "LDO", "kSHIB", "kBONK",
+            "POL", "ICP", "ALGO", "MKR", "RUNE", "PYTH", "JTO", "STRK", "EIGEN", "VIRTUAL", "TRUMP", "PENGU", "BERA", "S"}
 # Hyperliquid Portfolio-Margin: nur diese Coins zählen als Sicherheit (Beleihungswert laut Hyperliquid-Doku)
 PM_LTV = {"BTC": 0.5, "HYPE": 0.65}
 
@@ -267,7 +273,7 @@ def simulieren(F, P, H, par, von=None, bis=None, zustand=None, protokoll=False):
     for d in range(a, b):
         iso = idx[d].date().isoformat()
         sj = {cols[k]: Sn[d, k] for k in range(len(cols)) if np.isfinite(Fn[d, k])
-              and (p["MODUS"] != "pm" or cols[k] in PM_LTV)}
+              and (p["MODUS"] != "pm" or cols[k] in PM_LTV) and (p["MODUS"] == "cross" or cols[k] in HEDGEBAR)}
         neu = _auswahl(sj, pos, p)
         anteil = 1.0 / p["N"]
         kosten = 0.0
@@ -415,6 +421,8 @@ def _jetzt(F, zustand, par, letzter):
     sig = (F.tail(p["LOOKBACK"]).mean() * 365).dropna()
     if p["MODUS"] == "pm":
         sig = sig[[c for c in sig.index if c in PM_LTV]]
+    elif p["MODUS"] != "cross":
+        sig = sig[[c for c in sig.index if c in HEDGEBAR]]
     halten = _auswahl(sig.to_dict(), (zustand or {}).get("pos") or {}, p)
     nominal, leihe, margin, liq = _aufbau(p, halten[0] if halten else "BTC")
     meta = (zustand or {}).get("meta") or {}
@@ -456,8 +464,8 @@ def bericht_alle(cfg):
 # ---------------------------------------------------------------------------
 def lauf(dep, cfg, forschung_faellig=None, bench=None):
     k = dep.get("krypto") or {}
-    if k.get("version") != 3:                               # geänderte Profile: Simulation neu beginnen
-        k = {"version": 3}
+    if k.get("version") != 4:                               # geänderte Regeln: Simulation neu beginnen
+        k = {"version": 4}
     if forschung_faellig is None:
         fd = k.get("forschung_datum")
         forschung_faellig = not fd or (pd.Timestamp.utcnow().tz_localize(None) - pd.Timestamp(fd)).days >= 7
