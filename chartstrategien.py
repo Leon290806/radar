@@ -583,6 +583,11 @@ def bericht(F):
                      f"Treffer{(T.get('treffer') or 0) * 100:.0f}% Rendite{(T.get('rendite') or 0) * 100:+.0f}% DD{(T.get('maxdd') or 0) * 100:.0f}% "
                      f"t{(T.get('t') or 0):.1f} | Long Ø{(r['long'].get('avgR') or 0):+.2f}R Short Ø{(r['short'].get('avgR') or 0):+.2f}R")
             besten = sorted(r["coins"].items(), key=lambda kv: -(kv[1]["test"].get("avgR") or -9))
+            if sid in ("lsob", "wicks"):
+                for v in sorted(r.get("varianten", []), key=lambda v: -(v["test"].get("avgR") or -9)):
+                    z.append(f"      VAR {json.dumps(v['par'])} Lern n{v['lern'].get('n')} Ø{(v['lern'].get('avgR') or 0):+.2f}R "
+                             f"| Test n{v['test'].get('n')} Ø{(v['test'].get('avgR') or 0):+.2f}R Treffer{(v['test'].get('treffer') or 0) * 100:.0f}% "
+                             f"PF{(v['test'].get('pf') or 0):.2f} t{(v['test'].get('t') or 0):.1f}")
             z.append("      Coins Test Ø R: " + " ".join(f"{c}:{(v['test'].get('avgR') or 0):+.2f}({v['test'].get('n', 0)})" for c, v in besten))
     return "\n".join(z)
 
