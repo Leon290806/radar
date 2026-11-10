@@ -196,7 +196,17 @@ STANDARD = {"N": 3, "LOOKBACK": 3, "SCHWELLE": 0.10, "HEBEL": 2, "TRAEGHEIT": 0.
             "KOSTEN": 0.0015, "STABLE": 0.04, "LIQ_KOSTEN": 0.025}
 
 
-def simulieren(F, P, H, par, von=None, bis=None, zustand=None):
+def _auswahl(sj, pos, p):
+    """Welche Coins halten? sj = erwartete Funding-Rendite p.a. je Coin (Signal), pos = bisher gehaltene Coins."""
+    kand = sorted([(v, c) for c, v in sj.items() if np.isfinite(v) and v >= p["SCHWELLE"]], reverse=True)
+    ziel = [c for _, c in kand[:p["N"]]]
+    # Trägheit: gehaltene Coins behalten, solange sie über der halben Schwelle liegen und nicht deutlich schlechter sind
+    behalten = [c for c in pos if np.isfinite(sj.get(c, np.nan)) and sj[c] >= p["SCHWELLE"] / 2
+                and (not ziel or sj[c] >= sj[ziel[-1]] - p["TRAEGHEIT"])]
+    return (behalten + [c for c in ziel if c not in behalten])[:p["N"]]
+
+
+def simulieren(F, P, H, par, von=None, bis=None, zustand=None, protokoll=False):
     """Tageweise Simulation. F = tägliche Funding-Summe (Anteil), P/H = Schluss/Tageshoch.
     Signal aus Daten bis gestern, Ertrag heute. Rückgabe: dict mit Kurve, Ereignissen und Endzustand."""
     p = {**STANDARD, **(par or {})}
@@ -209,49 +219,52 @@ def simulieren(F, P, H, par, von=None, bis=None, zustand=None):
     Pn = P.reindex(columns=F.columns).to_numpy()
     Hn = H.reindex(columns=F.columns).to_numpy()
     cols = list(F.columns)
+    ci = {c: k for k, c in enumerate(cols)}
     z = zustand or {"eq": 1.0, "pos": {}}
-    eq, pos = z["eq"], dict(z["pos"])                      # pos: coin -> Anteil des Kapitals in der Position
+    eq, pos, meta = z["eq"], dict(z["pos"]), dict(z.get("meta") or {})
     h = p["HEBEL"]
     nominal = h / (h + 1)                                   # Spot + Margin: so viel Nominal je Kapital-Einheit
-    kurve, ereignisse, gehalten = [], [], []
+    kurve, ereignisse, gehalten, tage = [], [], [], []
     for d in range(a, b):
-        s = Sn[d]
-        # Ziel bestimmen
-        kand = [(s[j], cols[j]) for j in range(len(cols)) if np.isfinite(s[j]) and s[j] >= p["SCHWELLE"] and np.isfinite(Fn[d, j])]
-        kand.sort(reverse=True)
-        ziel = [c for _, c in kand[:p["N"]]]
-        # Trägheit: gehaltene Coins behalten, solange sie über der halben Schwelle liegen und nicht deutlich schlechter sind
-        sj = {cols[j]: s[j] for j in range(len(cols))}
-        behalten = [c for c in pos if np.isfinite(sj.get(c, np.nan)) and sj[c] >= p["SCHWELLE"] / 2
-                    and (not ziel or sj[c] >= sj[ziel[min(len(ziel), p["N"]) - 1]] - p["TRAEGHEIT"])]
-        neu = (behalten + [c for c in ziel if c not in behalten])[:p["N"]]
+        iso = idx[d].date().isoformat()
+        sj = {cols[k]: Sn[d, k] for k in range(len(cols)) if np.isfinite(Fn[d, k])}
+        neu = _auswahl(sj, pos, p)
         anteil = 1.0 / p["N"]
-        # Kosten für Wechsel (beide Seiten, Ein- und Ausstieg)
         kosten = 0.0
-        for c in set(pos) - set(neu):
+        for c in [c for c in pos if c not in neu]:
             kosten += pos[c] * nominal * p["KOSTEN"]
-            ereignisse.append((idx[d], "raus", c))
-        for c in set(neu) - set(pos):
+            m = meta.pop(c, {})
+            ereignisse.append((idx[d], "raus", c, sj.get(c), m.get("ertrag", 0.0), m.get("seit")))
+        for c in [c for c in neu if c not in pos]:
             kosten += anteil * nominal * p["KOSTEN"]
-            ereignisse.append((idx[d], "rein", c))
+            meta[c] = {"seit": iso, "ertrag": -anteil * nominal * p["KOSTEN"]}
+            ereignisse.append((idx[d], "rein", c, sj.get(c), None, None))
         pos = {c: anteil for c in neu}
-        # Ertrag heute
-        ertrag = 0.0
+        ertrag, zeilen = 0.0, []
         for c, w in pos.items():
-            j = cols.index(c)
-            f = Fn[d, j] if np.isfinite(Fn[d, j]) else 0.0
-            ertrag += w * nominal * f
+            k = ci.get(c)
+            if k is None:
+                continue
+            f = Fn[d, k] if np.isfinite(Fn[d, k]) else 0.0
+            e = w * nominal * f
+            ertrag += e
+            meta.setdefault(c, {"seit": iso, "ertrag": 0.0})["ertrag"] += e
             # Zwangsschließung der Short-Seite, wenn das Tageshoch über der Liquidationsgrenze liegt
-            if d > 0 and np.isfinite(Hn[d, j]) and np.isfinite(Pn[d - 1, j]) and Pn[d - 1, j] > 0:
-                if Hn[d, j] / Pn[d - 1, j] - 1 >= 0.9 / h:
+            if d > 0 and np.isfinite(Hn[d, k]) and np.isfinite(Pn[d - 1, k]) and Pn[d - 1, k] > 0:
+                if Hn[d, k] / Pn[d - 1, k] - 1 >= 0.9 / h:
                     kosten += w * nominal * p["LIQ_KOSTEN"]
-                    ereignisse.append((idx[d], "liquidiert", c))
+                    meta[c]["ertrag"] -= w * nominal * p["LIQ_KOSTEN"]
+                    ereignisse.append((idx[d], "liquidiert", c, sj.get(c), None, None))
+            zeilen.append([c, round(float(f * 365), 4), round(float(e), 6)])
         frei = 1.0 - sum(pos.values())
         ertrag += frei * p["STABLE"] / 365
         eq = float(eq * (1 + ertrag - kosten))
         kurve.append((idx[d], eq))
         gehalten.append(len(pos))
-    return {"kurve": kurve, "ereignisse": ereignisse, "zustand": {"eq": eq, "pos": pos},
+        if protokoll:
+            tage.append({"d": iso, "eq": round(eq, 6), "pos": zeilen, "frei": round(frei, 3),
+                         "ertrag": round(float(ertrag), 6), "kosten": round(float(kosten), 6)})
+    return {"kurve": kurve, "ereignisse": ereignisse, "zustand": {"eq": eq, "pos": pos, "meta": meta}, "tage": tage,
             "investiert": float(np.mean([g > 0 for g in gehalten])) if gehalten else 0.0}
 
 
@@ -321,7 +334,36 @@ def bericht(f):
 # ---------------------------------------------------------------------------
 # Täglicher Lauf (Simulation „live“ ab Start)
 # ---------------------------------------------------------------------------
-def lauf(dep, cfg, forschung_faellig=None):
+def _r(x, n=4):
+    try:
+        x = float(x)
+        return round(x, n) if np.isfinite(x) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _vergleich(kurve, serien):
+    """Indizes auf die Daten der Kurve legen (Wochenenden mit letztem Kurs), Start = 0 %."""
+    if not kurve:
+        return {}
+    tage = pd.DatetimeIndex([x[0] for x in kurve])
+    out = {}
+    for name, s in serien.items():
+        try:
+            s = pd.Series(s).dropna()
+            s.index = pd.DatetimeIndex(s.index).tz_localize(None).normalize()
+            s = s[~s.index.duplicated()].sort_index()
+            w = s.reindex(s.index.union(tage)).ffill().reindex(tage)
+            if w.notna().sum() < 2:
+                continue
+            basis = w.dropna().iloc[0]
+            out[name] = [_r(v / basis - 1) if np.isfinite(v) else None for v in w.to_numpy()]
+        except Exception:
+            continue
+    return out
+
+
+def lauf(dep, cfg, forschung_faellig=None, bench=None):
     k = dep.get("krypto") or {}
     if forschung_faellig is None:
         fd = k.get("forschung_datum")
@@ -350,11 +392,33 @@ def lauf(dep, cfg, forschung_faellig=None):
         k["letzter_tag"] = k["start"]
     neue = F.index[F.index > pd.Timestamp(k["letzter_tag"])]
     if len(neue):
-        sim = simulieren(F, P, H, par, von=neue[0], zustand=k["zustand"])
+        sim = simulieren(F, P, H, par, von=neue[0], zustand=k["zustand"], protokoll=True)
         k["zustand"] = sim["zustand"]
         k["kurve"] += [[t.date().isoformat(), round(v, 6)] for t, v in sim["kurve"]]
-        k["ereignisse"] = (k.get("ereignisse") or [])[-200:] + [[t.date().isoformat(), a, c] for t, a, c in sim["ereignisse"]]
+        k["ereignisse"] = (k.get("ereignisse") or [])[-300:] + [
+            [t.date().isoformat(), a, c, _r(sg), _r(er), seit] for t, a, c, sg, er, seit in sim["ereignisse"]]
+        k["protokoll"] = ((k.get("protokoll") or []) + sim["tage"])[-120:]
         k["letzter_tag"] = F.index[-1].date().isoformat()
+    # Was der Bot jetzt (für den nächsten Tag) halten würde
+    pp = {**STANDARD, **par}
+    sig_jetzt = (F.tail(pp["LOOKBACK"]).mean() * 365).dropna()
+    halten = _auswahl(sig_jetzt.to_dict(), k["zustand"].get("pos") or {}, pp)
+    nominal = pp["HEBEL"] / (pp["HEBEL"] + 1)
+    alt = list((k["zustand"].get("pos") or {}).keys())
+    k["jetzt"] = {"ab": (F.index[-1] + pd.Timedelta(days=1)).date().isoformat(), "nominal": nominal, "hebel": pp["HEBEL"],
+                  "halten": [{"coin": c, "signal": _r(sig_jetzt.get(c)), "anteil": round(1 / pp["N"], 4),
+                              "seit": ((k["zustand"].get("meta") or {}).get(c) or {}).get("seit"),
+                              "ertrag": _r(((k["zustand"].get("meta") or {}).get(c) or {}).get("ertrag"))} for c in halten],
+                  "rein": [c for c in halten if c not in alt], "raus": [c for c in alt if c not in halten],
+                  "erwartet": _r(sum(sig_jetzt.get(c, 0) for c in halten) / pp["N"] * nominal
+                                 + (1 - len(halten) / pp["N"]) * pp["STABLE"]),
+                  "schwelle": pp["SCHWELLE"], "n": pp["N"], "lookback": pp["LOOKBACK"]}
+    # Vergleich mit Indizes (Aktien) und Bitcoin – gleicher Zeitraum
+    serien = dict(bench or {})
+    if "BTC" in P.columns:
+        serien["Bitcoin"] = P["BTC"]
+    k["vergleich_bt"] = _vergleich((k.get("forschung_hl") or {}).get("kurve") or [], serien)
+    k["vergleich_live"] = _vergleich(k.get("kurve") or [], serien)
     # aktueller Markt + was der Bot morgen halten würde
     m = markt.sort_values("apr", ascending=False)
     sig = (F.tail(par.get("LOOKBACK", 3)).mean() * 365).sort_values(ascending=False)

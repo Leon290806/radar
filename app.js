@@ -802,58 +802,103 @@ function forschungKarte() {
     ${(F.varianten || []).slice().sort((a, b) => (b.name === F.bester) - (a.name === F.bester) || ((b.lern || {}).ziel ?? -9) - ((a.lern || {}).ziel ?? -9)).slice(0, 20).map(v => `<tr class="${v.name === F.bester ? "hl" : ""}"><td class="l wrap" style="max-width:420px">${v.name === F.bester ? '<span class="badge b-kauf">gewählt</span> ' : ""}${esc(v.name)}</td><td>${k(v.lern)}</td><td>${pct(v.quote_lern, 0, false)}</td><td>${k(v.test)}</td><td>${pct(v.quote_test, 0, false)}</td><td>${v.gv_test ? `<span class="pos">${pct(v.gv_test[0], 1)}</span> / <span class="neg">${pct(v.gv_test[1], 1)}</span>` : "–"}</td><td>${v.trades}</td></tr>`).join("")}
     </tbody></table></div></div></div>`;
 }
+function kryptoChart(host, x, strat, vergleich, name) {
+  const namen = Object.keys(vergleich || {});
+  const farben = { "S&P 500": "--s2", "Nasdaq 100": "--s3", "MSCI World": "--s4", "DAX": "--s5", "Bitcoin": "--s7" };
+  const ausgew = new Set(lies("krypto_vgl", ["S&P 500", "MSCI World", "DAX"]));
+  const wrap = document.createElement("div"); host.appendChild(wrap);
+  const chips = document.createElement("div"); chips.className = "chips"; chips.style.marginBottom = "10px"; wrap.appendChild(chips);
+  const ch = document.createElement("div"); wrap.appendChild(ch);
+  const unter = document.createElement("div"); unter.className = "cs"; unter.style.marginTop = "8px"; wrap.appendChild(unter);
+  const letzt = arr => { for (let k = arr.length - 1; k >= 0; k--) if (ok(arr[k])) return arr[k]; return null; };
+  const male = () => {
+    chips.innerHTML = `<span class="chip serie"><i class="dot" style="background:var(--s1)"></i>${esc(name)}</span>` +
+      namen.map(n => `<span class="chip serie ${ausgew.has(n) ? "" : "aus"}" data-n="${esc(n)}"><i class="dot" style="background:var(${farben[n] || "--s6"})"></i>${esc(n)}</span>`).join("");
+    ch.innerHTML = "";
+    const series = [{ name, farbe: "--s1", v: strat, breite: 2.4, flaeche: true, flaecheBasis: 0 }]
+      .concat(namen.map(n => ({ name: n, farbe: farben[n] || "--s6", v: vergleich[n], aus: !ausgew.has(n), breite: 1.5 })));
+    linie(ch, { x, series, hoehe: 300, yfmt: v => pct(v, 0), tipfmt: v => pct(v, 1), nullLinie: true });
+    unter.innerHTML = `Gesamter Zeitraum: ${esc(name)} <b class="${kl(letzt(strat))}">${pct(letzt(strat), 1)}</b>` +
+      namen.filter(n => ausgew.has(n)).map(n => ` · ${esc(n)} <b class="${kl(letzt(vergleich[n]))}">${pct(letzt(vergleich[n]), 1)}</b>`).join("") +
+      ` · Krypto-Strategie ohne Kursrisiko, Indizes mit vollem Kursrisiko`;
+  };
+  chips.addEventListener("click", ev => { const c = ev.target.closest("[data-n]"); if (!c) return; const n = c.dataset.n; ausgew.has(n) ? ausgew.delete(n) : ausgew.add(n); merke("krypto_vgl", [...ausgew]); male(); });
+  male();
+}
+
 RENDER.krypto = el => {
   const K = D.krypto;
   if (!K || (!K.kurve && !K.forschung_hl)) {
     el.innerHTML = `<div class="grid"><div class="card c12"><h3 class="ct">Krypto · Funding-Arbitrage</h3>${K && K.fehler ? `<div class="box fehler">${esc(K.fehler)}</div>` : '<div class="leer">Startet mit dem nächsten Abendlauf.</div>'}</div></div>`;
     return;
   }
-  const FH = K.forschung_hl || {}, FB = K.forschung_bn || {}, B = FH.bester || {}, P = K.par || {};
+  const FH = K.forschung_hl || {}, FB = K.forschung_bn || {}, B = FH.bester || {}, P = K.par || {}, J = K.jetzt || {};
   const kv = K.kurve || [], seit = kv.length > 1 ? kv[kv.length - 1][1] / kv[0][1] - 1 : 0;
-  const pos = Object.keys((K.zustand || {}).pos || {});
-  const nominal = P.HEBEL ? P.HEBEL / (P.HEBEL + 1) : 0.5;
-  const sigMap = Object.fromEntries((K.markt || []).map(m => [m.coin, m.signal]));
-  const erw = pos.length ? pos.reduce((a, c) => a + (sigMap[c] || 0), 0) / (P.N || pos.length) * nominal + (1 - pos.length / (P.N || 1)) * 0.04 : 0.04;
+  const tage = Math.max(0, kv.length - 1), kap = 10000;
   const k = v => v ? `${pct(v.cagr, 1)}<div class="klein mute">DD ${pct(v.maxdd, 1)} · Sharpe ${zahl(v.sharpe, 1)}</div>` : "–";
   const pName = p => `${p.N} Coin${p.N > 1 ? "s" : ""} · Signal ${p.LOOKBACK} T · ab ${pct(p.SCHWELLE, 0, false)} p.a. · Hebel ${p.HEBEL}×`;
-  const jahre = (F) => Object.keys(F.jahre || {}).map(j => `<tr><td class="l">${j}</td><td class="${kl(F.jahre[j])}">${pct(F.jahre[j], 1)}</td><td>${pct((F.funding_jahre || {})[j], 1)}</td></tr>`).join("");
-  el.innerHTML = `<div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Krypto · Funding-Arbitrage <span class="badge b-neutral">Simulation</span></h3>
-      <div class="cs">Hyperliquid · Stand ${esc(K.stand || "")} · Simulation seit ${datKurz(K.start)} · keine echten Orders</div></div></div>
-    <p class="erkl">Der Bot kauft einen Coin und verkauft ihn gleichzeitig per Perpetual leer – der Kurs ist damit abgesichert. Verdient wird die <b>Funding-Gebühr</b>, die Hebel-Käufer an Leerverkäufer zahlen. Er hält nur die Coins mit der höchsten erwarteten Funding-Rate, wechselt nur, wenn es sich nach Gebühren lohnt, und parkt das Geld sonst als Stablecoin (≈ 4 % p.a.). Die Regeln wählt das Labor auf den älteren Daten und prüft sie auf den neueren.</p></div></div>
-  <div class="kpis">
-    <div class="kpi"><div class="k">Simulation seit ${datKurz(K.start)}</div><div class="v ${kl(seit)}">${pct(seit, 2)}</div><div class="n">${kv.length - 1} Tage</div></div>
-    <div class="kpi"><div class="k">Hält gerade</div><div class="v" style="font-size:16px;white-space:normal;line-height:1.3">${pos.length ? pos.map(esc).join(", ") : "Stablecoin"}</div><div class="n">erwartet ≈ ${pct(erw, 1)} p.a.</div></div>
-    <div class="kpi"><div class="k">Backtest Hyperliquid · Test</div><div class="v ${kl((B.test || {}).cagr)}">${pct((B.test || {}).cagr, 1)}</div><div class="n">p.a. · DD ${pct((B.test || {}).maxdd, 1)}</div></div>
-    <div class="kpi"><div class="k">Backtest Hyperliquid · Lernteil</div><div class="v">${pct((B.lern || {}).cagr, 1)}</div><div class="n">p.a. · DD ${pct((B.lern || {}).maxdd, 1)}</div></div>
-    <div class="kpi"><div class="k">Binance-Archiv ab 2020</div><div class="v">${pct(((FB.bester || {}).gesamt || {}).cagr, 1)}</div><div class="n">p.a. inkl. Bärenmarkt 2022</div></div>
-  </div>
+  const jahre = F => Object.keys(F.jahre || {}).map(j => `<tr><td class="l">${j}</td><td class="${kl(F.jahre[j])}">${pct(F.jahre[j], 1)}</td><td>${pct((F.funding_jahre || {})[j], 1)}</td></tr>`).join("");
+  const halten = J.halten || [];
+  const aktTxt = { rein: ["b-kauf", "Einstieg"], raus: ["b-neutral", "Ausstieg"], liquidiert: ["b-verk", "Zwangsschließung"] };
+  const ereig = (K.ereignisse || []).slice().reverse();
+  const prot = (K.protokoll || []).slice().reverse();
+  const dauer = (a, b) => a && b ? Math.round((new Date(b) - new Date(a)) / 864e5) : null;
+  el.innerHTML = `<div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Was der Bot gerade macht <span class="badge b-neutral">Simulation</span></h3>
+      <div class="cs">Hyperliquid · Stand ${esc(K.stand || "")} · Entscheidung für ab ${datKurz(J.ab)} · keine echten Orders</div></div></div>
+    ${halten.length ? `<div class="tw"><table class="tbl"><thead><tr><th class="l">Coin</th><th class="l">Position</th><th>Kapital</th><th>Funding-Signal p.a.</th><th>bringt aufs Kapital p.a.</th><th class="l">seit</th><th>verdient</th></tr></thead><tbody>
+      ${halten.map(h => `<tr><td class="l"><b>${esc(h.coin)}</b> ${(J.rein || []).includes(h.coin) ? '<span class="badge b-kauf">neu</span>' : '<span class="badge b-neutral">hält</span>'}</td>
+        <td class="l wrap">${esc(h.coin)} Spot kaufen + ${esc(h.coin)}-Perp gleich groß leerverkaufen (Hebel ${J.hebel}×)</td>
+        <td>${pct(h.anteil, 0, false)}<div class="klein mute">≈ ${zahl(h.anteil * kap, 0)} $ von ${zahl(kap, 0)} $</div></td>
+        <td class="${kl(h.signal)}">${pct(h.signal, 1)}</td><td class="${kl(h.signal)}">${pct(h.signal * h.anteil * J.nominal, 1)}</td>
+        <td class="l">${h.seit ? datKurz(h.seit) : "ab " + datKurz(J.ab)}</td><td class="${kl(h.ertrag)}">${ok(h.ertrag) ? pct(h.ertrag, 3) : "–"}</td></tr>`).join("")}
+      </tbody></table></div>` : `<div class="box warn">Kein Coin zahlt gerade genug Funding (mindestens ${pct(J.schwelle, 0, false)} p.a. im Schnitt der letzten ${J.lookback} Tage). Das Geld liegt als Stablecoin (≈ 4 % p.a.).</div>`}
+    ${(J.raus || []).length ? `<div class="box warn" style="margin-top:10px">Wird geschlossen: ${J.raus.map(esc).join(", ")} – Funding zu niedrig oder ein anderer Coin zahlt deutlich mehr.</div>` : ""}
+    <div class="kpis" style="margin-top:14px">
+      <div class="kpi"><div class="k">Erwartet aufs Kapital</div><div class="v ${kl(J.erwartet)}">${pct(J.erwartet, 1)}</div><div class="n">p.a., wenn das Funding so bleibt</div></div>
+      <div class="kpi"><div class="k">Simulation seit ${datKurz(K.start)}</div><div class="v ${kl(seit)}">${pct(seit, 2)}</div><div class="n">${tage} Tag${tage === 1 ? "" : "e"} · ≈ ${zahl(kap * (1 + seit), 2)} $ von ${zahl(kap, 0)} $</div></div>
+      <div class="kpi"><div class="k">Regel</div><div class="v" style="font-size:15px;white-space:normal;line-height:1.35">${esc(pName(P))}</div><div class="n">gewählt vom Labor</div></div>
+      <div class="kpi"><div class="k">Backtest Test · Lern</div><div class="v">${pct((B.test || {}).cagr, 1)}</div><div class="n">Lernteil ${pct((B.lern || {}).cagr, 1)} p.a.</div></div>
+      <div class="kpi"><div class="k">Binance ab 2020</div><div class="v">${pct(((FB.bester || {}).gesamt || {}).cagr, 1)}</div><div class="n">p.a. inkl. Bärenmarkt 2022</div></div>
+    </div>
+    <p class="erkl" style="margin-top:12px">So funktioniert es: Coin kaufen und gleich viel per Perpetual leerverkaufen – Kursbewegungen heben sich auf. Jede Stunde zahlen Hebel-Käufer die <b>Funding-Gebühr</b> an die Leerverkäufer. Der Bot hält die Coins mit dem höchsten Funding der letzten Tage, wechselt nur, wenn es sich nach Gebühren lohnt, und parkt das Geld sonst als Stablecoin. Er prüft jeden Abend neu.</p></div></div>
   ${K.fehler ? `<div class="grid"><div class="card c12"><div class="box fehler">${esc(K.fehler)}</div></div></div>` : ""}
-  ${(FH.kurve || []).length > 5 ? `<div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Backtest der gewählten Regeln · Hyperliquid</h3><div class="cs">${esc(pName(B.par || {}))} · Lernteil bis ${datKurz(FH.grenze)}, danach Test</div></div></div><div id="kr-chart"></div></div></div>` : ""}
+  ${kv.length > 2 ? `<div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Simulation live · seit ${datKurz(K.start)}</h3><div class="cs">Echte Funding-Zahlungen, simulierte Ausführung · Vergleich gleicher Zeitraum</div></div></div><div id="kr-live"></div></div></div>` : ""}
   <div class="grid">
-    <div class="card c6"><div class="ch"><div><h3 class="ct">Funding jetzt · Hyperliquid</h3><div class="cs">aufs Jahr hochgerechnet · Signal = Ø der letzten ${P.LOOKBACK || 3} Tage</div></div></div>
+    <div class="card c6"><div class="ch"><div><h3 class="ct">Tagesprotokoll</h3><div class="cs">was die Simulation an jedem Tag gehalten und verdient hat</div></div></div>
+      ${prot.length ? `<div class="tw"><table class="tbl"><thead><tr><th class="l">Tag</th><th class="l">gehalten (Funding p.a. an dem Tag)</th><th>Ertrag</th><th>Kosten</th><th>Kontostand</th></tr></thead><tbody>
+      ${prot.slice(0, 14).map(t => `<tr><td class="l">${datKurz(t.d)}</td><td class="l wrap">${t.pos.length ? t.pos.map(p => `<b>${esc(p[0])}</b> <span class="${kl(p[1])}">${pct(p[1], 1)}</span>`).join(" · ") : '<span class="mute">Stablecoin</span>'}</td>
+        <td class="${kl(t.ertrag)}">${pct(t.ertrag, 3)}</td><td class="${t.kosten ? "neg" : "mute"}">${t.kosten ? pct(-t.kosten, 3) : "–"}</td><td>${zahl(kap * t.eq, 2)} $</td></tr>`).join("")}
+      </tbody></table></div>` : '<div class="leer">Der erste simulierte Tag erscheint nach dem nächsten Abendlauf.</div>'}</div>
+    <div class="card c6"><div class="ch"><div><h3 class="ct">Verlauf · Ein- und Ausstiege</h3><div class="cs">jede Entscheidung der Simulation</div></div></div>
+      ${ereig.length ? `<div class="tw"><table class="tbl"><thead><tr><th class="l">Tag</th><th class="l">Aktion</th><th class="l">Coin</th><th>Signal p.a.</th><th>verdient</th><th>Tage</th></tr></thead><tbody>
+      ${ereig.slice(0, 20).map(e => `<tr><td class="l">${datKurz(e[0])}</td><td class="l"><span class="badge ${(aktTxt[e[1]] || aktTxt.raus)[0]}">${(aktTxt[e[1]] || aktTxt.raus)[1]}</span></td><td class="l"><b>${esc(e[2])}</b></td>
+        <td class="${kl(e[3])}">${ok(e[3]) ? pct(e[3], 1) : "–"}</td><td class="${kl(e[4])}">${ok(e[4]) ? pct(e[4], 3) : "–"}</td><td>${e[5] ? dauer(e[5], e[0]) : "–"}</td></tr>`).join("")}
+      </tbody></table></div>` : '<div class="leer">Noch keine Ein- oder Ausstiege in der Simulation.</div>'}</div>
+  </div>
+  ${(FH.kurve || []).length > 5 ? `<div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Backtest der gewählten Regeln · Hyperliquid</h3><div class="cs">${esc(pName(B.par || {}))} · ${datKurz(FH.von)} – ${datKurz(FH.bis)} · Lernteil bis ${datKurz(FH.grenze)}, danach Test</div></div></div><div id="kr-chart"></div></div></div>` : ""}
+  <div class="grid">
+    <div class="card c6"><div class="ch"><div><h3 class="ct">Funding jetzt · Hyperliquid</h3><div class="cs">aufs Jahr hochgerechnet · Signal = Ø der letzten ${P.LOOKBACK || 3} Tage · sortiert nach Signal</div></div></div>
       <div class="tw"><table class="tbl"><thead><tr><th class="l">Coin</th><th>jetzt p.a.</th><th>Signal p.a.</th><th>Open Interest</th><th>Volumen 24 h</th></tr></thead><tbody>
-      ${(K.markt || []).slice(0, 15).map(m => `<tr class="${pos.includes(m.coin) ? "hl" : ""}"><td class="l"><b>${esc(m.coin)}</b> ${pos.includes(m.coin) ? '<span class="badge b-kauf">gehalten</span>' : ""}</td><td class="${kl(m.apr)}">${pct(m.apr, 1)}</td><td class="${kl(m.signal)}">${ok(m.signal) ? pct(m.signal, 1) : "–"}</td><td>${geld(m.oi, "USD")}</td><td>${geld(m.vol, "USD")}</td></tr>`).join("")}
-      </tbody></table></div></div>
+      ${(K.markt || []).slice().sort((a, b) => (b.signal ?? -9) - (a.signal ?? -9)).slice(0, 15).map(m => `<tr class="${halten.some(h => h.coin === m.coin) ? "hl" : ""}"><td class="l"><b>${esc(m.coin)}</b> ${halten.some(h => h.coin === m.coin) ? '<span class="badge b-kauf">gewählt</span>' : ""}</td><td class="${kl(m.apr)}">${pct(m.apr, 1)}</td><td class="${kl(m.signal)}">${ok(m.signal) ? pct(m.signal, 1) : "–"}</td><td>${geld(m.oi, "USD")}</td><td>${geld(m.vol, "USD")}</td></tr>`).join("")}
+      </tbody></table></div><div class="klein mute" style="margin-top:8px">„–“ = Coin mit zu wenig Handelsvolumen für die Strategie (unter 20 Mio. $ pro Tag).</div></div>
     <div class="card c6"><div class="ch"><div><h3 class="ct">Jahr für Jahr</h3><div class="cs">Strategie vs. Ø Funding aller Coins (ohne Hebel, ohne Rotation)</div></div></div>
       <div class="tw"><table class="tbl"><thead><tr><th class="l">Hyperliquid</th><th>Strategie</th><th>Ø Funding</th></tr></thead><tbody>${jahre(FH)}</tbody></table></div>
       ${FB.jahre ? `<div class="tw" style="margin-top:12px"><table class="tbl"><thead><tr><th class="l">Binance (ab 2020)</th><th>Strategie</th><th>Ø Funding</th></tr></thead><tbody>${jahre(FB)}</tbody></table></div>` : `<div class="box warn" style="margin-top:12px">Binance-Archiv: ${esc(FB.fehler || "noch nicht geladen")}</div>`}</div>
   </div>
-  <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Getestete Regeln · ${((FH.varianten || []).length)} beste von 81</h3><div class="cs">Coins × Signal-Länge × Mindest-Funding × Hebel · gewählt nach Lernteil (Rendite − ½ größter Rückgang)</div></div></div>
+  <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Getestete Regeln · die besten ${Math.min(15, (FH.varianten || []).length)} von 81</h3><div class="cs">Coins × Signal-Länge × Mindest-Funding × Hebel · gewählt nach Lernteil (Rendite − ½ größter Rückgang)</div></div></div>
     <div class="tw"><table class="tbl"><thead><tr><th class="l">Regeln</th><th>Lernteil</th><th>Testteil</th><th>Zwangsschließungen</th><th>Wechsel</th><th>investiert</th></tr></thead><tbody>
     ${(FH.varianten || []).slice(0, 15).map(v => `<tr class="${JSON.stringify(v.par) === JSON.stringify(B.par) ? "hl" : ""}"><td class="l">${JSON.stringify(v.par) === JSON.stringify(B.par) ? '<span class="badge b-kauf">gewählt</span> ' : ""}${esc(pName(v.par))}</td><td>${k(v.lern)}</td><td>${k(v.test)}</td><td class="${v.liq ? "neg" : ""}">${v.liq}</td><td>${v.wechsel}</td><td>${pct(v.investiert, 0, false)}</td></tr>`).join("")}
     </tbody></table></div></div></div>
   <div class="grid"><div class="card c12"><h3 class="ct" style="margin-bottom:8px">Risiken</h3><ul class="liste">
     <li class="aufgabe"><span class="badge b-warn">Börse</span><span>Das Geld liegt bei der Börse bzw. im Smart Contract. Fällt sie aus (wie FTX 2022), ist es weg – das größte Risiko.</span></li>
-    <li class="aufgabe"><span class="badge b-warn">Hebel</span><span>Steigt ein Coin an einem Tag sehr stark, wird die Short-Seite zwangsgeschlossen. Simuliert ab ca. ${pct(0.9 / (P.HEBEL || 2), 0, false)} Tagesanstieg mit ${pct(0.025, 1, false)} Kosten.</span></li>
+    <li class="aufgabe"><span class="badge b-warn">Hebel</span><span>Steigt ein Coin an einem Tag sehr stark, wird die Short-Seite zwangsgeschlossen. Simuliert ab ca. ${pct(0.9 / (P.HEBEL || 2), 0, false)} Tagesanstieg mit 2,5 % Kosten.</span></li>
     <li class="aufgabe"><span class="badge b-warn">Funding</span><span>Im Bärenmarkt fällt das Funding auf ~0 oder wird negativ – dann parkt der Bot im Stablecoin und verdient nur den Zins.</span></li>
-    <li class="aufgabe"><span class="badge b-neutral">Annahmen</span><span>Gebühren 0,15 % je Seite und Wechsel; Kursabweichungen zwischen Spot und Perp sowie Spreads bei kleinen Coins sind nicht voll abgebildet.</span></li>
+    <li class="aufgabe"><span class="badge b-neutral">Annahmen</span><span>Gebühren 0,15 % je Seite und Wechsel; Kursabweichungen zwischen Spot und Perp sowie Spreads sind nicht voll abgebildet – real schwankt es etwas mehr.</span></li>
   </ul></div></div>`;
-  if ($("#kr-chart")) {
-    const kurve = FH.kurve, x = kurve.map(p => p[0]), g = FH.grenze;
-    linie($("#kr-chart"), { x, series: [{ name: "Strategie", farbe: "--s1", v: kurve.map(p => p[1] - 1), flaeche: true, flaecheBasis: 0 }],
-      hoehe: 280, yfmt: v => pct(v, 0), tipfmt: v => pct(v, 1), nullLinie: true, vlinien: [{ i: Math.max(0, x.findIndex(t => t >= g)), txt: "Test" }] });
-  }
+  if ($("#kr-chart")) kryptoChart($("#kr-chart"), FH.kurve.map(p => p[0]), FH.kurve.map(p => p[1] / FH.kurve[0][1] - 1), K.vergleich_bt, "Funding-Bot (Backtest)");
+  if ($("#kr-live")) kryptoChart($("#kr-live"), kv.map(p => p[0]), kv.map(p => p[1] / kv[0][1] - 1), K.vergleich_live, "Funding-Bot (Simulation)");
 };
+
 RENDER.broker = el => {
   const B = D.broker;
   if (!B || !B.verbunden) {

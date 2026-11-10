@@ -294,7 +294,8 @@ def main():
             print(f"Broker: Fehler ({str(e)[:120]})")
     if not args.demo and getattr(cfg, "KRYPTO_AKTIV", False):
         try:
-            print(krypto.lauf(dep, cfg)[0])
+            kb = {n: C_alle[t] for n, t in cfg.BENCHMARKS if t in C_alle.columns}
+            print(krypto.lauf(dep, cfg, bench=kb)[0])
         except Exception as e:
             print(f"Krypto: Fehler ({str(e)[:150]})")
             (dep.setdefault("krypto", {}))["fehler"] = str(e)[:300]
