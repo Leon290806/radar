@@ -207,6 +207,11 @@ def dashboard_daten(dep, s, score, par, cfg, C_alle, aktionen, kand, ins, ins_st
         else:
             kern.append(kern[-1] * (1 + par.GELDMARKT_ZINS) ** (1 / 252))
     kern_s = pd.Series(kern, index=idx)
+    if s.get("kern") is not None:                      # Kern laut Trend-Baustein
+        kk = s["kern"].reindex(idx).ffill().bfill()
+        if kk.notna().all() and kk.iloc[0] > 0:
+            kern_s = kk / kk.iloc[0] * 100
+            kern = list(kern_s.to_numpy())
 
     stats = {"radar": kz.reihe_kennzahlen(eq, par.GELDMARKT_ZINS), "bench": {}, "relativ": {},
              "trades": kz.trade_kennzahlen(dep["trades"], par.KOSTEN), "monate": kz.monatstabelle(eq),
@@ -275,5 +280,7 @@ def dashboard_daten(dep, s, score, par, cfg, C_alle, aktionen, kand, ins, ins_st
         "markt": regime_txt, "dates": dates, "eq": _liste(eq_n), "bench": benches, "kern": _liste(pd.Series(kern) / kern[0] * 100),
         "invest": [k[4] for k in kurve], "dd": _liste(dd, 4), "live_idx": live_idx,
         "trades": trades, "kern_w": kern_w, "aktionen": akt, "stats": stats, "scanner": scanner,
-        "insider": insd, "tdates": tdates, "tick": details, "lernen": L, "forschung": dep.get("forschung"), "broker": dep.get("broker"), "krypto": dep.get("krypto"), "par": par_d, "oddlot": oddlot, "hinweise": hinweise,
+        "insider": insd, "tdates": tdates, "tick": details, "lernen": L, "forschung": dep.get("forschung"), "broker": dep.get("broker"), "krypto": dep.get("krypto"),
+        "trend": dep.get("trend"), "kern_name": s.get("kern_name"),
+        "investiert_avg": float(np.mean([k[4] for k in kurve if len(k) > 4])) if kurve else None, "par": par_d, "oddlot": oddlot, "hinweise": hinweise,
     })

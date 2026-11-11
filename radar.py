@@ -134,7 +134,18 @@ def tagesfazit(dep, aktionen, s, par):
     reg = bool(s["regime"].iloc[-1])
     abst = float(s["regime_abst"].iloc[-1]) if "regime_abst" in s else None
     z.append(f"🌍 Markt: {'Aufwärtstrend' if reg else 'Abwärtstrend'}" + (f" (S&P 500 {_p(abst)} zur 200-Tage-Linie)" if abst is not None else "")
-             + ("" if reg else " – freies Geld im Geldmarkt"))
+             + ("" if reg else " – höhere Kauf-Schwelle"))
+    T = dep.get("trend") or {}
+    ta, tk = T.get("aktien") or {}, T.get("krypto") or {}
+    if ta.get("jetzt"):
+        j = ta["jetzt"]
+        vb = next((v for v in ta.get("varianten", []) if v["id"] == ta.get("bester")), {})
+        z.append(f"🧭 Kern ({vb.get('name', '')}): " + (f"investiert in {j['halten']}" if j["an"] else "Geldmarkt")
+                 + (f" · {j['index']} {_p(j['abstand'])} zur Linie" if j.get("abstand") is not None else ""))
+    if tk.get("jetzt"):
+        z.append("₿ Krypto-Trend: " + " · ".join(f"{x['coin']} {x['anteil']:.0%} investiert" for x in tk["jetzt"]))
+    for w in T.get("wechsel") or []:
+        z.append(f"🔁 {w}")
     status = dep.get("kandidaten_status") or {}
     if not any(a["typ"] == "kaufen" for a in aktionen):
         if len(offen) >= par.MAX_POSITIONEN:
@@ -173,7 +184,7 @@ def benachrichtigen(dep, aktionen, s, par):
         text = tagesfazit(dep, aktionen, s, par)
         kauf = sum(a["typ"] == "kaufen" for a in aktionen)
         raus = sum(a["typ"] in ("verkaufen", "gestoppt") for a in aktionen)
-        fehler = bool((dep.get("broker") or {}).get("fehler"))
+        fehler = bool((dep.get("broker") or {}).get("fehler")) or bool((dep.get("trend") or {}).get("wechsel"))
         teile = ([f"{kauf} Kauf"] if kauf else []) + ([f"{raus} Verkauf"] if raus else [])
         titel = f"Radar {pd.Timestamp(dep['letzter_tag']):%d.%m.}: " + (", ".join(teile) if teile else "Tagesfazit")
         headers = {"Title": titel.encode("utf-8"), "Priority": "high" if (kauf or raus or fehler) else "default",
@@ -208,7 +219,10 @@ def main():
         except Exception:
             raise SystemExit("Journal lässt sich nicht öffnen – Passwort geändert? Mit --neu neu beginnen.")
     hinweise = []
+    behalten = {}
     if dep is not None and dep.get("version", 2) < engine.VERSION:
+        # Broker-Zuordnung, Krypto- und Trend-Simulationen überleben den Neuaufbau des Aktien-Journals
+        behalten = {k: dep[k] for k in ("broker", "krypto", "trend") if dep.get(k)}
         dep = None
         hinweise.append(f"Journal wurde mit den neuen Regeln (Version {engine.VERSION}) neu aufgebaut.")
 
@@ -285,6 +299,7 @@ def main():
 
     if dep is None:
         dep = engine.neues_depot()
+        dep.update(behalten)
         start = max(300, len(idx) - 1 - args.rueckblick)
         tage = list(range(start, len(idx)))
         dep["start"] = idx[start].date().isoformat()

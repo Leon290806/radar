@@ -272,7 +272,13 @@ function perfChart(host, opts) {
 }
 
 /* ============================== Kopf & Tabs ============================== */
-const TABS = [["uebersicht", "Übersicht"], ["portfolio", "Portfolio"], ["verlauf", "Verlauf"], ["insider", "Insider"], ["scanner", "Scanner"], ["statistik", "Statistik"], ["lernen", "Lernen"], ["krypto", "Krypto"], ["broker", "Broker"]];
+const TABS = [["uebersicht", "Übersicht"], ["portfolio", "Portfolio"], ["verlauf", "Verlauf"], ["insider", "Insider"], ["scanner", "Scanner"], ["statistik", "Statistik"], ["lernen", "Lernen"], ["trend", "Trend"], ["krypto", "Krypto"], ["broker", "Broker"]];
+function kernInfo() {
+  const T = (D.trend || {}).aktien; if (!T) return null;
+  const v = T.varianten.find(x => x.id === T.bester) || {}, J = T.jetzt || {};
+  return { name: v.name, an: !!J.an, etf: v.etf_us, eu: v.etf_eu, hebel: v.hebel, index: v.index_name, J };
+}
+const kernText = () => { const k = kernInfo(); if (!k) return M.regime ? "S&P-500-ETF" : "Geldmarkt"; return k.an ? `${k.index} ${k.hebel}× (${k.etf})` : "Geldmarkt"; };
 const M = D.meta;
 const sp = D.markt.find(m => m.name === "S&P 500");
 document.body.insertAdjacentHTML("afterbegin", `
@@ -314,7 +320,7 @@ function marktKarte() {
   ${D.markt.map(m => `<div class="markt-z"><span><i class="ampel" style="background:var(${m.auf ? "--good" : "--bad"})"></i><b>${esc(m.name)}</b></span>
     <span class="${kl(m.abst)}">${pct(m.abst)}</span><span class="mute klein">1M ${pct(m.m1)}</span></div>`).join("")}
   <p class="cs" style="margin:12px 0 0">Aufwärtstrend = Index über seinem Durchschnitt der letzten 200 Handelstage (200-Tage-Linie) – ein klassischer Filter für den <b>langfristigen</b> Trend, kein Tagestrend. Maßgeblich ist der S&amp;P 500: Er liegt aktuell ${sp ? `${pct(Math.abs(sp.abst), 1, false)} ${sp.auf ? "über" : "unter"}` : ""} seiner 200-Tage-Linie.
-  ${M.regime ? `Folge: Kauf-Schwelle ${P.SCHWELLE}, freies Geld liegt im S&amp;P-500-ETF.` : `Folge: höhere Kauf-Schwelle (${P.SCHWELLE_RISK_OFF}), freies Geld liegt im Geldmarkt.`}</p></div>`;
+  ${M.regime ? `Folge: Kauf-Schwelle ${P.SCHWELLE}.` : `Folge: höhere Kauf-Schwelle (${P.SCHWELLE_RISK_OFF}).`} Freies Geld: <b>${esc(kernText())}</b>${kernInfo() ? ` laut Trend-Baustein (${esc(kernInfo().name)})` : ""}.</p></div>`;
 }
 function heldKarte() {
   const kauf = D.aktionen.find(a => a.typ === "kaufen");
@@ -353,7 +359,7 @@ RENDER.uebersicht = el => {
     <div class="kpi"><div class="k">Sharpe ${tippI("Rendite pro Einheit Schwankung (über Geldmarktzins). Über 1 gilt als gut, über 2 als sehr gut.")}</div><div class="v">${zahl(r.sharpe)}</div><div class="n">Sortino ${zahl(r.sortino)}</div></div>
     <div class="kpi"><div class="k">Max. Rückgang</div><div class="v neg">${pct(r.maxdd)}</div><div class="n">längste Erholung ${r.dd_dauer || 0} Tage</div></div>
     <div class="kpi"><div class="k">Trefferquote</div><div class="v">${pct(tk.trefferquote, 0, false)}</div><div class="n">${tk.anzahl || 0} Trades · PF ${zahl(tk.profit_factor)}</div></div>
-    <div class="kpi"><div class="k">Einzelaktien</div><div class="v">${pct(1 - D.kern_w, 0, false)}</div><div class="n">${offen.length} Position${offen.length === 1 ? "" : "en"} · Rest ${M.regime ? "ETF" : "Geldmarkt"}</div></div>
+    <div class="kpi"><div class="k">Einzelaktien</div><div class="v">${pct(1 - D.kern_w, 0, false)}</div><div class="n">${offen.length} Position${offen.length === 1 ? "" : "en"} · Rest ${esc(kernText())}</div></div>
   </div>
   <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Wertentwicklung</h3><div class="cs">Radar gegen Indizes – Indizes an- und ausschalten, Zeitraum wählen</div></div></div><div id="ue-perf"></div></div></div>
   <div class="grid">
@@ -517,7 +523,7 @@ RENDER.portfolio = el => {
   const geplant = TRADES.filter(t => t.status === "geplant");
   const farben = ["--s1", "--s2", "--s3", "--s4", "--s5", "--s7"];
   const teile = offen.map((t, k) => ({ name: t.ticker, w: t.anteil, farbe: farben[k % 6] }));
-  teile.push({ name: M.regime ? "S&P-500-ETF (Kern)" : "Geldmarkt (Kern)", w: D.kern_w, farbe: "--chip" });
+  teile.push({ name: kernText() + " (Kern)", w: D.kern_w, farbe: "--chip" });
   const gv = offen.reduce((a, t) => a + t.anteil * t.lauf / (1 + t.lauf), 0);
   el.innerHTML = `<div class="grid">
     <div class="card c4"><div class="ch"><div><h3 class="ct">Aufteilung</h3><div class="cs">Anteil am Strategie-Portfolio</div></div></div><div id="pf-donut"></div>
@@ -721,7 +727,7 @@ RENDER.statistik = el => {
     <div class="kpi"><div class="k">Sharpe</div><div class="v">${zahl(r.sharpe)}</div><div class="n">Sortino ${zahl(r.sortino)}</div></div>
     <div class="kpi"><div class="k">Omega</div><div class="v">${zahl(r.omega)}</div><div class="n">Calmar ${zahl(r.calmar)}</div></div>
   </div>
-  <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Wertentwicklung</h3><div class="cs">Indizes an-/ausschalten · „Nur Kern“ = S&amp;P 500 mit Trendfilter, ohne Einzelaktien</div></div></div><div id="st-perf"></div></div></div>
+  <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Wertentwicklung</h3><div class="cs">Indizes an-/ausschalten · „Nur Kern“ = ${esc(D.kern_name || "S&P 500 mit Trendfilter")}, ohne Einzelaktien</div></div></div><div id="st-perf"></div></div></div>
   <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Rückgänge (Drawdown)</h3><div class="cs">Abstand zum bisherigen Höchststand</div></div></div><div id="st-dd"></div></div></div>
   <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Vergleich</h3><div class="cs">Gleicher Zeitraum · bester Wert je Zeile hervorgehoben</div></div></div>
     <div class="tw"><table class="tbl"><thead><tr><th class="l">Kennzahl</th>${spalten.map(([n]) => `<th>${esc(n)}</th>`).join("")}</tr></thead><tbody>
@@ -802,7 +808,7 @@ function forschungKarte() {
     ${(F.varianten || []).slice().sort((a, b) => (b.name === F.bester) - (a.name === F.bester) || ((b.lern || {}).ziel ?? -9) - ((a.lern || {}).ziel ?? -9)).slice(0, 20).map(v => `<tr class="${v.name === F.bester ? "hl" : ""}"><td class="l wrap" style="max-width:420px">${v.name === F.bester ? '<span class="badge b-kauf">gewählt</span> ' : ""}${esc(v.name)}</td><td>${k(v.lern)}</td><td>${pct(v.quote_lern, 0, false)}</td><td>${k(v.test)}</td><td>${pct(v.quote_test, 0, false)}</td><td>${v.gv_test ? `<span class="pos">${pct(v.gv_test[0], 1)}</span> / <span class="neg">${pct(v.gv_test[1], 1)}</span>` : "–"}</td><td>${v.trades}</td></tr>`).join("")}
     </tbody></table></div></div></div>`;
 }
-function multiChart(host, defs, key) {
+function multiChart(host, defs, key, opt = {}) {
   // defs: [{name, farbe, punkte: [[datum, wert]...], an: bool, breite, strich}] – Werte als Rendite ab Start (0 = 0 %)
   const tage = [...new Set(defs.flatMap(d => d.punkte.map(p => p[0])))].sort();
   const pos = Object.fromEntries(tage.map((t, k) => [t, k]));
@@ -812,7 +818,7 @@ function multiChart(host, defs, key) {
   const ch = document.createElement("div"); wrap.appendChild(ch);
   const unter = document.createElement("div"); unter.className = "cs"; unter.style.marginTop = "8px"; wrap.appendChild(unter);
   const reihe = d => {
-    const v = new Array(tage.length).fill(null); d.punkte.forEach(p => { if (ok(p[1])) v[pos[p[0]]] = p[1]; });
+    const v = new Array(tage.length).fill(null); d.punkte.forEach(p => { if (ok(p[1])) v[pos[p[0]]] = opt.log ? Math.log10(Math.max(1 + p[1], 1e-3)) : p[1]; });
     const a = v.findIndex(ok), e = v.length - 1 - v.slice().reverse().findIndex(ok);   // Lücken innerhalb der Reihe füllen
     for (let i = a + 1; a >= 0 && i <= e; i++) if (!ok(v[i])) v[i] = v[i - 1];
     return v;
@@ -822,7 +828,8 @@ function multiChart(host, defs, key) {
     chips.innerHTML = defs.map(d => `<span class="chip serie ${ausgew.has(d.name) ? "" : "aus"}" data-n="${esc(d.name)}"><i class="dot" style="background:var(${d.farbe})"></i>${esc(d.name)}</span>`).join("");
     ch.innerHTML = "";
     linie(ch, { x: tage, series: defs.map(d => ({ name: d.name, farbe: d.farbe, v: reihe(d), aus: !ausgew.has(d.name), breite: d.breite || 1.6, strich: d.strich })),
-      hoehe: 320, yfmt: v => pct(v, 0), tipfmt: v => pct(v, 1), nullLinie: true });
+      hoehe: opt.hoehe || 320, yfmt: v => opt.log ? zahl(10 ** v, 10 ** v >= 10 ? 0 : 1) + "×" : pct(v, 0),
+      tipfmt: v => opt.log ? pct(10 ** v - 1, 0) : pct(v, 1), nullLinie: true });
     unter.innerHTML = "Gesamt im Zeitraum: " + defs.filter(d => ausgew.has(d.name)).map(d => `${esc(d.name)} <b class="${kl(letzt(d))}">${pct(letzt(d), 1)}</b>`).join(" · ");
   };
   chips.addEventListener("click", ev => { const c = ev.target.closest("[data-n]"); if (!c) return; const n = c.dataset.n; ausgew.has(n) ? ausgew.delete(n) : ausgew.add(n); merke(key, [...ausgew]); male(); });
@@ -936,11 +943,11 @@ function kryptoArbitrage(el) {
 }
 
 RENDER.krypto = el => {
-  let unter = lies("krypto_unter", "chart");
-  el.innerHTML = `<div class="unterreiter seg" style="margin-bottom:16px"><button data-u="chart" class="${unter === "chart" ? "an" : ""}">Chart-Strategien · LSOB, GUSS, Delfin, Wicks, Ausbruch</button><button data-u="arb" class="${unter === "arb" ? "an" : ""}">Funding-Arbitrage</button></div><div id="kr-inhalt"></div>`;
+  let unter = lies("krypto_unter", "trend");
+  el.innerHTML = `<div class="unterreiter seg" style="margin-bottom:16px"><button data-u="trend" class="${unter === "trend" ? "an" : ""}">Trend · BTC &amp; ETH</button><button data-u="arb" class="${unter === "arb" ? "an" : ""}">Funding-Arbitrage</button><button data-u="chart" class="${unter === "chart" ? "an" : ""}">Chart-Strategien · LSOB, GUSS, Delfin, Wicks, Ausbruch</button></div><div id="kr-inhalt"></div>`;
   el.querySelectorAll("[data-u]").forEach(b => b.onclick = () => { merke("krypto_unter", b.dataset.u); RENDER.krypto(el); });
   const inhalt = $("#kr-inhalt");
-  if (unter === "arb") kryptoArbitrage(inhalt); else kryptoChart(inhalt, el);
+  if (unter === "arb") kryptoArbitrage(inhalt); else if (unter === "trend") kryptoTrend(inhalt); else kryptoChart(inhalt, el);
 };
 
 function kryptoChart(el, wurzel) {
@@ -1046,7 +1053,7 @@ RENDER.broker = el => {
   ${B.verlauf && B.verlauf.t.length > 4 ? `<div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Kontoverlauf</h3><div class="cs">Wert des Broker-Kontos je Handelstag</div></div></div><div id="br-chart"></div></div></div>` : ""}
   <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Positionen im Broker-Konto</h3><div class="cs">Live-Kurse von Alpaca · Stopp = aktive Stopp-Order</div></div></div>
     ${(B.positionen || []).length ? `<div class="tw"><table class="tbl"><thead><tr><th class="l">Aktie</th><th>Stück</th><th>Einstand</th><th>Kurs</th><th>Wert</th><th>Anteil</th><th>G/V</th><th>heute</th><th>Stopp-Order</th></tr></thead><tbody>
-    ${B.positionen.map(p => `<tr ${D.tick[p.t] ? `class="klick" data-ticker="${esc(p.t)}"` : ""}><td class="l"><div class="tick">${esc(p.t)} ${p.radar ? "" : '<span class="badge b-neutral">nicht vom Radar</span>'}</div><div class="firma">${esc((D.tick[p.t] || {}).f || (p.t === "SPY" ? "S&P-500-ETF (Kern)" : ""))}</div></td>
+    ${B.positionen.map(p => `<tr ${D.tick[p.t] ? `class="klick" data-ticker="${esc(p.t)}"` : ""}><td class="l"><div class="tick">${esc(p.t)} ${p.radar ? "" : '<span class="badge b-neutral">nicht vom Radar</span>'}</div><div class="firma">${esc((D.tick[p.t] || {}).f || (p.t === (B.kern || "SPY") ? "Kern-ETF" : (B.kern_alt || []).includes(p.t) ? "alter Kern-ETF (wird verkauft)" : ""))}</div></td>
       <td>${zahl(p.qty, 0)}</td><td>${zahl(p.einstand)}</td><td>${zahl(p.kurs)}</td><td>${bt(p.wert)}</td><td>${pct(K.equity ? p.wert / K.equity : null, 1, false)}</td>
       <td class="${kl(p.gv)}"><b>${pct(p.gv_pct)}</b><div class="klein">${bt(p.gv)}</div></td><td class="${kl(p.heute)}">${pct(p.heute)}</td><td>${p.stopp ? zahl(p.stopp) + `<div class="klein neg">${pct(p.stopp / p.kurs - 1)}</div>` : '<span class="mute">–</span>'}</td></tr>`).join("")}
     </tbody></table></div>` : '<div class="leer">Noch keine Positionen. Neue Käufe werden zur nächsten Eröffnung ausgeführt.</div>'}
@@ -1115,6 +1122,134 @@ RENDER.lernen = el => {
 };
 
 /* ============================== Start ============================== */
+/* ============================== Trend (Aktien-Kern) ============================== */
+const TF = ["--s1", "--s2", "--s6", "--s3", "--s4", "--s7", "--s5", "--warn"];
+const kz = (v, dd = true) => v ? `<b class="${kl(v.cagr)}">${pct(v.cagr, 1)}</b>${dd ? `<div class="klein mute">DD ${pct(v.maxdd, 0)} · Sharpe ${zahl(v.sharpe, 2)}</div>` : ""}` : "–";
+
+RENDER.trend = el => {
+  const T = (D.trend || {}).aktien;
+  if (!T || !T.varianten) { el.innerHTML = `<div class="grid"><div class="card c12"><h3 class="ct">Trend-Baustein</h3><div class="leer">Startet mit dem nächsten Abendlauf.</div></div></div>`; return; }
+  const V = Object.fromEntries(T.varianten.map(v => [v.id, v]));
+  const B = V[T.bester], A = V[T.bisher], SP = V.sp500_1x_kein, NQ = V.ndx_1x_kein, J = T.jetzt || {};
+  const FB = (D.forschung || {}).bench || {};
+  const zeigeIds = Object.keys(T.kurven || {});
+  const name = id => id === T.bester ? `${V[id].name} (gewählt)` : id === "sp500_1x_kein" ? "S&P 500 halten" : id === "ndx_1x_kein" ? "Nasdaq 100 halten" : id === T.bisher ? `${V[id].name} (bisher)` : V[id].name;
+  const farbe = id => id === T.bester ? "--s1" : id === "sp500_1x_kein" ? "--s2" : id === "ndx_1x_kein" ? "--ink3" : id === T.bisher ? "--s6" : TF[3 + zeigeIds.indexOf(id) % 5];
+  const defs = (teil) => zeigeIds.map(id => ({ name: name(id), farbe: farbe(id), punkte: T.kurven[id][teil], an: [T.bester, "sp500_1x_kein", "ndx_1x_kein", T.bisher].includes(id), breite: id === T.bester ? 2.8 : 1.6 }))
+    .concat(Object.entries(T.vergleich || {}).map(([n, v]) => ({ name: n, farbe: n === "DAX" ? "--s5" : "--s4", punkte: v[teil] || [], an: teil === "test", breite: 1.3, strich: "5 4" })));
+  const vglIds = [...new Set([T.bester, T.bisher, "sp500_1x_kein", "ndx_1x_kein", "sp500_2x_sma200", "sp500_2x_kein", "ndx_2x_sma200", "ndx_2x_kreuz", "ndx_3x_sma200"])].filter(id => V[id]);
+  const jahre = [...new Set(zeigeIds.flatMap(id => Object.keys(T.jahre[id] || {})))].sort().reverse();
+  const jIds = [T.bester, "sp500_1x_kein", "ndx_1x_kein", T.bisher].filter((x, i, a) => V[x] && a.indexOf(x) === i);
+  const sortiert = T.varianten.slice().sort((a, b) => ((b.lern || {}).cagr ?? -9) - ((a.lern || {}).cagr ?? -9));
+  const inv = D.investiert_avg;
+  const lineTxt = J.linie ? `${J.index} ${zahl(J.kurs, 0)} · Linie ${zahl(J.linie, 0)} (${pct(J.abstand, 1)})` : "";
+  el.innerHTML = `<div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Trend-Baustein · Kern für das freie Geld</h3>
+      <div class="cs">${T.varianten.length} Varianten · gewählt auf ${datKurz(T.lern_start)}–${datKurz(T.grenze)}, geprüft ab ${datKurz(T.grenze)} · Stand ${esc((D.trend || {}).stand || T.datum)}</div></div>
+      <span class="badge ${J.an ? "b-kauf" : "b-neutral"}">${J.an ? "investiert" : "Geldmarkt"}</span></div>
+    <p class="erkl">Der Radar steckt nur einen Teil des Geldes in Einzelaktien${ok(inv) ? ` (im Schnitt ${pct(inv, 0, false)})` : ""}. Der Rest ist der <b>Kern</b>. Getestet wurde: S&amp;P 500 oder Nasdaq 100, ohne Hebel oder täglich 2×/3× gehebelt (wie SSO/QLD/UPRO/TQQQ), immer investiert oder mit Trendfilter – unter der Trendlinie raus in den Geldmarkt. Die Hebel-ETFs sind mit echten Gebühren und Finanzierungskosten nachgebaut und ab 1986 simuliert (also inkl. Crash 1987, Dotcom-Crash, Finanzkrise, Corona, 2022). Gehandelt wird vorsichtig gerechnet einen Tag nach dem Signal. <b>Regel:</b> die höchste Rendite im Lernteil, aber kein tieferer Absturz als beim normalen S&amp;P 500 (${pct(T.dd_grenze, 0)}).</p></div></div>
+  <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Was der Kern gerade macht</h3><div class="cs">${esc(B.name)} · Signal vom ${dat(J.datum, true)}</div></div></div>
+    <div class="kpis">
+      <div class="kpi"><div class="k">Jetzt halten</div><div class="v">${J.an ? esc(B.etf_us) : "Geldmarkt"}</div><div class="n">${J.an ? esc(B.etf_eu) : "T-Bills / Tagesgeld, bis der Trend dreht"}</div></div>
+      <div class="kpi"><div class="k">Signal</div><div class="v ${J.an ? "pos" : "neg"}">${J.an ? "über der Linie" : "unter der Linie"}</div><div class="n">seit ${dat(J.seit, true)} · ${esc(lineTxt)}</div></div>
+      <div class="kpi"><div class="k">1986 – heute · pro Jahr</div><div class="v ${kl(B.lang.cagr)}">${pct(B.lang.cagr, 1)}</div><div class="n">S&amp;P 500 halten ${pct(SP.lang.cagr, 1)} · bisheriger Kern ${pct(A.lang.cagr, 1)}</div></div>
+      <div class="kpi"><div class="k">Testteil ab ${datKurz(T.grenze)} · pro Jahr</div><div class="v ${kl(B.test.cagr)}">${pct(B.test.cagr, 1)}</div><div class="n">S&amp;P 500 halten ${pct(SP.test.cagr, 1)} · Nasdaq ${pct(NQ.test.cagr, 1)}</div></div>
+      <div class="kpi"><div class="k">Größter Rückgang 1986 – heute</div><div class="v neg">${pct(B.lang.maxdd, 0)}</div><div class="n">S&amp;P 500 halten ${pct(SP.lang.maxdd, 0)} · schlechtestes Jahr ${pct(B.lang.schlechtestes_jahr, 0)}</div></div>
+    </div>
+    ${J.an ? `<div class="box" style="margin-top:12px">Raus in den Geldmarkt, wenn der ${esc(J.index)} unter ${zahl(J.raus_ab || J.linie, 0)} schließt (${pct((J.raus_ab || J.linie) / J.kurs - 1, 1)} vom aktuellen Stand).</div>` : `<div class="box" style="margin-top:12px">Wieder kaufen, wenn der ${esc(J.index)} über ${zahl(J.rein_ab || J.linie, 0)} schließt (${pct((J.rein_ab || J.linie) / J.kurs - 1, 1)} vom aktuellen Stand).</div>`}
+    ${FB.kern && FB.kern.lern ? `<p class="cs" style="margin-top:10px">Forschungslabor (letzte ${datKurz((D.forschung || {}).von)}–heute): Kern allein im Lernteil ${pct(FB.kern.lern.cagr, 1)} pro Jahr, im Testteil ${pct((FB.kern.test || {}).cagr, 1)} – S&amp;P 500 ${pct((FB.lern || {}).cagr, 1)} / ${pct((FB.test || {}).cagr, 1)}. Einzelaktien kauft der Radar nur, wenn sie zusammen mit dem Kern besser waren als der Kern allein.</p>` : ""}</div></div>
+  <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Vergleich</h3><div class="cs">pro Jahr · DD = größter Rückgang · Lernteil ${datKurz(T.lern_start)}–${datKurz(T.grenze)}</div></div></div>
+    <div class="tw"><table class="tbl"><thead><tr><th class="l">Variante</th><th>Lernteil</th><th>Testteil</th><th>1986 – heute</th><th>letzte 5 Jahre</th><th>schlechtestes Jahr</th><th>Zeit im Markt</th><th>Wechsel / Jahr</th></tr></thead><tbody>
+    ${vglIds.map(id => { const v = V[id]; return `<tr class="${id === T.bester ? "hl" : ""}"><td class="l"><b>${esc(name(id))}</b><div class="klein mute">${esc(v.etf_us)} · ${esc(v.etf_eu)}</div></td><td>${kz(v.lern)}</td><td>${kz(v.test)}</td><td>${kz(v.lang)}</td><td>${kz(v.letzte5)}</td><td class="${kl(v.lang.schlechtestes_jahr)}">${pct(v.lang.schlechtestes_jahr, 0)}</td><td>${pct(v.lang.im_markt, 0, false)}</td><td>${zahl(v.lang.wechsel_pa, 1)}</td></tr>`; }).join("")}
+    </tbody></table></div></div></div>
+  <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Wertentwicklung seit 1986</h3><div class="cs">logarithmisch (gleicher Abstand = gleicher Prozentgewinn) · 1 € wird zu …</div></div></div><div id="tr-lang"></div></div></div>
+  <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Testteil seit ${datKurz(T.grenze)}</h3><div class="cs">Daten, die bei der Wahl unbekannt waren · mit MSCI World und DAX</div></div></div><div id="tr-test"></div></div></div>
+  <div class="grid">
+    <div class="card c6"><div class="ch"><div><h3 class="ct">Jahre</h3><div class="cs">Rendite je Kalenderjahr</div></div></div>
+      <div class="tw" style="max-height:520px;overflow:auto"><table class="tbl"><thead><tr><th class="l">Jahr</th>${jIds.map(id => `<th>${esc(name(id).replace(" (gewählt)", " ★").replace(" (bisher)", " (bisher)"))}</th>`).join("")}</tr></thead><tbody>
+      ${jahre.map(j => `<tr><td class="l">${j}</td>${jIds.map(id => { const x = (T.jahre[id] || {})[j]; return `<td class="${kl(x)}">${pct(x, 0)}</td>`; }).join("")}</tr>`).join("")}
+      </tbody></table></div></div>
+    <div class="card c6"><div class="ch"><div><h3 class="ct">Gegenprobe · Nachbau gegen echte ETFs</h3><div class="cs">gleicher Zeitraum, Rendite pro Jahr inkl. Ausschüttungen</div></div></div>
+      <div class="tw"><table class="tbl"><thead><tr><th class="l">ETF</th><th>seit</th><th>echt</th><th>Nachbau</th><th>Korrelation</th></tr></thead><tbody>
+      ${(T.probe || []).map(p => `<tr><td class="l"><b>${esc(p.etf)}</b> <span class="mute klein">${esc(p.index)} ${p.hebel}×</span></td><td>${datKurz(p.von)}</td><td>${pct(p.echt_cagr, 1)}</td><td>${pct(p.nachbau_cagr, 1)}</td><td>${zahl(p.korrelation, 3)}</td></tr>`).join("")}
+      </tbody></table></div>
+      <p class="cs" style="margin-top:10px">Annahmen: Gebühren ${Object.entries((T.annahmen || {}).ter || {}).map(([l, t]) => `${l}× ${pct(t, 2, false)}`).join(", ")} pro Jahr, Finanzierung Geldmarktzins + ${pct((T.annahmen || {}).spread, 1, false)} auf den geliehenen Teil, ${pct((T.annahmen || {}).kosten, 1, false)} je Wechsel, Dividenden ${pct(((T.annahmen || {}).dividende || {}).sp500, 1, false)} (S&amp;P) bzw. ${pct(((T.annahmen || {}).dividende || {}).ndx, 1, false)} (Nasdaq) pro Jahr. Liegt der Nachbau nahe am echten ETF, sind auch die Jahrzehnte davor glaubwürdig.</p>
+      <h4 class="ct" style="margin:14px 0 8px;font-size:14px">Was du wissen musst</h4>
+      <ol class="gedanken">
+        <li>Hebel-ETFs setzen den Hebel täglich neu. In Seitwärtsphasen mit starken Schwankungen verlieren sie dadurch Wert – genau dagegen hilft der Trendfilter.</li>
+        <li>Ein Crash an einem einzigen Tag wie 1987 (−20 %) trifft einen 2×-ETF mit −40 %, bevor ein Filter reagieren kann. Das ist in den Zahlen oben enthalten.</li>
+        <li>In langen Aufwärtsphasen (z. B. 2014–2021) ist „einfach halten“ oft besser als der Filter, der Vorteil kommt in Bärenmärkten (2000–02, 2008, 2022).</li>
+        <li>Jeder Wechsel in den Geldmarkt ist in Deutschland ein Verkauf – Gewinne werden versteuert. Das bremst den Zinseszins etwas; in den Zahlen ist das nicht enthalten.</li>
+        <li>In der EU gibt es 2×-ETFs (UCITS); 3× gibt es nur als ETP (Schuldverschreibung des Emittenten).</li>
+      </ol></div></div>
+  <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Alle Varianten</h3><div class="cs">sortiert nach dem Lernteil · grau = Absturz im Lernteil tiefer als beim S&amp;P 500, deshalb nicht wählbar</div></div></div>
+    <div class="tw" style="max-height:560px;overflow:auto"><table class="tbl"><thead><tr><th class="l">Variante</th><th>Lernteil</th><th>Testteil</th><th>1986 – heute</th><th>jetzt</th></tr></thead><tbody>
+    ${sortiert.map(v => `<tr class="${v.id === T.bester ? "hl" : ""}" style="${v.lern && v.lern.maxdd < T.dd_grenze ? "opacity:.55" : ""}"><td class="l">${esc(v.name)}${v.id === T.bester ? ' <span class="badge b-kauf">gewählt</span>' : v.id === T.bisher ? ' <span class="badge b-neutral">bisher</span>' : ""}</td><td>${kz(v.lern)}</td><td>${kz(v.test)}</td><td>${kz(v.lang)}</td><td><span class="badge ${v.jetzt_an ? "b-kauf" : "b-neutral"}">${v.jetzt_an ? "investiert" : "Geldmarkt"}</span></td></tr>`).join("")}
+    </tbody></table></div></div></div>`;
+  multiChart($("#tr-lang"), defs("ab1986"), "trend_lang", { log: true, hoehe: 360 });
+  multiChart($("#tr-test"), defs("test"), "trend_test");
+};
+
+/* ============================== Krypto-Trend ============================== */
+function kryptoTrend(el) {
+  const T = (D.trend || {}).krypto;
+  if (!T || !T.varianten) { el.innerHTML = `<div class="grid"><div class="card c12"><h3 class="ct">Krypto · Trend</h3><div class="leer">Startet mit dem nächsten Abendlauf.</div></div></div>`; return; }
+  const V = Object.fromEntries(T.varianten.map(v => [v.id, v]));
+  const B = V[T.bester], BTC = V.BTC_1x_kein, BE = V["BTC+ETH_1x_kein"];
+  const ids = Object.keys(T.kurven || {});
+  const name = id => id === T.bester ? `${V[id].name} (gewählt)` : id === "BTC_1x_kein" ? "Bitcoin halten" : id === "ETH_1x_kein" ? "Ether halten" : id === "BTC+ETH_1x_kein" ? "BTC+ETH halten" : V[id].name;
+  const farbe = id => id === T.bester ? "--s1" : id === "BTC_1x_kein" ? "--warn" : id === "ETH_1x_kein" ? "--s6" : id === "BTC+ETH_1x_kein" ? "--ink3" : TF[3 + ids.indexOf(id) % 5];
+  const defs = teil => ids.map(id => ({ name: name(id), farbe: farbe(id), punkte: T.kurven[id][teil], an: [T.bester, "BTC_1x_kein", "BTC+ETH_1x_kein"].includes(id), breite: id === T.bester ? 2.8 : 1.6 }))
+    .concat(Object.entries(T.vergleich || {}).map(([n, v]) => ({ name: n, farbe: n === "S&P 500" ? "--s2" : n === "DAX" ? "--s5" : "--s4", punkte: v[teil] || [], an: teil === "test", breite: 1.3, strich: "5 4" })));
+  const korb = lies("ktrend_korb", "BTC+ETH");
+  const filter = [...new Set(T.varianten.map(v => v.filter))];
+  const zeile = (k, L, f) => V[`${k}_${L}x_${f}`];
+  const jahre = [...new Set(ids.flatMap(id => Object.keys(T.jahre[id] || {})))].sort().reverse();
+  const jIds = [T.bester, "BTC_1x_kein", "BTC+ETH_1x_kein", "BTC_1x_mix"].filter((x, i, a) => V[x] && a.indexOf(x) === i);
+  const LV = T.live || {}, ls = LV.stat || {};
+  const anteil = (T.jetzt || []).reduce((s, z) => s + z.anteil, 0) / Math.max(1, (T.jetzt || []).length);
+  el.innerHTML = `<div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Krypto · Trendfolge <span class="badge b-neutral">Simulation</span></h3>
+      <div class="cs">${T.varianten.length} Varianten · Lernteil ${datKurz(T.lern_start)}–${datKurz(T.grenze)}, Testteil ab ${datKurz(T.grenze)} (inkl. Bärenmarkt 2022) · Stand ${esc((D.trend || {}).stand || T.datum)}</div></div>
+      <span class="badge ${anteil > 0.5 ? "b-kauf" : anteil > 0 ? "b-warn" : "b-neutral"}">${pct(anteil, 0, false)} investiert</span></div>
+    <p class="erkl">Idee: Bitcoin und Ether halten, solange der Trend steht, und in Stablecoins (Zins) wechseln, wenn er bricht – so lassen sich die großen Abstürze (−75 % und mehr) zu einem guten Teil vermeiden. Der Lernteil ist mit 3,5 Jahren kurz und vom Bullenmarkt 2020/21 geprägt: Die einzelne Regel, die dort am besten war, war im Test oft schwach. Deshalb gilt <b>fest der Trend-Mix aus allen 8 Regeln, ohne Hebel</b>: Jede Regel steuert ein Achtel der Position. Das ist robuster als auf eine einzige Linie zu setzen. Gerechnet mit ${pct((T.annahmen || {}).kosten, 1, false)} je Wechsel und vorsichtig ${(T.annahmen || {}).verzoegerung} Tage nach dem Signal gehandelt.</p></div></div>
+  <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Was der Bot gerade macht</h3><div class="cs">${esc(B.name)} · Tageskerzen bis ${dat(((T.jetzt || [])[0] || {}).datum, true)} · Live-Papier-Simulation seit ${dat(T.start, true)}</div></div></div>
+    <div class="kpis">
+      ${(T.jetzt || []).map(z => `<div class="kpi"><div class="k">${esc(z.coin)} · ${zahl(z.kurs, z.kurs > 100 ? 0 : 2)} $</div><div class="v ${z.anteil >= 0.5 ? "pos" : z.anteil > 0 ? "" : "neg"}">${pct(z.anteil, 0, false)} investiert</div><div class="n">${(z.regeln || []).filter(r => r.an).length} von ${(z.regeln || []).length} Regeln im Aufwärtstrend · Mehrheit seit ${dat(z.seit, true)}</div></div>`).join("")}
+      <div class="kpi"><div class="k">Live seit ${dat(T.start, true)}</div><div class="v ${kl(ls.gesamt)}">${pct(ls.gesamt, 1)}</div><div class="n">${ls.tage != null ? ls.tage + " Tage" : ""} · simuliert, keine echten Orders</div></div>
+      <div class="kpi"><div class="k">Testteil · pro Jahr</div><div class="v ${kl(B.test.cagr)}">${pct(B.test.cagr, 1)}</div><div class="n">größter Rückgang ${pct(B.test.maxdd, 0)} · BTC+ETH halten ${pct(BE.test.cagr, 1)} / ${pct(BE.test.maxdd, 0)}</div></div>
+    </div>
+    <div class="grid" style="margin-top:6px">${(T.jetzt || []).map(z => `<div class="card c6" style="box-shadow:none;border:1px solid var(--line2)"><h4 class="ct" style="font-size:14px;margin-bottom:8px">${esc(z.coin)} · Regeln</h4>
+      <div class="tw"><table class="tbl"><thead><tr><th class="l">Regel</th><th class="l">Zustand</th><th>Schwelle</th><th>Abstand</th></tr></thead><tbody>
+      ${(z.regeln || []).map(r => `<tr><td class="l">${esc(r.name)}</td><td class="l"><span class="badge ${r.an ? "b-kauf" : "b-neutral"}">${r.an ? "investiert" : "Stablecoin"}</span></td><td>${ok(r.linie) ? zahl(r.linie, r.linie > 100 ? 0 : 2) : "–"}</td><td class="${kl(ok(r.linie) ? z.kurs / r.linie - 1 : null)}">${ok(r.linie) ? pct(z.kurs / r.linie - 1, 1) : "–"}</td></tr>`).join("")}
+      </tbody></table></div>
+      <div class="cs" style="margin-top:8px">Letzte Änderungen: ${(z.wechsel || []).slice(-8).reverse().map(w => `${dat(w.datum)} ${pct(w.vorher, 0, false)}→<b>${pct(w.anteil, 0, false)}</b>`).join(" · ") || "keine"}</div></div>`).join("")}</div>
+    ${(LV.kurve || []).length > 1 ? `<div id="kt-live" style="margin-top:10px"></div>` : ""}</div></div>
+  <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Alle Regeln · ${esc(korb)}</h3><div class="cs">pro Jahr · DD = größter Rückgang · 2× = mit Perp gehebelt, echte Funding-Kosten (Binance), Zwangsschließung bei zu großem Tagesverlust</div></div>
+      <div class="seg" id="kt-korb">${["BTC+ETH", "BTC", "ETH"].map(k => `<button data-k="${k}" class="${k === korb ? "an" : ""}">${k}</button>`).join("")}</div></div>
+    <div class="tw"><table class="tbl"><thead><tr><th class="l">Regel</th><th>1× Lernteil</th><th>1× Testteil</th><th>1× gesamt</th><th>2× Testteil</th><th>2× gesamt</th><th>Zeit im Markt</th><th>Wechsel / Jahr</th></tr></thead><tbody>
+    ${filter.map(f => { const a = zeile(korb, 1, f), b = zeile(korb, 2, f); if (!a) return ""; return `<tr class="${a.id === T.bester ? "hl" : ""}"><td class="l">${esc(a.filter_name)}${a.id === T.bester ? ' <span class="badge b-kauf">gewählt</span>' : ""}</td><td>${kz(a.lern)}</td><td>${kz(a.test)}</td><td>${kz(a.lang)}</td><td>${kz((b || {}).test)}</td><td>${kz((b || {}).lang)}</td><td>${pct((a.lang || {}).im_markt, 0, false)}</td><td>${zahl((a.lang || {}).wechsel_pa, 1)}</td></tr>`; }).join("")}
+    </tbody></table></div>
+    <p class="cs" style="margin-top:10px">„gesamt“ = ab ${datKurz(((V[`${korb}_1x_kein`] || {}).lang || {}).von)} (BTC ab 2015, ETH ab 2018). Mit 2× steigt die Rendite in guten Jahren, die Abstürze werden aber so tief, dass sich der Hebel unterm Strich selten lohnt.</p></div></div>
+  <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Wertentwicklung gesamt</h3><div class="cs">logarithmisch · 1 $ wird zu …</div></div></div><div id="kt-lang"></div></div></div>
+  <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Testteil seit ${datKurz(T.grenze)}</h3><div class="cs">mit S&amp;P 500, MSCI World und DAX zum Vergleich</div></div></div><div id="kt-test"></div></div></div>
+  <div class="grid">
+    <div class="card c6"><div class="ch"><div><h3 class="ct">Jahre</h3><div class="cs">Rendite je Kalenderjahr</div></div></div>
+      <div class="tw"><table class="tbl"><thead><tr><th class="l">Jahr</th>${jIds.map(id => `<th>${esc(name(id).replace(" (gewählt)", " ★"))}</th>`).join("")}</tr></thead><tbody>
+      ${jahre.map(j => `<tr><td class="l">${j}</td>${jIds.map(id => { const x = (T.jahre[id] || {})[j]; return `<td class="${kl(x)}">${pct(x, 0)}</td>`; }).join("")}</tr>`).join("")}
+      </tbody></table></div></div>
+    <div class="card c6"><div class="ch"><div><h3 class="ct">Einordnung</h3><div class="cs">ehrlich</div></div></div>
+      <ol class="gedanken">
+        <li>Trendfolge verdient nicht mehr als „halten“ in jedem Jahr – in starken Aufwärtsjahren steigt sie oft später ein. Der Vorteil sind die vermiedenen Abstürze (2018, 2022).</li>
+        <li>Fehlsignale kosten: In Seitwärtsphasen wechselt der Bot hin und her und verliert jedes Mal ein wenig.</li>
+        <li>Gut kombinierbar mit der Funding-Arbitrage: Im Aufwärtstrend sind die Funding-Raten hoch (Arbitrage lohnt), im Abwärtstrend liegt das Geld als Stablecoin mit Zins.</li>
+        <li>Steuer (Deutschland): Krypto ist nach 1 Jahr Haltedauer steuerfrei – Trendfolge verkauft oft früher, Gewinne sind dann steuerpflichtig. In den Zahlen nicht enthalten.</li>
+        <li>Bis hier ist alles Simulation. Erst wenn die Live-Papier-Simulation über Monate zum Backtest passt, lohnt echtes Geld.</li>
+      </ol></div></div>`;
+  el.querySelectorAll("#kt-korb [data-k]").forEach(b => b.onclick = () => { merke("ktrend_korb", b.dataset.k); kryptoTrend(el); });
+  multiChart($("#kt-lang"), defs("lang"), "ktrend_lang", { log: true, hoehe: 360 });
+  multiChart($("#kt-test"), defs("test"), "ktrend_test");
+  if ((LV.kurve || []).length > 1) multiChart($("#kt-live"), [{ name: "Live-Papier-Simulation", farbe: "--s1", punkte: LV.kurve, an: true, breite: 2.4 }], "ktrend_live");
+}
+
 const start = (location.hash || "#uebersicht").slice(1);
 zeige(TABS.some(t => t[0] === start) ? start : "uebersicht");
 window.addEventListener("hashchange", () => { const h = location.hash.slice(1); if (TABS.some(t => t[0] === h) && !$(`#${h}.aktiv`)) zeige(h); });
