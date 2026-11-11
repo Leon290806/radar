@@ -54,6 +54,9 @@ GELDMARKT_ZINS = 0.02      # angenommener Geldmarktzins p.a. für Phasen außerh
 # Broker (Alpaca): führt die Empfehlungen automatisch aus. Braucht die GitHub-Secrets ALPACA_KEY_ID und ALPACA_SECRET_KEY.
 BROKER_AKTIV = True
 BROKER_LIVE = False            # False = Paper Trading (Spielgeld). Nur bewusst auf True stellen!
+BROKER_NACHKAUF = True         # Positionen aus dem Musterdepot nachkaufen, die im Konto fehlen (nur nahe am Einstieg)
+BROKER_NACHKAUF_MAX_UEBER = 0.03   # höchstens 3 % über dem Einstiegskurs des Musterdepots
+BROKER_NACHKAUF_MIN_STOPP = 0.03   # mindestens 3 % Abstand zum Stopp
 BROKER_KERN = True             # freies Geld im S&P-500-ETF halten (wie im Musterdepot)
 BROKER_KERN_TICKER = "SPY"
 

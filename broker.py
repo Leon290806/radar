@@ -175,7 +175,36 @@ def synchronisieren(dep, cfg, regime, kern_kurs, kern=None):
                 if tr["status"] != "offen":
                     continue
                 if sym not in pos:
-                    erg["aktionen"].append({"typ": "hinweis", "t": sym, "text": "Im Musterdepot offen, im Broker-Konto nicht – Kauf wurde nicht ausgeführt"})
+                    # Nachkauf: Position aus dem Musterdepot fehlt im Konto (z. B. Neuaufbau, Limit nicht erreicht).
+                    # Nur, wenn der Kurs kaum über dem Einstieg liegt, genug Abstand zum Stopp ist und noch Zeit bleibt.
+                    kurs, ein, st = float(tr.get("kurs") or 0), float(tr.get("einstieg_kurs") or 0), float(tr.get("stopp") or 0)
+                    rest = (tr.get("parameter") or {}).get("HALTEDAUER", 40) - int(tr.get("tage") or 0)
+                    grund = None
+                    if not getattr(cfg, "BROKER_NACHKAUF", True):
+                        grund = "Nachkauf ausgeschaltet"
+                    elif not (kurs > 0 and ein > 0 and st > 0):
+                        grund = "keine Kursdaten"
+                    elif kurs > ein * (1 + getattr(cfg, "BROKER_NACHKAUF_MAX_UEBER", 0.03)):
+                        grund = f"Kurs schon {kurs / ein - 1:.0%} über dem Einstieg"
+                    elif (kurs - st) / kurs < getattr(cfg, "BROKER_NACHKAUF_MIN_STOPP", 0.03):
+                        grund = f"nur {(kurs - st) / kurs:.1%} bis zum Stopp"
+                    elif rest < 10:
+                        grund = f"nur noch {rest} Tage Haltedauer"
+                    if grund:
+                        erg["aktionen"].append({"typ": "hinweis", "t": sym, "text": f"Im Musterdepot offen, im Konto nicht – kein Nachkauf ({grund})"})
+                        continue
+                    limit = round(kurs * 1.01, 2)
+                    qty = math.floor(min(float(tr.get("gewicht") or 0.08) * equity, max(cash, 0) * 0.98) / limit)
+                    if qty < 1:
+                        continue
+                    if _bestellen(a, erg, {"symbol": sym, "qty": str(qty), "side": "buy", "type": "limit", "time_in_force": "day",
+                                           "limit_price": f"{limit:.2f}", "order_class": "oto",
+                                           "stop_loss": {"stop_price": f"{st:.2f}"}, "client_order_id": _oid("nach")}):
+                        einzel_wert += qty * limit
+                        cash -= qty * limit
+                        eigene.add(sym)
+                        erg["aktionen"].append({"typ": "kaufen", "t": sym, "qty": qty, "preis": _f(limit),
+                                                "text": f"Nachkauf (im Musterdepot seit {tr.get('einstieg_datum', '')}) – Limit {limit:.2f} mit Stopp {st:.2f}".replace(".", ",")})
                     continue
                 qty = int(float(pos[sym]["qty"]))
                 einzel_wert += float(pos[sym]["market_value"])
