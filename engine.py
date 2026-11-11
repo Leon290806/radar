@@ -377,7 +377,7 @@ def filter_ok(mk, filter_liste):
 # ---------------------------------------------------------------------------
 # Musterdepot
 # ---------------------------------------------------------------------------
-VERSION = 7
+VERSION = 8   # 8 = Kern nach Trend-Baustein (gewählte Index-/Hebel-/Filter-Variante)
 
 
 def neues_depot():
@@ -397,6 +397,8 @@ def _np(s, score=None, bench=None):
         n["regime"] = s["regime"].to_numpy(dtype=bool)
         n["cols"] = list(s["C"].columns)
         n["J"] = {t: j for j, t in enumerate(n["cols"])}
+        if s.get("kern") is not None:
+            n["kern"] = s["kern"].to_numpy(dtype=float)
         s["_np"] = n
     if score is not None and n.get("score_id") != id(score):
         n["score"], n["score_id"], n["score_ref"] = score.to_numpy(dtype=float), id(score), score  # Referenz halten: id bleibt eindeutig
@@ -433,8 +435,11 @@ def tag_verarbeiten(dep, s, d, par, modus, firmen, bench=None, pruefe_pead=None,
     K = par.KOSTEN
 
     # 0) Kern: Rendite auf das freie Geld
+    KN = N.get("kern")
     if d > 0 and dep["cash"] > 0:
-        if par.KERN_AKTIV and B is not None and N["regime"][d - 1] \
+        if par.KERN_AKTIV and KN is not None and np.isfinite(KN[d]) and np.isfinite(KN[d - 1]) and KN[d - 1] > 0:
+            dep["cash"] *= KN[d] / KN[d - 1]                     # Kern laut Trend-Baustein (inkl. Filter und Geldmarkt)
+        elif par.KERN_AKTIV and B is not None and N["regime"][d - 1] \
                 and np.isfinite(B[d]) and np.isfinite(B[d - 1]):
             dep["cash"] *= B[d] / B[d - 1]
         else:

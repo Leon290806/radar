@@ -38,10 +38,10 @@ LERN_START_AKTIE = "1986-08-01"   # ab hier gibt es beide Indizes mit 200-Tage-L
 US_ETF = {("sp500", 1): "SPY", ("sp500", 2): "SSO", ("sp500", 3): "UPRO",
           ("ndx", 1): "QQQ", ("ndx", 2): "QLD", ("ndx", 3): "TQQQ"}
 EU_ETF = {("sp500", 1): "z. B. iShares Core S&P 500 UCITS (CSPX) oder ein MSCI-USA-ETF",
-          ("sp500", 2): "z. B. Xtrackers S&P 500 2x Leveraged Daily Swap UCITS",
+          ("sp500", 2): "z. B. Xtrackers S&P 500 2x Leveraged Daily Swap UCITS ETF 1C (LU0411078552)",
           ("sp500", 3): "in der EU nur als ETP (z. B. WisdomTree S&P 500 3x Daily Leveraged)",
           ("ndx", 1): "z. B. iShares Nasdaq 100 UCITS (CNDX)",
-          ("ndx", 2): "z. B. Amundi Nasdaq-100 Daily (2x) Leveraged UCITS (LQQ)",
+          ("ndx", 2): "z. B. Amundi Nasdaq-100 Daily (2x) Leveraged UCITS ETF (FR0010342592)",
           ("ndx", 3): "in der EU nur als ETP (z. B. WisdomTree Nasdaq 100 3x Daily Leveraged, QQQ3)"}
 AKTIEN_TICKER = ["^GSPC", "^NDX", "^IRX", "SPY", "QQQ", "SSO", "QLD", "UPRO", "TQQQ", "URTH", "^GDAXI"]
 FILTER_AKTIE = {
@@ -52,6 +52,7 @@ FILTER_AKTIE = {
     "sma200b1": {"name": "200-Tage-Linie ±1 %", "art": "sma", "n": 200, "band": 0.01},
     "sma200b3": {"name": "200-Tage-Linie ±3 %", "art": "sma", "n": 200, "band": 0.03},
     "kreuz": {"name": "50/200-Kreuz", "art": "kreuz", "n": 50, "m": 200},
+    "mix": {"name": "Trend-Mix (100/150/200-Linie + Kreuz)", "art": "mix", "teile": ["sma100", "sma150", "sma200", "kreuz"]},
 }
 
 # ---------------------------------------------------------------------------
@@ -73,7 +74,12 @@ FILTER_KRYPTO = {
     "don50": {"name": "Ausbruch 50 Tage / Ausstieg 20", "art": "donchian", "n": 50, "m": 20},
     "mom30": {"name": "30-Tage-Momentum", "art": "mom", "n": 30},
     "mom90": {"name": "90-Tage-Momentum", "art": "mom", "n": 90},
+    "mix": {"name": "Trend-Mix (alle 8 Regeln)", "art": "mix",
+            "teile": ["sma50", "sma100", "sma200", "kreuz", "don20", "don50", "mom30", "mom90"]},
 }
+# Der Lernteil (2018–2021) ist zu kurz und zu sehr vom Bullenmarkt geprägt, um EINE Regel sicher auszuwählen
+# (die Lern-Sieger waren im Test schwach). Deshalb fest: der Mix aus allen Regeln, ohne Hebel.
+KRYPTO_WAHL = "BTC+ETH_1x_mix"
 KRYPTO_KORB = {"BTC": ["BTC"], "ETH": ["ETH"], "BTC+ETH": ["BTC", "ETH"]}
 
 
@@ -129,10 +135,13 @@ def _zins(Y, idx):
 # ---------------------------------------------------------------------------
 # Signale und Simulation
 # ---------------------------------------------------------------------------
-def signal(close, f, hoch=None):
-    """True = am Ende dieses Tages investiert sein."""
+def signal(close, f, hoch=None, katalog=None):
+    """True = am Ende dieses Tages investiert sein (beim Mix: Anteil der Regeln, die investiert sind)."""
     c = close.astype(float)
     art = f["art"]
+    if art == "mix":
+        teile = [signal(c, katalog[t]).astype(float) for t in f["teile"]]
+        return pd.concat(teile, axis=1).mean(axis=1)
     if art == "kein":
         return pd.Series(True, index=c.index)
     if art == "sma":
@@ -173,7 +182,7 @@ def signal(close, f, hoch=None):
 
 def simulieren(r_an, r_aus, sig, kosten, verz):
     """Tagesrenditen der Strategie. sig = Signal zum Tagesschluss, gehandelt mit Verzögerung verz."""
-    pos = sig.shift(verz).fillna(False).astype(float)
+    pos = sig.astype(float).shift(verz).fillna(0.0)
     wechsel = pos.diff().abs().fillna(0)
     r = pos * r_an + (1 - pos) * r_aus - wechsel * kosten
     return r.clip(lower=-0.99), pos
@@ -266,7 +275,7 @@ def aktien_forschen(Y=None, log=print):
         for L in (1, 2, 3):
             r_an = gehebelt(roh[k]["r"], zins, L)
             for fid, f in FILTER_AKTIE.items():
-                sig = signal(roh[k]["preis"], f)
+                sig = signal(roh[k]["preis"], f, katalog=FILTER_AKTIE)
                 r, pos = simulieren(r_an, zins, sig, KOSTEN_AKTIE, VERZ_AKTIE)
                 start = roh[k]["preis"].first_valid_index() + pd.Timedelta(days=300)
                 r, pos = r[r.index >= start], pos[pos.index >= start]
@@ -294,7 +303,8 @@ def aktien_forschen(Y=None, log=print):
     jahre = {vid: _jahre(serien[vid][0][serien[vid][0].index >= lstart]) for vid in zeige}
     for v in varianten:
         sig = serien[v["id"]][2]
-        v["jetzt_an"] = bool(sig.iloc[-1])
+        v["jetzt_an"] = bool(sig.iloc[-1] >= 0.5)
+        v["jetzt_anteil"] = float(sig.iloc[-1])
         v["seit"] = _seit(sig)
     # Vergleich im Testteil: MSCI World / DAX (ohne Hebel, immer investiert)
     vergleich = {}
@@ -303,11 +313,12 @@ def aktien_forschen(Y=None, log=print):
             r = C[t].dropna().pct_change().dropna()
             vergleich[n] = {"test": _kurve(r[r.index >= grenze]), "ab1986": _kurve(r[r.index >= lstart]),
                             "kennzahlen_test": kennzahlen(r[r.index >= grenze])}
-    jetzt = _aktien_jetzt(bester, roh, serien)
+    jetzt_alle = {v["id"]: _aktien_jetzt(v, roh, serien) for v in varianten if v["hebel"] in (1, 2, 3)}
+    jetzt = jetzt_alle[bester["id"]]
     log(f"  Trend Aktien: {len(varianten)} Varianten in {time.time() - t0:.0f} s")
     return {"version": VERSION, "datum": dt.date.today().isoformat(), "grenze": GRENZE_AKTIE, "lern_start": LERN_START_AKTIE,
             "varianten": varianten, "bester": bester["id"], "bisher": aktuell["id"], "dd_grenze": dd_grenze,
-            "kurven": kurven, "jahre": jahre, "probe": probe, "vergleich": vergleich, "jetzt": jetzt,
+            "kurven": kurven, "jahre": jahre, "probe": probe, "vergleich": vergleich, "jetzt": jetzt, "jetzt_alle": jetzt_alle,
             "annahmen": {"ter": TER, "spread": SPREAD, "kosten": KOSTEN_AKTIE, "verzoegerung": VERZ_AKTIE,
                          "dividende": {k: v["div"] for k, v in INDIZES.items()}},
             "dauer_s": round(time.time() - t0)}
@@ -317,7 +328,10 @@ def _aktien_jetzt(v, roh, serien):
     f = FILTER_AKTIE[v["filter"]]
     p = roh[v["index"]]["preis"].dropna()
     out = {"index": v["index_name"], "kurs": float(p.iloc[-1]), "datum": p.index[-1].date().isoformat(), "an": v["jetzt_an"],
-           "seit": v["seit"], "halten": (v["etf_us"] if v["jetzt_an"] else "Geldmarkt"), "filter": f["name"]}
+           "anteil": v.get("jetzt_anteil", 1.0 if v["jetzt_an"] else 0.0), "seit": v["seit"],
+           "halten": (v["etf_us"] if v["jetzt_an"] else "Geldmarkt"), "filter": f["name"], "etf_eu": v["etf_eu"], "hebel": v["hebel"]}
+    if f["art"] == "mix":
+        out["regeln"] = [{"name": FILTER_AKTIE[t]["name"], "an": bool(signal(p, FILTER_AKTIE[t]).iloc[-1])} for t in f["teile"]]
     if f["art"] == "sma":
         sma = float(p.rolling(f["n"]).mean().iloc[-1])
         out.update({"linie": sma, "abstand": float(p.iloc[-1] / sma - 1),
@@ -325,6 +339,18 @@ def _aktien_jetzt(v, roh, serien):
     elif f["art"] == "kreuz":
         out.update({"linie": float(p.rolling(f["m"]).mean().iloc[-1]), "kurz": float(p.rolling(f["n"]).mean().iloc[-1])})
     return out
+
+
+def aktien_jetzt_fuer(A):
+    return A["jetzt_alle"][A["bester"]]
+
+
+def letzter_kurs(ticker):
+    try:
+        p = lade_yahoo(AKTIEN_TICKER, start="1970-01-01")["Close"][ticker].dropna()
+        return float(p.iloc[-1])
+    except Exception:
+        return None
 
 
 def kern_serie(T, idx, Y=None):
@@ -337,7 +363,7 @@ def kern_serie(T, idx, Y=None):
     ix = INDIZES[v["index"]]
     p = C[ix["ticker"]].reindex(alle).ffill()
     r_an = gehebelt((p.pct_change() + ix["div"] / 252).where(p.notna()), zins, v["hebel"])
-    r, pos = simulieren(r_an, zins, signal(p, FILTER_AKTIE[v["filter"]]), KOSTEN_AKTIE, VERZ_AKTIE)
+    r, pos = simulieren(r_an, zins, signal(p, FILTER_AKTIE[v["filter"]], katalog=FILTER_AKTIE), KOSTEN_AKTIE, VERZ_AKTIE)
     eq = (1 + r.fillna(0)).cumprod()
     return eq.reindex(idx, method="ffill"), pos.reindex(idx, method="ffill")
 
@@ -380,7 +406,7 @@ def krypto_forschen(Y=None, F=None, log=print, start_live=None):
             if L > 1:                                            # Liquidation, wenn der Tagestiefstkurs zu weit fällt
                 r_an = r_an.where(~(drop * L <= -0.9), -0.9)
             for fid, fd in FILTER_KRYPTO.items():
-                sig = signal(p, fd).where(p.notna(), False)
+                sig = signal(p, fd, katalog=FILTER_KRYPTO).where(p.notna(), 0.0)
                 rr, pos = simulieren(r_an, zins, sig, KOSTEN_KRYPTO, VERZ_KRYPTO)
                 rr = rr.where(p.shift(1).notna())
                 einzeln[(c, L, fid)] = (rr, pos, sig)
@@ -400,14 +426,11 @@ def krypto_forschen(Y=None, F=None, log=print, start_live=None):
                                   "lern": kennzahlen(r[(r.index >= lstart) & (r.index < grenze)], pos, zins * 365 / 252),
                                   "test": kennzahlen(r[r.index >= grenze], pos, zins * 365 / 252),
                                   "lang": kennzahlen(r, pos, zins * 365 / 252),
-                                  "jetzt": {c: bool(s.iloc[-1]) for c, s in zip(coins, [t[2] for t in teile])},
+                                  "jetzt": {c: float(s.iloc[-1]) for c, s in zip(coins, [t[2] for t in teile])},
                                   "seit": {c: _seit(s) for c, s in zip(coins, [t[2] for t in teile])}})
-    ref = next(v for v in varianten if v["id"] == "BTC_1x_kein")
-    gueltig = [v for v in varianten if v["lern"] and v["lern"]["maxdd"] >= ref["lern"]["maxdd"] and v["hebel"] == 1] + \
-              [v for v in varianten if v["lern"] and v["hebel"] > 1 and v["lern"]["maxdd"] >= -0.6]
-    bester = max(gueltig, key=lambda v: v["lern"]["cagr"])
-    zeige = list(dict.fromkeys([bester["id"], "BTC_1x_kein", "ETH_1x_kein", "BTC_1x_sma200", "BTC+ETH_1x_sma100",
-                                "BTC_1x_don20", "BTC+ETH_2x_sma100"]))
+    bester = next(v for v in varianten if v["id"] == KRYPTO_WAHL)
+    zeige = list(dict.fromkeys([bester["id"], "BTC_1x_kein", "ETH_1x_kein", "BTC+ETH_1x_kein", "BTC_1x_mix", "BTC_1x_sma200",
+                                "BTC+ETH_1x_sma50", "BTC+ETH_2x_mix"]))
     kurven = {vid: {"lang": _kurve(serien[vid][0]), "test": _kurve(serien[vid][0][serien[vid][0].index >= grenze])} for vid in zeige}
     jahre = {vid: _jahre(serien[vid][0]) for vid in zeige}
     vergleich = {}
@@ -424,7 +447,22 @@ def krypto_forschen(Y=None, F=None, log=print, start_live=None):
     for c, s in zip(coins, sigs):
         p = preise[c]
         fd = FILTER_KRYPTO[bester["filter"]]
-        z = {"coin": c, "an": bool(s.iloc[-1]), "seit": _seit(s), "kurs": float(p.iloc[-1]), "datum": p.index[-1].date().isoformat()}
+        z = {"coin": c, "an": bool(s.iloc[-1] >= 0.5), "anteil": float(s.iloc[-1]), "seit": _seit((s >= 0.5)),
+             "kurs": float(p.iloc[-1]), "datum": p.index[-1].date().isoformat()}
+        if fd["art"] == "mix":
+            z["regeln"] = []
+            for t in fd["teile"]:
+                ft = FILTER_KRYPTO[t]
+                zr = {"name": ft["name"], "an": bool(signal(p, ft).iloc[-1])}
+                if ft["art"] == "sma":
+                    zr["linie"] = float(p.rolling(ft["n"]).mean().iloc[-1])
+                elif ft["art"] == "donchian":
+                    zr["linie"] = float(p.iloc[-ft["m"] - 1:-1].min() if zr["an"] else p.iloc[-ft["n"] - 1:-1].max())
+                elif ft["art"] == "mom":
+                    zr["linie"] = float(p.iloc[-ft["n"] - 1])
+                elif ft["art"] == "kreuz":
+                    zr["linie"] = float(p.rolling(ft["m"]).mean().iloc[-1])
+                z["regeln"].append(zr)
         if fd["art"] == "sma":
             sma = float(p.rolling(fd["n"]).mean().iloc[-1])
             z.update({"linie": sma, "abstand": float(p.iloc[-1] / sma - 1)})
@@ -435,9 +473,9 @@ def krypto_forschen(Y=None, F=None, log=print, start_live=None):
         elif fd["art"] == "kreuz":
             z.update({"kurz": float(p.rolling(fd["n"]).mean().iloc[-1]), "linie": float(p.rolling(fd["m"]).mean().iloc[-1])})
         # Wechsel-Protokoll der letzten 2 Jahre
-        w = s.astype(int).diff().fillna(0)
-        z["wechsel"] = [{"datum": d.date().isoformat(), "an": bool(s.loc[d]), "kurs": float(p.loc[d])}
-                        for d in w[w != 0].index if d >= p.index[-1] - pd.Timedelta(days=730)][-12:]
+        w = s.astype(float).diff().fillna(0)
+        z["wechsel"] = [{"datum": d.date().isoformat(), "anteil": float(s.loc[d]), "vorher": float(s.loc[d] - w.loc[d]), "kurs": float(p.loc[d])}
+                        for d in w[w != 0].index if d >= p.index[-1] - pd.Timedelta(days=730)][-20:]
         jetzt.append(z)
     log(f"  Trend Krypto: {len(varianten)} Varianten in {time.time() - t0:.0f} s")
     return {"version": VERSION, "datum": dt.date.today().isoformat(), "grenze": GRENZE_KRYPTO, "lern_start": LERN_START_KRYPTO,
@@ -474,15 +512,15 @@ def bericht(A=None, K=None):
     return "\n".join(z)
 
 
-def lauf(dep, cfg, faellig=None):
+def lauf(dep, cfg, aktien=None):
     """Täglich: aktuelle Signale; Forschung wöchentlich (oder bei neuer Version)."""
     T = dep.setdefault("trend", {})
     if T.get("version") != VERSION:
         T.clear()
         T["version"] = VERSION
     alt_an = (T.get("aktien") or {}).get("jetzt", {}).get("an")
-    alt_k = {z["coin"]: z["an"] for z in (T.get("krypto") or {}).get("jetzt", [])}
-    T["aktien"] = aktien_forschen()
+    alt_k = {z["coin"]: z.get("anteil", 1.0 if z["an"] else 0.0) for z in (T.get("krypto") or {}).get("jetzt", [])}
+    T["aktien"] = aktien or aktien_forschen()
     T["krypto"] = krypto_forschen(start_live=(T.get("krypto") or {}).get("start") or T.get("krypto_start"))
     T.setdefault("krypto_start", T["krypto"]["start"])
     T["stand"] = dt.datetime.now().strftime("%d.%m.%Y %H:%M")
@@ -492,8 +530,9 @@ def lauf(dep, cfg, faellig=None):
     if alt_an is not None and alt_an != a["an"]:
         T["wechsel"].append(f"Kern: {a['index']} {'über' if a['an'] else 'unter'} der Trendlinie → {'kaufen: ' + a['halten'] if a['an'] else 'raus in den Geldmarkt'}")
     for z in T["krypto"]["jetzt"]:
-        if z["coin"] in alt_k and alt_k[z["coin"]] != z["an"]:
-            T["wechsel"].append(f"Krypto-Trend {z['coin']}: {'Aufwärtstrend → kaufen' if z['an'] else 'Trend gebrochen → raus in Stablecoins'}")
+        if z["coin"] in alt_k and abs(alt_k[z["coin"]] - z["anteil"]) > 1e-9:
+            T["wechsel"].append(f"Krypto-Trend {z['coin']}: Anteil {alt_k[z['coin']]:.0%} → {z['anteil']:.0%} "
+                                f"({'mehr kaufen' if z['anteil'] > alt_k[z['coin']] else 'teilweise raus in Stablecoins'})")
     return "Trend: Signale aktualisiert" + (f" ({len(T['wechsel'])} Wechsel)" if T["wechsel"] else "")
 
 

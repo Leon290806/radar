@@ -307,6 +307,9 @@ def portfolio_aufbau(s, cfg, bench, grenze, basis, start):
                         "gv_lern": gv(lern_t), "gv_test": gv(test_t)})
     b = bench.iloc[start:].to_numpy() if bench is not None else None
     ref = {"lern": _kennz(b[:k + 1], 0), "test": _kennz(b[k:], 0)} if b is not None else None
+    if ref is not None and s.get("kern") is not None:          # Vergleich: nur der Kern, ganz ohne Einzelaktien
+        kk = s["kern"].iloc[start:].to_numpy()
+        ref["kern"] = {"lern": _kennz(kk[:k + 1], 0), "test": _kennz(kk[k:], 0), "name": s.get("kern_name", "Kern")}
     return erg, ref
 
 
@@ -364,6 +367,18 @@ def forschen(dep, s, ins, cfg, bench, grenze):
         for f in ("PEAD_AKTIV", "INSIDER_TRIGGER", "MOMENTUM_TRIGGER", "HOCH_TRIGGER", "UMKEHR_TRIGGER", "NEG_KAUF_TRIGGER"):
             regeln[f] = False
         bester = None
+    # Bringen Einzelaktien überhaupt etwas gegenüber dem Kern allein? (Vergleich nach Rendite und Rückgang)
+    kr = (ref or {}).get("kern")
+    if bester and kr and kr.get("lern") and bester["lern"]["ziel"] < kr["lern"]["ziel"]:
+        gedanken.append(f"Der Kern allein ({kr['name']}) war im Lernteil besser als jede Mischung mit Einzelaktien "
+                        f"({_pz(kr['lern']['cagr'])} pro Jahr, Rückgang {_pz(kr['lern']['maxdd'], 0)} gegenüber "
+                        f"{_pz(bester['lern']['cagr'])}, {_pz(bester['lern']['maxdd'], 0)}). Der Radar kauft deshalb keine Einzelaktien.")
+        for f in ("PEAD_AKTIV", "INSIDER_TRIGGER", "MOMENTUM_TRIGGER", "HOCH_TRIGGER", "UMKEHR_TRIGGER", "NEG_KAUF_TRIGGER"):
+            regeln[f] = False
+        bester = None
+    elif bester and kr and kr.get("lern"):
+        gedanken.append(f"Mit Einzelaktien besser als der Kern allein ({kr['name']}: {_pz(kr['lern']['cagr'])} pro Jahr, "
+                        f"Rückgang {_pz(kr['lern']['maxdd'], 0)} im Lernteil).")
     parameter = dict(regeln)
     if bester:
         parameter.update(bester["parameter"])
@@ -402,6 +417,9 @@ def bericht(f, s=None, bench=None):
     k = lambda v: "–" if not v else f"{v['cagr'] * 100:+6.1f}% {v['maxdd'] * 100:6.1f}% {v['sharpe']:+.2f}"
     if f.get("bench"):
         z.append(f"{'S&P 500':60s} Lern {k(f['bench']['lern'])} | Test {k(f['bench']['test'])}")
+        if f["bench"].get("kern"):
+            kb = f["bench"]["kern"]
+            z.append(f"{('Kern allein: ' + kb['name'])[:60]:60s} Lern {k(kb['lern'])} | Test {k(kb['test'])}")
     pz = lambda x: "  – " if x is None else f"{x * 100:+.1f}"
     for v in sorted(f["varianten"], key=lambda v: -(v["lern"] or {}).get("ziel", -9)):
         gl, gt = v.get("gv_lern") or (None, None), v.get("gv_test") or (None, None)

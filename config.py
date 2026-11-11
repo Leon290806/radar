@@ -58,6 +58,11 @@ BROKER_KERN = True             # freies Geld im S&P-500-ETF halten (wie im Muste
 BROKER_KERN_TICKER = "SPY"
 
 # Krypto: Funding-Rate-Arbitrage – nur Simulation (keine Orders)
+# Trend-Baustein: Kern (freies Geld) nach der besten Index-/Hebel-/Filter-Variante, dazu Krypto-Trend (BTC/ETH)
+TREND_AKTIV = True
+TREND_KERN = True              # False = Kern bleibt S&P 500 1× mit 200-Tage-Linie
+TREND_KERN_FEST = None         # z. B. "sp500_1x_sma200", um eine Variante fest vorzugeben (sonst wählt der Lernteil)
+
 KRYPTO_AKTIV = True
 KRYPTO_COINS = 40              # die liquidesten Hyperliquid-Perps (davon nur Coins mit kaufbarem Spot)
 

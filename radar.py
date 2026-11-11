@@ -31,6 +31,7 @@ import forschung
 import broker
 import krypto
 import chartstrategien
+import trend
 
 
 def lade_journal(pfad):
@@ -242,6 +243,24 @@ def main():
     s = engine.berechne_signale(kurse, aktien, insider, cfg, sektoren=sektoren)
     idx = s["C"].index
     bench = C_alle["SPY"].reindex(idx).ffill() if "SPY" in C_alle else None
+    # Kern (freies Geld) laut Trend-Baustein: Index, Hebel und Trendfilter mit der besten Lern-Bilanz
+    trend_aktien = None
+    if getattr(cfg, "TREND_AKTIV", True) and not args.demo:
+        try:
+            print("Trend-Baustein: Kern-Varianten testen ...")
+            trend_aktien = trend.aktien_forschen()
+            fest = getattr(cfg, "TREND_KERN_FEST", None)
+            if fest and any(v["id"] == fest for v in trend_aktien["varianten"]):
+                trend_aktien["bester"] = fest
+                trend_aktien["jetzt"] = trend.aktien_jetzt_fuer(trend_aktien)
+            if getattr(cfg, "TREND_KERN", True):
+                s["kern"], s["kern_pos"] = trend.kern_serie(trend_aktien, idx)
+                s["kern_name"] = next(v["name"] for v in trend_aktien["varianten"] if v["id"] == trend_aktien["bester"])
+                s.pop("_np", None)
+                print(f"  Kern: {s['kern_name']}")
+        except Exception as e:
+            print(f"Trend-Baustein: Fehler ({str(e)[:150]}) – Kern bleibt S&P 500 mit 200-Tage-Linie")
+            trend_aktien = None
     eurusd = float(C_alle["EURUSD=X"].dropna().iloc[-1]) if "EURUSD=X" in C_alle else 1.1
 
     if args.bericht:
@@ -258,6 +277,10 @@ def main():
                 print(chartstrategien.bericht(chartstrategien.forschen()))
             except Exception as e:
                 print(f"Krypto-Bericht fehlgeschlagen: {str(e)[:200]}")
+        try:
+            print(trend.bericht(trend_aktien, trend.krypto_forschen()))
+        except Exception as e:
+            print(f"Trend-Bericht fehlgeschlagen: {str(e)[:200]}")
         return
 
     if dep is None:
@@ -293,9 +316,12 @@ def main():
         score = engine.kombiniere(s, par)
     if not args.demo:
         try:
-            kt = getattr(cfg, "BROKER_KERN_TICKER", "SPY")
-            kk = float(C_alle[kt].dropna().iloc[-1]) if kt in C_alle.columns and C_alle[kt].notna().any() else None
-            print(broker.synchronisieren(dep, cfg, bool(s["regime"].iloc[-1]), kk))
+            kt, k_an = getattr(cfg, "BROKER_KERN_TICKER", "SPY"), bool(s["regime"].iloc[-1])
+            if trend_aktien and getattr(cfg, "TREND_KERN", True):
+                vb = next(v for v in trend_aktien["varianten"] if v["id"] == trend_aktien["bester"])
+                kt, k_an = vb["etf_us"], bool(trend_aktien["jetzt"]["an"])
+            kk = trend.letzter_kurs(kt) if kt not in C_alle.columns else (float(C_alle[kt].dropna().iloc[-1]) if C_alle[kt].notna().any() else None)
+            print(broker.synchronisieren(dep, cfg, k_an, kk, kern=kt))
         except Exception as e:
             print(f"Broker: Fehler ({str(e)[:120]})")
     if not args.demo and getattr(cfg, "KRYPTO_AKTIV", False):
@@ -306,6 +332,11 @@ def main():
         except Exception as e:
             print(f"Krypto: Fehler ({str(e)[:150]})")
             (dep.setdefault("krypto", {}))["fehler"] = str(e)[:300]
+    if not args.demo and getattr(cfg, "TREND_AKTIV", True):
+        try:
+            print(trend.lauf(dep, cfg, aktien=trend_aktien))
+        except Exception as e:
+            print(f"Trend: Fehler ({str(e)[:150]})")
     if pw:
         schutz.journal_speichern(dep, journal_pfad, pw)
     else:

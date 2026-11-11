@@ -101,7 +101,7 @@ def schnappschuss(a, eigene, kern="SPY"):
     }
 
 
-def synchronisieren(dep, cfg, regime, kern_kurs):
+def synchronisieren(dep, cfg, regime, kern_kurs, kern=None):
     """Gleicht das Broker-Konto mit dem Journal ab. Rückgabe: kurzer Text fürs Protokoll (ohne Ticker)."""
     key, sec = os.environ.get("ALPACA_KEY_ID"), os.environ.get("ALPACA_SECRET_KEY")
     if not getattr(cfg, "BROKER_AKTIV", True) or not key or not sec:
@@ -120,7 +120,10 @@ def synchronisieren(dep, cfg, regime, kern_kurs):
             raise RuntimeError("Konto ist für den Handel gesperrt.")
         equity = float(konto["equity"])
         erg["start"] = erg["start"] or {"datum": dt.date.today().isoformat(), "equity": equity}
-        kern = getattr(cfg, "BROKER_KERN_TICKER", "SPY")
+        kern = kern or getattr(cfg, "BROKER_KERN_TICKER", "SPY")
+        erg["kern"] = kern
+        alt_kern = {t for t in (alt.get("kern_alt") or []) + [alt.get("kern") or getattr(cfg, "BROKER_KERN_TICKER", "SPY")] if t and t != kern}
+        erg["kern_alt"] = sorted(alt_kern)
         if uhr.get("is_open"):
             erg["aktionen"].append({"typ": "info", "text": "Börse offen – keine Orders gesendet, nur Kontostand gelesen."})
         else:
@@ -132,6 +135,17 @@ def synchronisieren(dep, cfg, regime, kern_kurs):
             time.sleep(2)
             soll = {tr["ticker"]: tr for tr in dep["trades"] if tr["status"] in ("offen", "geplant") and _us(tr["ticker"])}
             cash = float(konto.get("cash") or 0)
+            # 1b) alter Kern-ETF (z. B. SPY, wenn der Kern jetzt QLD ist) wird verkauft
+            for sym in list(alt_kern):
+                if sym in pos and sym not in soll and float(pos[sym]["qty"]) > 0:
+                    qty = abs(float(pos[sym]["qty"]))
+                    a.post("/v2/orders", {"symbol": sym, "qty": str(qty), "side": "sell", "type": "market", "time_in_force": "day",
+                                          "client_order_id": _oid("kernalt")})
+                    erg["aktionen"].append({"typ": "kern", "t": sym, "qty": qty, "text": f"Kern wechselt zu {kern} – alten Kern-ETF verkaufen"})
+                    cash += float(pos[sym]["market_value"])
+                elif sym not in pos:
+                    alt_kern.discard(sym)
+            erg["kern_alt"] = sorted(alt_kern)
             # 2) Verkaufen, was der Radar nicht mehr hält (nur eigene Positionen)
             for sym, p in pos.items():
                 if sym == kern or sym in soll or sym not in eigene:
@@ -194,7 +208,7 @@ def synchronisieren(dep, cfg, regime, kern_kurs):
     except Exception as e:
         erg["fehler"].append(str(e)[:300])
     try:
-        erg.update(schnappschuss(a, eigene, getattr(cfg, "BROKER_KERN_TICKER", "SPY")))
+        erg.update(schnappschuss(a, eigene, kern))
     except Exception as e:
         erg["fehler"].append(f"Kontostand nicht lesbar: {str(e)[:200]}")
     erg["eigene"] = sorted(eigene)
