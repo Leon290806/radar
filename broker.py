@@ -243,6 +243,16 @@ def synchronisieren(dep, cfg, regime, kern_kurs, kern=None):
                         qty = min(qty, int(float(pos[kern]["qty"])))
                     if seite == "buy":                       # ohne Kredit: nur mit vorhandenem Geld
                         qty = min(qty, math.floor(max(cash, 0) * 0.98 / kern_kurs))
+                        # Hebel-ETFs sind nicht beleihbar und Verkaufserlöse (z. B. alter Kern) zählen erst nach der
+                        # Ausführung – deshalb nur so viel, wie das Konto jetzt tatsächlich kaufen kann; Rest am nächsten Abend.
+                        try:
+                            k2 = a.get("/v2/account")
+                            frei = min(float(k2.get("non_marginable_buying_power") or 0), float(k2.get("buying_power") or 0))
+                            if frei > 0 and qty * kern_kurs > frei * 0.97:
+                                qty = math.floor(frei * 0.97 / kern_kurs)
+                                erg["aktionen"].append({"typ": "info", "t": kern, "text": "Kern wird in zwei Schritten getauscht: Rest kauft der Radar, sobald der Verkauf ausgeführt ist"})
+                        except Exception:
+                            pass
                     if qty >= 1:
                         if _bestellen(a, erg, {"symbol": kern, "qty": str(qty), "side": seite, "type": "market", "time_in_force": "day",
                                                "client_order_id": _oid("kern")}):
