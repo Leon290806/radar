@@ -51,6 +51,16 @@ class Alpaca:
         return self._r("DELETE", pfad)
 
 
+def _bestellen(a, erg, order):
+    """Order senden; ein Fehler bei einer Order stoppt nicht die übrigen."""
+    try:
+        a.post("/v2/orders", order)
+        return True
+    except Exception as e:
+        erg["fehler"].append(f"{order.get('side')} {order.get('symbol')} ({order.get('type')}): {str(e)[:220]}")
+        return False
+
+
 def _us(t):
     return "." not in t and "^" not in t and "=" not in t
 
@@ -139,8 +149,9 @@ def synchronisieren(dep, cfg, regime, kern_kurs, kern=None):
             for sym in list(alt_kern):
                 if sym in pos and sym not in soll and float(pos[sym]["qty"]) > 0:
                     qty = abs(float(pos[sym]["qty"]))
-                    a.post("/v2/orders", {"symbol": sym, "qty": str(qty), "side": "sell", "type": "market", "time_in_force": "day",
-                                          "client_order_id": _oid("kernalt")})
+                    if not _bestellen(a, erg, {"symbol": sym, "qty": str(qty), "side": "sell", "type": "market", "time_in_force": "day",
+                                          "client_order_id": _oid("kernalt")}):
+                        continue
                     erg["aktionen"].append({"typ": "kern", "t": sym, "qty": qty, "text": f"Kern wechselt zu {kern} – alten Kern-ETF verkaufen"})
                     cash += float(pos[sym]["market_value"])
                 elif sym not in pos:
@@ -152,8 +163,9 @@ def synchronisieren(dep, cfg, regime, kern_kurs, kern=None):
                     continue
                 qty = abs(float(p["qty"]))
                 if qty > 0:
-                    a.post("/v2/orders", {"symbol": sym, "qty": str(qty), "side": "sell", "type": "market", "time_in_force": "day",
-                                          "client_order_id": _oid("aus")})
+                    if not _bestellen(a, erg, {"symbol": sym, "qty": str(qty), "side": "sell", "type": "market", "time_in_force": "day",
+                                          "client_order_id": _oid("aus")}):
+                        continue
                     erg["aktionen"].append({"typ": "verkaufen", "t": sym, "qty": qty, "text": "Radar hat verkauft – Verkauf zur Eröffnung"})
                     cash += float(p["market_value"])
                     eigene.discard(sym)
@@ -169,8 +181,9 @@ def synchronisieren(dep, cfg, regime, kern_kurs, kern=None):
                 einzel_wert += float(pos[sym]["market_value"])
                 eigene.add(sym)
                 if qty > 0 and tr.get("stopp"):
-                    a.post("/v2/orders", {"symbol": sym, "qty": str(qty), "side": "sell", "type": "stop", "time_in_force": "gtc",
-                                          "stop_price": f"{tr['stopp']:.2f}", "client_order_id": _oid("stopp")})
+                    if not _bestellen(a, erg, {"symbol": sym, "qty": str(qty), "side": "sell", "type": "stop", "time_in_force": "gtc",
+                                          "stop_price": f"{tr['stopp']:.2f}", "client_order_id": _oid("stopp")}):
+                        continue
                     erg["aktionen"].append({"typ": "stopp", "t": sym, "qty": qty, "preis": _f(tr["stopp"]), "text": "Stopp-Order gesetzt"})
             # 4) neue Käufe: Limit für den nächsten Handelstag + angehängter Stopp
             for sym, tr in soll.items():
@@ -180,9 +193,10 @@ def synchronisieren(dep, cfg, regime, kern_kurs, kern=None):
                 if qty < 1:
                     erg["aktionen"].append({"typ": "hinweis", "t": sym, "text": "Kontowert zu klein für 1 Stück"})
                     continue
-                a.post("/v2/orders", {"symbol": sym, "qty": str(qty), "side": "buy", "type": "limit", "time_in_force": "day",
+                if not _bestellen(a, erg, {"symbol": sym, "qty": str(qty), "side": "buy", "type": "limit", "time_in_force": "day",
                                       "limit_price": f"{tr['limit']:.2f}", "order_class": "oto",
-                                      "stop_loss": {"stop_price": f"{tr['stopp_hinweis']:.2f}"}, "client_order_id": _oid("kauf")})
+                                      "stop_loss": {"stop_price": f"{tr['stopp_hinweis']:.2f}"}, "client_order_id": _oid("kauf")}):
+                    continue
                 einzel_wert += qty * tr["limit"]
                 cash -= qty * tr["limit"]
                 eigene.add(sym)
@@ -201,10 +215,10 @@ def synchronisieren(dep, cfg, regime, kern_kurs, kern=None):
                     if seite == "buy":                       # ohne Kredit: nur mit vorhandenem Geld
                         qty = min(qty, math.floor(max(cash, 0) * 0.98 / kern_kurs))
                     if qty >= 1:
-                        a.post("/v2/orders", {"symbol": kern, "qty": str(qty), "side": seite, "type": "market", "time_in_force": "day",
-                                              "client_order_id": _oid("kern")})
-                        erg["aktionen"].append({"typ": "kern", "t": kern, "qty": qty,
-                                                "text": ("Kern aufstocken" if seite == "buy" else "Kern verringern") + " zur Eröffnung"})
+                        if _bestellen(a, erg, {"symbol": kern, "qty": str(qty), "side": seite, "type": "market", "time_in_force": "day",
+                                               "client_order_id": _oid("kern")}):
+                            erg["aktionen"].append({"typ": "kern", "t": kern, "qty": qty,
+                                                    "text": ("Kern aufstocken" if seite == "buy" else "Kern verringern") + " zur Eröffnung"})
     except Exception as e:
         erg["fehler"].append(str(e)[:300])
     try:
@@ -214,4 +228,6 @@ def synchronisieren(dep, cfg, regime, kern_kurs, kern=None):
     erg["eigene"] = sorted(eigene)
     dep["broker"] = erg
     n = sum(1 for x in erg["aktionen"] if x["typ"] in ("kaufen", "verkaufen", "stopp", "kern"))
-    return f"Broker: verbunden ({erg['modus']}), {n} Order(s) gesendet" + (f", {len(erg['fehler'])} Fehler" if erg["fehler"] else "") + "."
+    import re
+    arten = sorted({re.sub(r"\b[A-Z]{1,5}\b", "…", f)[:120] for f in erg["fehler"]})
+    return f"Broker: verbunden ({erg['modus']}), {n} Order(s) gesendet" + (f", {len(erg['fehler'])} Fehler: " + " | ".join(arten) if erg["fehler"] else "") + "."
