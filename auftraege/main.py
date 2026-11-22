@@ -129,6 +129,9 @@ def main():
     kt = J.setdefault("ki_tag", {"datum": tag, "n": 0})
     if kt["datum"] != tag:
         kt.update({"datum": tag, "n": 0})
+    for e in E_.values():  # Verbindungs-/Konfigurationsfehler beim nächsten Lauf erneut versuchen
+        if str(e.get("ki_fehler", "")).startswith(("API HTTP", "Verbindung")):
+            e.pop("ki_fehler", None)
     kandidaten = sorted([e for e in E_.values() if B.empfehlbar(e) and not e.get("ki") and not e.get("ki_fehler")],
                         key=lambda x: -x["ew_eur"])
     rest = max(0, min(E.KI_MAX_PRO_LAUF, E.KI_MAX_PRO_TAG - kt["n"]))
@@ -144,6 +147,9 @@ def main():
             e["ki_fehler"] = fehler
             lauf["ki_fehler"] += 1
             print("KI-Fehler:", fehler)
+            if fehler.startswith(("API HTTP 4", "Verbindung")):
+                e.pop("ki_fehler", None)  # nicht der Auftrag ist schuld -> später erneut
+                break  # kein Geld für weitere fehlschlagende Anfragen verschwenden
         B.bewerte(e, gelernt)
 
     # 6) Statistik je Quelle, Suchbegriffe, Quellen-Status

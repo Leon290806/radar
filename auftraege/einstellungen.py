@@ -10,13 +10,13 @@ SEITE = os.path.join(REPO_WURZEL, "docs", "auftraege", "index.html")
 
 PASSWORT = os.environ.get("RADAR_PASSWORT", "")
 ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-KI_MODELL = os.environ.get("AUFTRAG_MODELL", "claude-sonnet-5-5")
-KI_MAX_PRO_TAG = int(os.environ.get("AUFTRAG_KI_MAX_PRO_TAG", "24"))   # Kostenbremse
-KI_MAX_PRO_LAUF = int(os.environ.get("AUFTRAG_KI_MAX_PRO_LAUF", "8"))
+KI_MODELL = os.environ.get("AUFTRAG_MODELL") or "claude-sonnet-5-5"
+KI_MAX_PRO_TAG = int(os.environ.get("AUFTRAG_KI_MAX_PRO_TAG") or "24")   # Kostenbremse
+KI_MAX_PRO_LAUF = int(os.environ.get("AUFTRAG_KI_MAX_PRO_LAUF") or "8")
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 REPO = os.environ.get("GITHUB_REPOSITORY", "Leon290806/radar")
 NTFY_THEMA = os.environ.get("NTFY_THEMA", "")
-PUSH_AB_EUR = float(os.environ.get("AUFTRAG_PUSH_AB_EUR", "40"))
+PUSH_AB_EUR = float(os.environ.get("AUFTRAG_PUSH_AB_EUR") or "40")
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "https://leon290806.github.io/radar/auftraege/")
 KAGGLE_USER = os.environ.get("KAGGLE_USERNAME", "")
 KAGGLE_KEY = os.environ.get("KAGGLE_KEY", "")
