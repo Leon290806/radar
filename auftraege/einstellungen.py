@@ -35,7 +35,7 @@ USD_JE_EINHEIT = {"USD": 1, "EUR": 1.08, "GBP": 1.27, "CHF": 1.13, "AUD": 0.65, 
 FREELANCER_GEBUEHR = 0.10  # Plattformgebühr freelancer.com (mind. 5 $)
 
 # Wie lange ein Eintrag als "frisch" gilt (Tage), je Art
-FRISCH_TAGE = {"freelance": 4, "bounty": 45, "wettbewerb": 60, "gesuch": 20}
+FRISCH_TAGE = {"freelance": 4, "bounty": 45, "wettbewerb": 60, "gesuch": 20, "ausschreibung": 30}
 AUFBEWAHREN_TAGE = 30
 
 # Leon-Zeit in Minuten: Bewerben + (falls Zuschlag) Abstimmung und Abliefern
@@ -44,6 +44,7 @@ LEON_MIN = {
     "bounty": (5, 25),
     "gesuch": (8, 35),
     "wettbewerb": (30, 120),
+    "ausschreibung": (60, 300),  # Unterlagen prüfen, Angebot einreichen, Nachweise
 }
 
 # freelancer.com: Sperren für neue, kostenlose Konten
@@ -54,7 +55,7 @@ FL_SPERR_UPGRADES = {"recruiter": "nur Preferred Freelancer (Recruiter-Projekt)"
 FL_STUNDE_VERIFIZIERT_AB_USD = 50  # ab diesem Stundensatz nur mit "Verified by Freelancer"
 
 # Größere Projekte brauchen mehr als Claude allein (Abstimmung, Verantwortung): Wert wird gedeckelt
-WERT_DECKEL_EUR = {"freelance": 2500, "gesuch": 800, "bounty": 5000, "wettbewerb": 5000}
+WERT_DECKEL_EUR = {"freelance": 2500, "gesuch": 800, "bounty": 5000, "wettbewerb": 5000, "ausschreibung": 10000}
 # Wettbewerbe verlangen oft Demo-Video/Pitch und viel Feinschliff
 WETTBEWERB_MACHBAR_FAKTOR = 0.5
 
@@ -64,7 +65,15 @@ TOP_MAX_GEBOTE = 80        # mehr Konkurrenz: fliegt aus den Top 5 (Freelance)
 TOP_VOLLE_CHANCE = 0.10    # unter 10 % Chance wird der erwartete Wert anteilig abgewertet
 
 # Startwerte für die Gewinnchance (werden durch Feedback gelernt)
-GEWINN_BASIS = {"freelance": 0.22, "bounty": 0.30, "gesuch": 0.10, "wettbewerb": 0.04}
+GEWINN_BASIS = {"freelance": 0.22, "bounty": 0.30, "gesuch": 0.10, "wettbewerb": 0.04, "ausschreibung": 0.03}
+# Ausschreibungen: formale Anforderungen (Referenzen, Eignungsnachweise) senken die Machbarkeit
+AUSSCHREIBUNG_MACHBAR_FAKTOR = 0.6
+AUSSCHREIBUNG_WERT_UNBEKANNT_EUR = 3000
+# CPV-Codes: Übersetzung, Webdesign, Softwareprogrammierung, Datenverarbeitung, Grafikdesign
+TED_CPV = ["79530000", "72413000", "72200000", "72212000", "72260000", "72300000", "72310000", "79822500"]
+BUND_STICHWORTE = ["übersetzung", "website", "webseite", "internetauftritt", "software", "programmierung", "grafik",
+                   "lektorat", "texte", "redaktion", "datenbank", "digitalisierung", "künstliche intelligenz", " ki",
+                   "e-rechnung", "excel", "datenaufbereitung", "barrierefrei"]
 
 # Kategorien: Stichworte -> Machbarkeit durch Claude (0..1)
 KATEGORIEN = {

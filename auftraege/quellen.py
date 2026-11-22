@@ -418,6 +418,90 @@ def algora():
     return out, []
 
 
+# ---------------------------------------------------------------- Öffentliche Ausschreibungen
+def _sprache(v):
+    """TED liefert Texte oft als {'deu': ..., 'eng': ...} oder Listen."""
+    if isinstance(v, dict):
+        for k in ("deu", "DEU", "eng", "ENG"):
+            if v.get(k):
+                return _sprache(v[k])
+        return _sprache(next(iter(v.values()), ""))
+    if isinstance(v, list):
+        return _sprache(v[0]) if v else ""
+    return "" if v is None else str(v)
+
+
+def ted():
+    """EU-Ausschreibungen über die offizielle TED-Such-API (ohne Schlüssel)."""
+    from datetime import timedelta
+    seit = (datetime.now(timezone.utc) - timedelta(days=14)).strftime("%Y%m%d")
+    basis = f"classification-cpv IN ({' '.join(E.TED_CPV)}) AND place-of-performance IN (DEU) AND publication-date>={seit}"
+    felder_voll = ["publication-number", "notice-title", "buyer-name", "publication-date",
+                   "deadline-receipt-tender-date-lot", "estimated-value-lot", "classification-cpv"]
+    versuche = [(basis + " AND notice-type IN (cn-standard)", felder_voll), (basis, felder_voll),
+                (basis, ["publication-number", "notice-title", "publication-date"])]
+    letzte = ""
+    for query, felder in versuche:
+        try:
+            r = S.post("https://api.ted.europa.eu/v3/notices/search", timeout=30, headers={"Content-Type": "application/json"},
+                       json={"query": query, "fields": felder, "limit": 50, "page": 1, "scope": "ACTIVE"})
+        except requests.RequestException as ex:
+            return [], [f"TED: {ex.__class__.__name__}"]
+        if r.status_code == 200:
+            break
+        letzte = f"TED: HTTP {r.status_code} {r.text[:120]}"
+    else:
+        return [], [letzte]
+    out = []
+    for n in r.json().get("notices", []):
+        nr = n.get("publication-number") or ""
+        betrag = None
+        try:
+            betrag = float(_sprache(n.get("estimated-value-lot")) or 0) or None
+        except ValueError:
+            pass
+        out.append({
+            "id": f"ted-{nr}", "quelle": "TED (EU)", "art": "ausschreibung",
+            "titel": _text(_sprache(n.get("notice-title")), 200) or f"Ausschreibung {nr}",
+            "url": f"https://ted.europa.eu/de/notice/-/detail/{nr}",
+            "text": _text("Auftraggeber: " + _sprache(n.get("buyer-name")) + " · CPV: " + _sprache(n.get("classification-cpv")), 600),
+            "typ": "ausschreibung", "betrag": betrag, "waehrung": "EUR", "gebote": 0, "tags": [],
+            "erstellt": (_sprache(n.get("publication-date")) or None),
+            "frist": _sprache(n.get("deadline-receipt-tender-date-lot"))[:16],
+        })
+    return out, []
+
+
+def bund():
+    """Deutsche Ausschreibungen über den öffentlichen RSS-Feed von service.bund.de (robots.txt geprüft)."""
+    import xml.etree.ElementTree as ET
+    url = "https://www.service.bund.de/Content/Globals/Functions/RSSFeed/RSSGenerator_Ausschreibungen.xml"
+    if not _erlaubt(url):
+        return [], ["service.bund.de: laut robots.txt nicht erlaubt"]
+    r = _get(url, headers={"Accept": "application/rss+xml, application/xml"})
+    if r is None or r.status_code != 200:
+        return [], [f"service.bund.de: HTTP {getattr(r, 'status_code', 'Fehler')}"]
+    try:
+        wurzel = ET.fromstring(r.content)
+    except ET.ParseError:
+        return [], ["service.bund.de: Feed nicht lesbar"]
+    out = []
+    for it in wurzel.iter("item"):
+        titel = _text(it.findtext("title"), 200)
+        text = _text(it.findtext("description"), 800)
+        klein = (" " + titel + " " + text).lower()
+        if not any(w in klein for w in E.BUND_STICHWORTE):
+            continue
+        link = (it.findtext("link") or "").strip()
+        betrag, _w = _betrag_aus_text(text)
+        out.append({
+            "id": "bund-" + re.sub(r"\W+", "", link)[-40:], "quelle": "service.bund.de", "art": "ausschreibung",
+            "titel": titel, "url": link, "text": text, "typ": "ausschreibung", "betrag": betrag, "waehrung": "EUR",
+            "gebote": 0, "tags": [], "erstellt": None,
+        })
+    return out, []
+
+
 # Registrierte Quellen: Name -> (Funktion, Startstatus). "test" = wird beobachtet, bis klar ist, ob sie sich lohnt.
 QUELLEN = {
     "freelancer.com": ("freelancer", "aktiv"),
@@ -427,4 +511,6 @@ QUELLEN = {
     "Devpost": (devpost, "test"),
     "Remotive": (remotive, "test"),
     "Kaggle": (kaggle, "test"),
+    "TED (EU)": (ted, "test"),
+    "service.bund.de": (bund, "test"),
 }

@@ -11,7 +11,7 @@ const pct = (x, nk = 0) => ok(x) ? zahl(x * 100, nk) + " %" : "–";
 const zeit = iso => { if (!iso) return "–"; const d = new Date(iso); return d.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); };
 const tag = iso => { if (!iso) return ""; const d = new Date(iso); return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }); };
 const tippI = txt => `<span class="tipp" tabindex="0" data-tipp="${esc(txt)}">?</span>`;
-const ART = { freelance: "Freelance", bounty: "Bounty", wettbewerb: "Wettbewerb", gesuch: "Gesuch" };
+const ART = { freelance: "Freelance", bounty: "Bounty", wettbewerb: "Wettbewerb", gesuch: "Gesuch", ausschreibung: "Ausschreibung" };
 const NACH_ID = {}; D.eintraege.forEach(e => NACH_ID[e.id] = e);
 const TOP = D.top.map(i => NACH_ID[i]).filter(Boolean);
 
@@ -68,7 +68,7 @@ function zahlenBox(e) {
     <div class="zr"><span>Machbar durch Claude</span><span>${pct(e.machbar)}</span></div>
     <div class="zr"><span>€ pro Leon-Stunde ${tippI("Erwarteter Wert geteilt durch deine erwartete Zeit: Bewerben plus (mit der Gewinnchance gewichtet) Abstimmung und Abliefern.")}</span><span>${eur(e.eur_pro_std)}</span></div>
     <div class="zr"><span>Deine Zeit (Ø)</span><span>${zahl(e.leon_min)} Min.</span></div>
-    <div class="zr"><span>Konkurrenz</span><span>${zahl(e.gebote)} ${e.art === "bounty" ? "Kommentare" : e.art === "wettbewerb" ? "Teilnehmer" : "Gebote"}</span></div>
+    <div class="zr"><span>Konkurrenz</span><span>${e.art === "ausschreibung" ? "unbekannt" : zahl(e.gebote) + " " + (e.art === "bounty" ? "Kommentare" : e.art === "wettbewerb" ? "Teilnehmer" : "Gebote")}</span></div>
   </div>`;
 }
 function metaZeile(e) {
@@ -167,7 +167,7 @@ const F = { art: "alle", quelle: "alle", kat: "alle", q: "", nurEmpf: true, sort
 function alle() {
   const quellen = [...new Set(D.eintraege.map(e => e.quelle))].sort(), kats = [...new Set(D.eintraege.map(e => e.kat_name))].sort();
   $("#t-alle").innerHTML = `<div class="card"><div class="steuer">
-      <div class="chips" id="f-art">${["alle", "freelance", "bounty", "wettbewerb", "gesuch"].map(a => `<span class="chip${F.art === a ? " an" : ""}" data-v="${a}">${a === "alle" ? "Alle" : ART[a]}</span>`).join("")}</div>
+      <div class="chips" id="f-art">${["alle", "freelance", "bounty", "wettbewerb", "gesuch", "ausschreibung"].map(a => `<span class="chip${F.art === a ? " an" : ""}" data-v="${a}">${a === "alle" ? "Alle" : ART[a]}</span>`).join("")}</div>
       <div class="chips"><select class="feld" id="f-quelle"><option value="alle">Alle Quellen</option>${quellen.map(q => `<option>${esc(q)}</option>`).join("")}</select>
       <select class="feld" id="f-kat"><option value="alle">Alle Kategorien</option>${kats.map(q => `<option>${esc(q)}</option>`).join("")}</select>
       <input class="feld" id="f-q" placeholder="Suchen …"><label class="chip"><input type="checkbox" id="f-empf" checked> nur empfehlbar</label></div></div>

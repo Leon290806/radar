@@ -46,6 +46,8 @@ def kategorie(e):
     beste = max(punkte, key=punkte.get)
     if e.get("art") == "bounty":
         return "programmierung" if punkte[beste] < 2 else beste
+    if e.get("art") == "ausschreibung":
+        return beste if punkte[beste] >= 1 else "sonstiges"
     if e.get("art") == "wettbewerb":
         return "ki" if punkte["ki"] >= 2 else ("programmierung" if punkte[beste] < 2 else beste)
     return beste if punkte[beste] >= 2 else "sonstiges"
@@ -64,6 +66,8 @@ def wert_usd(e):
             basis = lo or hi  # ohne Gebote: Untergrenze des Budgets (vorsichtig)
         return max(basis, 0)
     b = e.get("betrag") or 0
+    if e["art"] == "ausschreibung" and not b:
+        b = E.AUSSCHREIBUNG_WERT_UNBEKANNT_EUR
     if e.get("waehrung") == "EUR":
         b /= E.USD_EUR
     if e["art"] == "wettbewerb":
@@ -108,6 +112,8 @@ def bewerte(e, gelernt):
         machbar *= 0.45
     if e["art"] == "wettbewerb":
         machbar *= E.WETTBEWERB_MACHBAR_FAKTOR
+    if e["art"] == "ausschreibung":
+        machbar *= E.AUSSCHREIBUNG_MACHBAR_FAKTOR
     sprache = (e.get("sprache") or "en").lower()[:2]
     if e["art"] == "freelance" and sprache not in ("en", "de"):
         machbar *= 0.6  # Leon kann Ergebnis und Kommunikation in dieser Sprache schlecht prüfen
