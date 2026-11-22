@@ -99,3 +99,21 @@ Der PC muss dafür an sein.
 - Konzentriert heißt schwankungsreich: 5 Aktien mit bis zu 35 % Gewicht können deutlich stärker fallen als ein ETF.
 - Erst ein paar Monate nur mitlesen, dann mit kleinem Geld starten.
 - Gewinne sind steuerpflichtig. Kein Anlagerat.
+
+## Auftrags-Radar (Nebeneinnahmen mit KI)
+
+Eigenes Dashboard unter `https://DEINNAME.github.io/radar/auftraege/` (gleiches Passwort wie der Radar).
+Läuft alle 3 Stunden über den Workflow *Auftrags-Radar* und ist vom Aktien-Radar getrennt (Code in `auftraege/`,
+verschlüsseltes Journal in `speicher/auftraege.enc`).
+
+- **Scannt** öffentliche Quellen über offizielle Schnittstellen bzw. Feeds: freelancer.com, GitHub-Bounties, Algora,
+  Hacker News („Seeking freelancer“), Devpost, Remotive, optional Kaggle. Er loggt sich nirgends ein, bewirbt sich nicht und kontaktiert niemanden.
+- **Bewertet** jeden Auftrag: Machbarkeit durch Claude, Gewinnchance (Konkurrenz), Wert nach Gebühren, erwarteter Wert in Euro und Euro pro Leon-Stunde.
+  Unseriöses und Regelwidriges wird aussortiert.
+- **Claude-Prüfung** (optional, Secret `ANTHROPIC_API_KEY`): Lösungsweg, Risiko und ein kopierfertiger Bewerbungstext. Kostenbremse: höchstens 24 Bewertungen pro Tag
+  (Variable `AUFTRAG_KI_MAX_PRO_TAG`), Modell über Variable `AUFTRAG_MODELL`.
+- **Lernt** aus deinen Rückmeldungen (Knöpfe Beworben/Gewonnen/Verloren/Nicht interessant → GitHub-Issue, wird automatisch übernommen und geschlossen),
+  testet neue Quellen und Suchbegriffe und mustert aus, was nichts bringt. Alles steht im Reiter *Lernen*.
+- **Push** über ntfy (gleiches `NTFY_THEMA`) bei neuen Top-Empfehlungen ab 40 € erwartetem Wert (Variable `AUFTRAG_PUSH_AB_EUR`).
+
+Hinweis: Rückmeldungs-Issues sind im öffentlichen Repository sichtbar. Beträge nur eintragen, wenn das in Ordnung ist.

@@ -1,0 +1,75 @@
+name: Auftrags-Radar
+
+# Scannt öffentliche Auftragsquellen, bewertet sie (optional mit Claude), lernt aus deinem Feedback
+# und aktualisiert das Dashboard unter /auftraege/. Läuft unabhängig vom Aktien-Radar.
+on:
+  schedule:
+    - cron: "17 5,8,11,14,17,20 * * *"   # alle 3 Stunden tagsüber (UTC), nicht zur Radar-Zeit
+  workflow_dispatch: {}
+  push:
+    branches: [auftrags-radar]
+    paths: ["auftraege/**", ".github/workflows/auftraege.yml"]
+
+permissions:
+  contents: write
+  issues: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: auftraege
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "requests>=2.31" "cryptography>=42"
+      - name: Aufträge scannen
+        env:
+          RADAR_PASSWORT: ${{ secrets.RADAR_PASSWORT }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          NTFY_THEMA: ${{ secrets.NTFY_THEMA }}
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+          AUFTRAG_MODELL: ${{ vars.AUFTRAG_MODELL }}
+          AUFTRAG_KI_MAX_PRO_TAG: ${{ vars.AUFTRAG_KI_MAX_PRO_TAG || '24' }}
+          AUFTRAG_PUSH_AB_EUR: ${{ vars.AUFTRAG_PUSH_AB_EUR || '40' }}
+          GITHUB_TOKEN: ${{ github.token }}
+          DASHBOARD_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/auftraege/
+        run: python auftraege/main.py
+      - name: Ergebnis speichern
+        run: |
+          git config user.name "radar-bot"
+          git config user.email "radar-bot@users.noreply.github.com"
+          git add speicher/auftraege.enc docs/auftraege/index.html
+          git diff --cached --quiet && exit 0
+          git commit -m "Auftrags-Radar $(date -u +'%F %H:%M')"
+          for i in 1 2 3; do
+            git pull --rebase -X theirs origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            sleep 15
+          done
+          exit 1
+
+  deploy:
+    needs: scan
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - id: deploy
+        uses: actions/deploy-pages@v4

@@ -3,3 +3,4 @@ __pycache__/
 cache/
 docs/demo.html
 speicher/journal_demo.json
+speicher/auftraege.json

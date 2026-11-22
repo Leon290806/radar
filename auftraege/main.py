@@ -1,0 +1,205 @@
+# -*- coding: utf-8 -*-
+"""
+Auftrags-Radar: scannt öffentliche Auftragsquellen, bewertet, lernt aus Rückmeldungen und baut das Dashboard.
+Start: python auftraege/main.py   (lokal ohne Passwort wird unverschlüsselt in speicher/auftraege.json gespeichert)
+"""
+import json
+import os
+import sys
+import traceback
+from datetime import datetime, timezone, timedelta
+
+HIER = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HIER)
+sys.path.insert(1, os.path.dirname(HIER))
+
+import requests  # noqa: E402
+
+import einstellungen as E  # noqa: E402
+import quellen as Q  # noqa: E402
+import bewerten as B  # noqa: E402
+import lernen as L  # noqa: E402
+import ki as KI  # noqa: E402
+import seite  # noqa: E402
+
+UEBERNEHMEN = ("erst_gesehen", "ki", "ki_fehler", "feedback", "betrag_echt", "ki_regel", "versuche", "benachrichtigt")
+
+
+def journal_laden():
+    if E.PASSWORT and os.path.exists(E.JOURNAL):
+        import schutz
+        return schutz.journal_laden(E.JOURNAL, E.PASSWORT)
+    if not E.PASSWORT and os.path.exists(E.JOURNAL_KLAR):
+        with open(E.JOURNAL_KLAR, encoding="utf-8") as f:
+            return json.load(f)
+    return {"version": 1, "eintraege": {}, "laeufe": [], "quellen": {}, "feedback": [], "protokoll": []}
+
+
+def journal_speichern(J):
+    if E.PASSWORT:
+        import schutz
+        schutz.journal_speichern(J, E.JOURNAL, E.PASSWORT)
+    else:
+        os.makedirs(os.path.dirname(E.JOURNAL_KLAR), exist_ok=True)
+        with open(E.JOURNAL_KLAR, "w", encoding="utf-8") as f:
+            json.dump(J, f, ensure_ascii=False, indent=1)
+
+
+def push(text, titel):
+    if not E.NTFY_THEMA:
+        return
+    try:
+        requests.post(f"https://ntfy.sh/{E.NTFY_THEMA}", data=text.encode("utf-8"), timeout=20,
+                      headers={"Title": titel.encode("utf-8"), "Click": E.DASHBOARD_URL, "Tags": "moneybag"})
+    except requests.RequestException:
+        pass
+
+
+def main():
+    J = journal_laden()
+    jetzt = datetime.now(timezone.utc)
+    lauf = {"zeit": jetzt.isoformat(timespec="seconds"), "quellen": {}, "neu": 0, "ki": 0, "ki_fehler": 0}
+    if not J.get("laeufe"):
+        L.protokoll(J, "Auftrags-Radar gestartet. Startwerte für Gewinnchancen und Machbarkeit stehen im Reiter Lernen.")
+
+    L.feedback_holen(J)
+
+    # 1) Scannen
+    begriffe, getestet = L.suchbegriffe(J)
+    neue_liste = []
+    for name, (fn, start) in Q.QUELLEN.items():
+        st = J.setdefault("quellen", {}).setdefault(name, {"status": start, "laeufe": []})
+        if st["status"] == "pausiert":
+            continue
+        try:
+            daten, fehler = Q.freelancer(begriffe) if fn == "freelancer" else fn()
+        except Exception as ex:  # eine kaputte Quelle darf den Lauf nicht stoppen
+            daten, fehler = [], [f"{ex.__class__.__name__}: {ex}"]
+            traceback.print_exc()
+        lauf["quellen"][name] = {"n": len(daten), "fehler": fehler[:5], "empfehlbar": 0}
+        print(f"{name}: {len(daten)} Einträge, {len(fehler)} Fehler")
+        neue_liste.extend(daten)
+
+    # 2) Zusammenführen (doppelte Treffer aus mehreren Suchbegriffen zusammenfassen)
+    E_ = J.setdefault("eintraege", {})
+    dieser_lauf = {}
+    nach_url = {v.get("url"): k for k, v in E_.items()}
+    urls_lauf = set()
+    for e in neue_liste:
+        if e["id"] in dieser_lauf or e.get("url") in urls_lauf:
+            continue
+        if nach_url.get(e.get("url")) not in (None, e["id"]):
+            e["id"] = nach_url[e["url"]]  # gleicher Auftrag aus anderer Quelle -> zusammenführen
+            if e["id"] in dieser_lauf:
+                continue
+        urls_lauf.add(e.get("url"))
+        alt = E_.get(e["id"])
+        if alt:
+            for k in UEBERNEHMEN:
+                if k in alt:
+                    e[k] = alt[k]
+        else:
+            e["erst_gesehen"] = lauf["zeit"]
+            lauf["neu"] += 1
+        e["zuletzt"] = lauf["zeit"]
+        E_[e["id"]] = e
+        dieser_lauf[e["id"]] = e
+
+    # 3) Bounty-Details: Beträge nachladen, KI-Regeln der Projekte prüfen
+    neue_bounties = [e for e in dieser_lauf.values() if e["art"] == "bounty" and "versuche" not in e]
+    neue_bounties.sort(key=lambda x: x.get("erstellt") or "", reverse=True)  # frische zuerst
+    Q.github_betraege_nachladen(neue_bounties)
+    for e in neue_bounties:
+        e.setdefault("versuche", e.get("versuche", 0))
+    cache = J.setdefault("ki_regel_cache", {})
+    for e in sorted([e for e in dieser_lauf.values() if e["art"] == "bounty" and "ki_regel" not in e],
+                    key=lambda x: -(x.get("betrag") or 0))[:15]:
+        e["ki_regel"] = Q.github_ki_regel(e.get("repo"), cache)
+
+    # 4) Bewerten -> Feedback anwenden -> neu bewerten
+    gelernt = J.get("gelernt", {})
+    for e in E_.values():
+        B.bewerte(e, gelernt)
+    gelernt = L.feedback_anwenden(J)
+    for e in E_.values():
+        B.bewerte(e, gelernt)
+
+    # 5) KI-Bewertung der aussichtsreichsten neuen Kandidaten (mit Kostenbremse)
+    tag = jetzt.strftime("%Y-%m-%d")
+    kt = J.setdefault("ki_tag", {"datum": tag, "n": 0})
+    if kt["datum"] != tag:
+        kt.update({"datum": tag, "n": 0})
+    kandidaten = sorted([e for e in E_.values() if B.empfehlbar(e) and not e.get("ki") and not e.get("ki_fehler")],
+                        key=lambda x: -x["ew_eur"])
+    rest = max(0, min(E.KI_MAX_PRO_LAUF, E.KI_MAX_PRO_TAG - kt["n"]))
+    for e in kandidaten[:rest]:
+        daten, fehler = KI.bewerte(e)
+        kt["n"] += 1
+        if daten:
+            e["ki"] = daten
+            lauf["ki"] += 1
+        else:
+            e["ki_fehler"] = fehler
+            lauf["ki_fehler"] += 1
+            if fehler == "kein API-Schlüssel":
+                kt["n"] -= 1
+                e.pop("ki_fehler", None)
+                break
+        B.bewerte(e, gelernt)
+
+    # 6) Statistik je Quelle, Suchbegriffe, Quellen-Status
+    for e in dieser_lauf.values():
+        e["empfehlbar"] = B.empfehlbar(e)
+        if e["empfehlbar"] and e["quelle"] in lauf["quellen"]:
+            lauf["quellen"][e["quelle"]]["empfehlbar"] += 1
+    for name, s in lauf["quellen"].items():
+        st = J["quellen"][name]
+        st["laeufe"] = (st.get("laeufe", []) + [{"zeit": lauf["zeit"], "n": s["n"], "empfehlbar": s["empfehlbar"],
+                                                  "fehler_total": s["n"] == 0 and bool(s["fehler"])}])[-40:]
+    L.suchbegriffe_auswerten(J, list(dieser_lauf.values()), getestet)
+    L.quellen_pruefen(J)
+
+    # 7) Top 5 + Push
+    for e in E_.values():
+        e["empfehlbar"] = B.empfehlbar(e)
+    top = sorted([e for e in E_.values() if e["empfehlbar"]], key=lambda x: -x["ew_eur"])[:5]
+    gesendet = 0
+    for e in top:
+        if e.get("benachrichtigt") or e["ew_eur"] < E.PUSH_AB_EUR or gesendet >= 2:
+            continue
+        push(f"{e['titel']}\nErwarteter Wert ca. {e['ew_eur']:.0f} € · {e['quelle']} · {e['kat_name']}", "Neue Top-Empfehlung")
+        e["benachrichtigt"] = lauf["zeit"]
+        gesendet += 1
+
+    # 8) Aufräumen
+    grenze = jetzt - timedelta(days=E.AUFBEWAHREN_TAGE)
+    for i in list(E_):
+        e = E_[i]
+        if e.get("feedback"):
+            continue
+        try:
+            if datetime.fromisoformat(e["zuletzt"]) < grenze:
+                del E_[i]
+        except (KeyError, ValueError):
+            pass
+
+    lauf["empfehlbar"] = sum(1 for e in E_.values() if e["empfehlbar"])
+    lauf["top_ew"] = round(sum(e["ew_eur"] for e in top), 2)
+    J["laeufe"] = (J.get("laeufe", []) + [lauf])[-180:]
+    J["top"] = [e["id"] for e in top]
+    J["stand"] = lauf["zeit"]
+
+    html = seite.erstelle(J)
+    os.makedirs(os.path.dirname(E.SEITE), exist_ok=True)
+    if E.PASSWORT:
+        import schutz
+        html = schutz.dashboard_sperren(html, E.PASSWORT)
+    with open(E.SEITE, "w", encoding="utf-8") as f:
+        f.write(html)
+    journal_speichern(J)
+    print(f"Fertig: {len(dieser_lauf)} im Lauf, {lauf['neu']} neu, {lauf['empfehlbar']} empfehlbar, "
+          f"KI {lauf['ki']} (Fehler {lauf['ki_fehler']}), Top-EW {lauf['top_ew']} €")
+
+
+if __name__ == "__main__":
+    main()

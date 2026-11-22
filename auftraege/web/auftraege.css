@@ -1,0 +1,42 @@
+/* Ergänzungen für den Auftrags-Radar (Basis: app.css des Radars) */
+.top-liste{display:grid;gap:14px}
+.top-karte{display:grid;grid-template-columns:44px minmax(0,1fr) 300px;gap:18px;align-items:start}
+@media (max-width:1000px){.top-karte{grid-template-columns:36px minmax(0,1fr)}.top-karte .zahlen{grid-column:1/-1}}
+.rang{width:36px;height:36px;border-radius:10px;background:var(--ink);color:var(--card);display:grid;place-items:center;font-weight:750;font-size:16px}
+.top-karte h3{font-size:17px;line-height:1.3;margin:6px 0 6px;letter-spacing:-.01em}
+.top-karte h3 a{color:var(--ink)}
+.zahlen{background:var(--card2);border:1px solid var(--line2);border-radius:12px;padding:12px 14px}
+.zahlen .ew{font-size:26px;font-weight:750;letter-spacing:-.02em}
+.zahlen .zr{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-top:1px solid var(--line2);font-size:13px}
+.zahlen .zr:first-of-type{border-top:0}
+.zahlen .zr span:first-child{color:var(--ink3)}
+.bew{position:relative;background:var(--card2);border:1px solid var(--line2);border-radius:10px;padding:10px 100px 10px 12px;font-size:13.5px;
+  white-space:pre-wrap;margin-top:10px;color:var(--ink2)}
+.bew .kopie{position:absolute;top:8px;right:8px}
+.knopf{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:650;padding:6px 11px;border-radius:9px;
+  border:1px solid var(--line);background:var(--card);color:var(--ink2);cursor:pointer;white-space:nowrap}
+.knopf:hover{background:var(--hover);text-decoration:none}
+.knopf.gut{color:var(--good);border-color:color-mix(in srgb,var(--good) 35%,var(--line))}
+.knopf.schlecht{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 30%,var(--line))}
+.knopf.haupt{background:var(--ink);color:var(--card);border-color:var(--ink)}
+.aktionen{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.meta{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:12.5px;color:var(--ink3)}
+.balken{height:6px;border-radius:3px;background:var(--chip);overflow:hidden;width:70px;display:inline-block;vertical-align:middle;margin-left:6px}
+.balken i{display:block;height:100%;background:var(--s1)}
+.status{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:999px}
+.status.aktiv{background:var(--goodbg);color:var(--good)}.status.test{background:var(--warnbg);color:var(--warn)}
+.status.pausiert{background:var(--chip);color:var(--ink3)}
+.fb{font-size:11px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--chip);color:var(--ink2);text-transform:uppercase;letter-spacing:.04em}
+.fb.gewonnen{background:var(--goodbg);color:var(--good)}.fb.verloren{background:var(--badbg);color:var(--bad)}
+.fb.beworben{background:color-mix(in srgb,var(--s1) 14%,transparent);color:var(--s1)}
+.titelzelle{max-width:420px;white-space:normal;line-height:1.35}
+.spark{display:block}
+.zwei{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media (max-width:900px){.zwei{grid-template-columns:1fr}}
+.sb-liste{display:flex;flex-wrap:wrap;gap:6px}
+.sb{font-size:12.5px;padding:4px 10px;border-radius:999px;background:var(--chip);color:var(--ink2)}
+.sb b{font-weight:700;color:var(--ink);margin-left:4px}
+.sb.aus{text-decoration:line-through;opacity:.6}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--card);padding:10px 16px;border-radius:10px;
+  font-size:13.5px;font-weight:600;z-index:60;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.an{opacity:1}
+@media (max-width:760px){.bew{padding:44px 12px 10px}.marke h1{font-size:16px}}

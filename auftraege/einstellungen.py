@@ -1,0 +1,87 @@
+# -*- coding: utf-8 -*-
+"""Einstellungen des Auftrags-Radars. Alles, was man anpassen möchte, steht hier."""
+import os
+
+BASIS = os.path.dirname(os.path.abspath(__file__))
+REPO_WURZEL = os.path.dirname(BASIS)
+JOURNAL = os.path.join(REPO_WURZEL, "speicher", "auftraege.enc")
+JOURNAL_KLAR = os.path.join(REPO_WURZEL, "speicher", "auftraege.json")  # nur ohne Passwort (lokal)
+SEITE = os.path.join(REPO_WURZEL, "docs", "auftraege", "index.html")
+
+PASSWORT = os.environ.get("RADAR_PASSWORT", "")
+ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+KI_MODELL = os.environ.get("AUFTRAG_MODELL", "claude-sonnet-5-5")
+KI_MAX_PRO_TAG = int(os.environ.get("AUFTRAG_KI_MAX_PRO_TAG", "24"))   # Kostenbremse
+KI_MAX_PRO_LAUF = int(os.environ.get("AUFTRAG_KI_MAX_PRO_LAUF", "8"))
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+REPO = os.environ.get("GITHUB_REPOSITORY", "Leon290806/radar")
+NTFY_THEMA = os.environ.get("NTFY_THEMA", "")
+PUSH_AB_EUR = float(os.environ.get("AUFTRAG_PUSH_AB_EUR", "40"))
+DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "https://leon290806.github.io/radar/auftraege/")
+KAGGLE_USER = os.environ.get("KAGGLE_USERNAME", "")
+KAGGLE_KEY = os.environ.get("KAGGLE_KEY", "")
+
+USER_AGENT = "LN-Automation-Auftragsradar/1.0 (+https://www.ln-automation.de)"
+USD_EUR = 0.92          # grobe Umrechnung, nur für die Sortierung
+FREELANCER_GEBUEHR = 0.10  # Plattformgebühr freelancer.com (mind. 5 $)
+
+# Wie lange ein Eintrag als "frisch" gilt (Tage), je Art
+FRISCH_TAGE = {"freelance": 4, "bounty": 45, "wettbewerb": 60, "gesuch": 20}
+AUFBEWAHREN_TAGE = 30
+
+# Leon-Zeit in Minuten: Bewerben + (falls Zuschlag) Abstimmung und Abliefern
+LEON_MIN = {
+    "freelance": (5, 30),
+    "bounty": (5, 25),
+    "gesuch": (8, 35),
+    "wettbewerb": (10, 40),
+}
+
+# Startwerte für die Gewinnchance (werden durch Feedback gelernt)
+GEWINN_BASIS = {"freelance": 0.22, "bounty": 0.30, "gesuch": 0.10, "wettbewerb": 0.04}
+
+# Kategorien: Stichworte -> Machbarkeit durch Claude (0..1)
+KATEGORIEN = {
+    "erechnung":    {"name": "E-Rechnung/DATEV", "machbar": 0.92,
+                     "kw": ["xrechnung", "zugferd", "e-rechnung", "erechnung", "e-invoice", "einvoice", "datev", "peppol"]},
+    "excel":        {"name": "Excel/VBA", "machbar": 0.9,
+                     "kw": ["excel", "vba", "macro", "makro", "spreadsheet", "google sheets", "power query", "pivot", "formula", "xlsx"]},
+    "programmierung": {"name": "Programmierung", "machbar": 0.85,
+                     "kw": ["python", "script", "skript", "automation", "automate", "api", "javascript", "typescript", "node", "bot ",
+                            "fastapi", "django", "flask", "rust", "golang", " go ", "bash", "cli", "bug", "fix"]},
+    "daten":        {"name": "Daten/PDF", "machbar": 0.86,
+                     "kw": ["data processing", "data cleaning", "csv", "json", "pdf", "extract", "parse", "convert", "database", "sql"]},
+    "ki":           {"name": "KI/Prompts", "machbar": 0.82,
+                     "kw": ["prompt", "chatgpt", "llm", "openai", "claude", "gpt", "chatbot", "rag", "ai agent", "langchain", "n8n", "make.com", "zapier"]},
+    "web":          {"name": "Web/Landingpage", "machbar": 0.76,
+                     "kw": ["landing page", "landingpage", "website", "webseite", "html", "css", "wordpress", "react", "next.js", "tailwind"]},
+    "uebersetzung": {"name": "Übersetzung", "machbar": 0.86,
+                     "kw": ["translate", "translation", "übersetzung", "translator", "german", "deutsch", "localization"]},
+    "text":         {"name": "Texte", "machbar": 0.8,
+                     "kw": ["copywriting", "article", "blog", "content writing", "product description", "texter", "artikel", "proofread", "lektorat"]},
+    "design":       {"name": "Logo/Vektor", "machbar": 0.55,
+                     "kw": ["logo", "vector", "svg", "icon", "branding", "brand identity"]},
+    "recherche":    {"name": "Recherche", "machbar": 0.65,
+                     "kw": ["research", "recherche", "market analysis", "marktanalyse", "competitor"]},
+}
+
+# Kann Claude kaum liefern -> Machbarkeit stark senken
+SCHWER = ["video", "animation", "after effects", "mobile app", "ios", "android", "flutter", "swift", "kotlin", "unity", "unreal",
+          "3d", "blender", "photoshop", "retouch", "voice", "voiceover", "call", "phone", "telefon", "on-site", "onsite", "vor ort",
+          "full-time", "full time", "vollzeit", "long term", "long-term", "ongoing", "social media manager", "backlink", "tiktok",
+          "instagram growth", "figma", "hardware", "embedded", "plc", "sps"]
+
+# Regelwidrig/unseriös -> aussortieren
+VERBOTEN = ["visa", "appointment bot", "ticket bot", "sneaker", "captcha", "fake review", "reviews for", "homework", "assignment",
+            "thesis", "dissertation", "exam", "essay writing", "crypto", "token presale", "memecoin", "casino", "betting", "gambling",
+            "adult", "onlyfans", "followers", "likes", "scrape linkedin", "linkedin scraper", "instagram scraper", "facebook scraper",
+            "email list", "leads list", "contact list", "phone verification", "account creation", "bypass", "cheat", "hack ",
+            "credit card", "forex signals", "mlm", "commission only", "provision", "pay after", "unpaid", "test task for free"]
+
+# Suchbegriffe für freelancer.com: aktiv + Kandidaten zum Testen (der Radar lernt, welche sich lohnen)
+FREELANCER_START = ["python script", "excel vba", "data processing", "pdf extract", "german translation", "landing page",
+                    "logo vector", "chatgpt prompt", "google sheets", "automation script"]
+FREELANCER_KANDIDATEN = ["power query", "n8n", "zapier", "web scraping api", "copywriting german", "proofreading german",
+                         "csv cleaning", "json conversion", "wordpress fix", "javascript bug", "fastapi", "react component",
+                         "chatbot", "invoice", "datev", "technical writing", "product descriptions", "market research",
+                         "svg icon", "sql query", "regex", "excel dashboard", "pdf to excel", "openai api", "rag"]
