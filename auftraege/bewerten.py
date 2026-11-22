@@ -37,14 +37,18 @@ def alter_tage(e):
 
 
 def kategorie(e):
-    text = " ".join([e.get("titel", ""), e.get("text", ""), " ".join(e.get("tags") or [])]).lower()
-    punkte = {k: len(_treffer(m, text)) for k, m in _KAT.items()}
+    """Kategorie aus Skill-Tags (stark), Titel (mittel) und Beschreibung (schwach). Zu wenig Hinweise -> 'sonstiges'."""
+    tags = " ".join(e.get("tags") or []).lower()
+    titel = (e.get("titel") or "").lower()
+    text = (e.get("text") or "").lower()
+    punkte = {k: 3 * len(_treffer(m, tags)) + 2 * len(_treffer(m, titel)) + min(2, len(_treffer(m, text)))
+              for k, m in _KAT.items()}
     beste = max(punkte, key=punkte.get)
     if e.get("art") == "bounty":
-        return "programmierung" if punkte[beste] == 0 else beste
+        return "programmierung" if punkte[beste] < 2 else beste
     if e.get("art") == "wettbewerb":
-        return "ki" if punkte["ki"] else ("programmierung" if punkte[beste] == 0 else beste)
-    return beste if punkte[beste] > 0 else "sonstiges"
+        return "ki" if punkte["ki"] >= 2 else ("programmierung" if punkte[beste] < 2 else beste)
+    return beste if punkte[beste] >= 2 else "sonstiges"
 
 
 def wert_usd(e):
@@ -96,6 +100,10 @@ def bewerte(e, gelernt):
         machbar *= 0.45
     if e["art"] == "wettbewerb":
         machbar *= E.WETTBEWERB_MACHBAR_FAKTOR
+    sprache = (e.get("sprache") or "en").lower()[:2]
+    if e["art"] == "freelance" and sprache not in ("en", "de"):
+        machbar *= 0.6  # Leon kann Ergebnis und Kommunikation in dieser Sprache schlecht prüfen
+        schwer = schwer + [f"Sprache {sprache}"]
     verboten = _treffer(_VERBOTEN, text)
     gruende = []
     if verboten:

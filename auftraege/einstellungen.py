@@ -77,7 +77,8 @@ SCHWER = ["video", "animation", "after effects", "mobile app", "ios", "android",
           "instagram growth", "figma", "hardware", "embedded", "plc", "sps", "robot", "robotic", "mechanical", "cad", "autocad",
           "solidworks", "revit", "floor plan", "drafting", "pcb", "electrical", "business partner", "partner wanted", "co-founder", "cofounder", "equity",
           "business development", "sales rep", "sales agent", "lead generation", "cold calling", "virtual assistant", "data entry", "typing",
-          "demo video", "pitch video"]
+          "demo video", "pitch video", "attorney", "lawyer", "legal advice", "notary", "courier", "delivery driver", "driver",
+          "cfo", "chartered accountant", "tax filing", "photographer", "cleaning", "in person", "in-person", "physical"]
 
 # Regelwidrig/unseriös -> aussortieren
 VERBOTEN = ["visa", "appointment bot", "ticket bot", "sneaker", "captcha", "fake review", "reviews for", "homework", "assignment",

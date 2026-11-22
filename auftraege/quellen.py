@@ -240,7 +240,7 @@ def hackernews():
         return out, [f"HN-Thread: HTTP {getattr(r2, 'status_code', 'Fehler')}"]
     for k in r2.json().get("children", []):
         t = k.get("text") or ""
-        if not re.match(r"\s*(<p>)?\s*seeking freelancer", t, re.I):
+        if "seeking freelancer" not in _text(t, 80).lower():
             continue
         klar = _text(t, 1500)
         betrag, waehr = _betrag_aus_text(klar)
