@@ -134,6 +134,8 @@ def main():
     rest = max(0, min(E.KI_MAX_PRO_LAUF, E.KI_MAX_PRO_TAG - kt["n"]))
     for e in kandidaten[:rest]:
         daten, fehler = KI.bewerte(e)
+        if fehler == "kein API-Schlüssel":
+            break
         kt["n"] += 1
         if daten:
             e["ki"] = daten
@@ -141,10 +143,7 @@ def main():
         else:
             e["ki_fehler"] = fehler
             lauf["ki_fehler"] += 1
-            if fehler == "kein API-Schlüssel":
-                kt["n"] -= 1
-                e.pop("ki_fehler", None)
-                break
+            print("KI-Fehler:", fehler)
         B.bewerte(e, gelernt)
 
     # 6) Statistik je Quelle, Suchbegriffe, Quellen-Status
@@ -197,6 +196,11 @@ def main():
     with open(E.SEITE, "w", encoding="utf-8") as f:
         f.write(html)
     journal_speichern(J)
+    from collections import Counter
+    print("Empfehlbar je Art:", dict(Counter(e["art"] for e in E_.values() if e["empfehlbar"])))
+    for e in sorted([e for e in E_.values() if e["empfehlbar"]], key=lambda x: -x["ew_eur"])[:10]:
+        print(f"  EW {e['ew_eur']:8.2f} € | Wert {e['wert_eur']:8.0f} € | p {e['chance']:.3f} | m {e['machbar']:.2f} | "
+              f"{e['quelle']} | {e['kat']} | {e['titel'][:70]}")
     print(f"Fertig: {len(dieser_lauf)} im Lauf, {lauf['neu']} neu, {lauf['empfehlbar']} empfehlbar, "
           f"KI {lauf['ki']} (Fehler {lauf['ki_fehler']}), Top-EW {lauf['top_ew']} €")
 

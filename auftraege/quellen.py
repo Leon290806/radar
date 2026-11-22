@@ -101,7 +101,11 @@ def freelancer(suchbegriffe):
             continue
         for p in projekte:
             cur = (p.get("currency") or {})
-            kurs = cur.get("exchange_rate") or 1.0  # -> USD
+            kurs = cur.get("exchange_rate")  # Faktor zu USD
+            if not kurs:
+                if (cur.get("code") or "USD") != "USD":
+                    continue  # ohne Umrechnungskurs lieber auslassen als falsch bewerten
+                kurs = 1.0
             b = p.get("budget") or {}
             bs = p.get("bid_stats") or {}
             out.append({
