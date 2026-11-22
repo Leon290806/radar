@@ -216,6 +216,19 @@ def top_tauglich(e):
     return not (e.get("art") == "freelance" and (e.get("gebote") or 0) > E.TOP_MAX_GEBOTE)
 
 
+def noch_offen(e):
+    """Freelance-Aufträge: nur, solange sie offen sind und zuletzt noch gefunden wurden."""
+    if e.get("art") != "freelance":
+        return True
+    if e.get("status_fl") and e["status_fl"] not in ("open", "active", "frozen_awaiting_client"):
+        return False
+    try:
+        zuletzt = datetime.fromisoformat(e.get("zuletzt"))
+        return (datetime.now(timezone.utc) - zuletzt).total_seconds() < 8 * 3600
+    except (TypeError, ValueError):
+        return True
+
+
 def empfehlbar(e):
-    return (not e.get("aussortiert")) and e.get("frisch") and e.get("machbar", 0) >= 0.5 and \
+    return noch_offen(e) and (not e.get("aussortiert")) and e.get("frisch") and e.get("machbar", 0) >= 0.5 and \
         e.get("wert_eur", 0) >= 25 and not e.get("feedback")

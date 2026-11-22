@@ -143,6 +143,7 @@ def freelancer(suchbegriffe):
                                 [f"pool:{x}" for x in (p.get("pool_ids") or [])] +
                                 [f"enterprise:{x}" for x in (p.get("enterprise_ids") or [])]),
                 "owner_id": p.get("owner_id"),
+                "status_fl": (p.get("frontend_project_status") or p.get("status") or "").lower(),
                 "kunde": _kunde(nutzer.get(str(p.get("owner_id"))) or nutzer.get(p.get("owner_id")) or {}),
             })
         time.sleep(1.2)
