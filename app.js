@@ -287,6 +287,7 @@ document.body.insertAdjacentHTML("afterbegin", `
     <div class="marke"><div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="${css("--card")}" stroke-width="2.4" stroke-linecap="round"><path d="M3 17l5-6 4 3 7-9"/></svg></div>
       <div><h1>Radar</h1><div class="stand">Kursstand ${dat(M.stand, true)}<span class="lang"> · aktualisiert ${esc(M.erstellt)} · ${M.universum} Aktien</span></div></div></div>
     <div class="rechts">
+      <a class="pill" href="auftraege/" title="Zum Auftrags-Radar">Auftrags-Radar →</a>
       <button class="pill" id="markt-pill" title="Was bedeutet das?"><i style="background:var(${M.regime ? "--good" : "--bad"})"></i>Markt: ${M.regime ? "Aufwärtstrend" : "Abwärtstrend"}</button>
       <button class="ikon" id="thema" aria-label="Hell/Dunkel"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
     </div>
