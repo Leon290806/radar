@@ -122,6 +122,10 @@ def bewerte(e, gelernt):
         if e.get("typ") == "hourly" and (e.get("budget_min_usd") or 0) >= E.FL_STUNDE_VERIFIZIERT_AB_USD and not E.FL_VERIFIZIERT:
             verboten = verboten or ["gesperrt"]
             gruende.append(f"Für dein Konto gesperrt: ab {E.FL_STUNDE_VERIFIZIERT_AB_USD} $/Std. nur mit „Verified by Freelancer“")
+        treffer_fl = [f for f in (e.get("flags") or []) if f in gelernt.get("gesperrt_flags", [])]
+        if treffer_fl:
+            verboten = verboten or ["gesperrt"]
+            gruende.append("Für dein Konto gesperrt (gelernt): " + ", ".join(treffer_fl))
         k = e.get("kunde") or {}
         if k.get("seit") and not k.get("bewertungen"):
             try:

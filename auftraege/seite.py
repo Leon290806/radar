@@ -7,7 +7,7 @@ import einstellungen as E
 
 FELDER = ("id", "quelle", "art", "titel", "url", "kat", "kat_name", "machbar", "chance", "wert_eur", "ew_eur", "leon_min",
           "eur_pro_std", "gebote", "alter_tage", "frisch", "aussortiert", "gruende", "empfehlbar", "feedback", "betrag_echt",
-          "erst_gesehen", "typ", "rang", "repo_ok", "kunde", "versuche", "ki_regel", "repo", "frist", "schwer", "suchbegriff")
+          "erst_gesehen", "typ", "rang", "repo_ok", "kunde", "flags", "versuche", "ki_regel", "repo", "frist", "schwer", "suchbegriff")
 
 
 def _lies(*teile):
@@ -28,7 +28,7 @@ def daten(J):
     letzte = {}
     for f in J.get("feedback", []):
         letzte[f["id"]] = f
-    erg = {"beworben": 0, "gewonnen": 0, "verloren": 0, "uninteressant": 0, "umsatz": 0.0}
+    erg = {"beworben": 0, "gewonnen": 0, "verloren": 0, "uninteressant": 0, "gesperrt": 0, "umsatz": 0.0}
     for f in letzte.values():
         a = f["aktion"]
         erg[a] = erg.get(a, 0) + 1

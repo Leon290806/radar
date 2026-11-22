@@ -14,7 +14,7 @@ import requests
 
 import einstellungen as E
 
-AKTIONEN = {"beworben", "gewonnen", "verloren", "uninteressant", "pruefen"}
+AKTIONEN = {"beworben", "gewonnen", "verloren", "uninteressant", "pruefen", "gesperrt"}
 
 
 def jetzt():
@@ -122,6 +122,20 @@ def feedback_anwenden(J):
             if vorher is None or abs(vorher - v) >= 0.05:
                 name = {"quelle_mult": "Gewinnchance", "kat_mult": "Interesse", "wert_mult": "Wert-Schätzung"}[art]
                 protokoll(J, f"{name} für {k}: Faktor {vorher if vorher is not None else 1.0:.2f} → {v:.2f} (aus deinen Rückmeldungen).")
+    # Welche Merkmale haben Aufträge, die für Leons Konto gesperrt waren?
+    gesperrt = [eintraege[i] for i, f in letzter.items() if f["aktion"] == "gesperrt" and i in eintraege]
+    andere = [e for e in eintraege.values() if e.get("art") == "freelance" and e.get("feedback") != "gesperrt" and e.get("flags")]
+    gelernt["gesperrt_flags"] = list(alt.get("gesperrt_flags", []))
+    if gesperrt and andere:
+        zaehler = {}
+        for e in gesperrt:
+            for fl in e.get("flags") or []:
+                zaehler[fl] = zaehler.get(fl, 0) + 1
+        for fl, n in zaehler.items():
+            anteil_andere = sum(1 for e in andere if fl in (e.get("flags") or [])) / len(andere)
+            if n >= 2 and anteil_andere < 0.15 and fl not in gelernt["gesperrt_flags"]:
+                gelernt["gesperrt_flags"].append(fl)
+                protokoll(J, f"Gelernt: Aufträge mit Merkmal „{fl}“ sind für dein Konto gesperrt ({n}× gemeldet) – werden künftig aussortiert.")
     J["gelernt"] = gelernt
     return gelernt
 

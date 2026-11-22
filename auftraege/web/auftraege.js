@@ -32,6 +32,7 @@ function feedbackKnoepfe(e) {
     <button class="knopf gut" data-fb="gewonnen" data-id="${esc(e.id)}">Gewonnen</button>
     <button class="knopf schlecht" data-fb="verloren" data-id="${esc(e.id)}">Verloren</button>
     <button class="knopf" data-fb="uninteressant" data-id="${esc(e.id)}">Nicht interessant</button>
+    ${e.art === "freelance" ? `<button class="knopf" data-fb="gesperrt" data-id="${esc(e.id)}" title="Du darfst auf diesen Auftrag nicht bieten (z. B. nur Preferred Freelancer). Der Radar lernt daraus.">Für mich gesperrt</button>` : ""}
   </div>`;
 }
 document.addEventListener("click", ev => {
