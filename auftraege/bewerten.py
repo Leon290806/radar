@@ -78,6 +78,11 @@ def gewinnchance(e, gelernt):
     n = e.get("gebote") or 0
     if e["art"] == "freelance":
         p = basis / (1 + n / 15)
+        k = e.get("kunde") or {}
+        if k and not k.get("bewertungen"):
+            p *= 0.8  # neue Auftraggeber springen öfter ab
+        if k and not k.get("zahlung_ok"):
+            p *= 0.6
         if (e.get("sprache") == "de") or re.search(r"\b(german|deutsch)\b", (e.get("titel", "") + e.get("text", "")).lower()):
             p *= 1.6
     elif e["art"] == "bounty":
@@ -109,6 +114,22 @@ def bewerte(e, gelernt):
     gruende = []
     if verboten:
         gruende.append("aussortiert wegen: " + ", ".join(sorted(set(verboten)))[:80])
+    if e["art"] == "freelance":
+        for k, grund in E.FL_SPERR_UPGRADES.items():
+            if grund and e.get("upgrades", {}).get(k) and not (k in ("recruiter", "pf_only") and E.FL_PREFERRED):
+                verboten = verboten or ["gesperrt"]
+                gruende.append("Für dein Konto gesperrt: " + grund)
+        if e.get("typ") == "hourly" and (e.get("budget_min_usd") or 0) >= E.FL_STUNDE_VERIFIZIERT_AB_USD and not E.FL_VERIFIZIERT:
+            verboten = verboten or ["gesperrt"]
+            gruende.append(f"Für dein Konto gesperrt: ab {E.FL_STUNDE_VERIFIZIERT_AB_USD} $/Std. nur mit „Verified by Freelancer“")
+        k = e.get("kunde") or {}
+        if k.get("seit") and not k.get("bewertungen"):
+            try:
+                neu = (datetime.now(timezone.utc) - datetime.fromisoformat(k["seit"])).days < 14
+            except ValueError:
+                neu = False
+            if neu:
+                gruende.append("Auftraggeber neu und ohne Bewertungen")
     if e["art"] == "bounty" and e.get("repo_ok") is False:
         verboten = verboten or ["Repo unbekannt"]
         gruende.append("Repository zu neu oder zu unbekannt – mögliche Falle")

@@ -84,18 +84,32 @@ def _betrag_aus_text(s):
     return (wert if 10 <= wert <= 100000 else None), waehrung
 
 
+def _kunde(u):
+    """Kurzinfo zum Auftraggeber: seit wann dabei, Bewertungen, Zahlung verifiziert."""
+    if not u:
+        return {}
+    rep = ((u.get("reputation") or {}).get("entire_history") or {})
+    st = u.get("status") or {}
+    return {"seit": _iso(u.get("registration_date")), "bewertungen": rep.get("reviews") or 0,
+            "sterne": rep.get("overall") or 0, "zahlung_ok": bool(st.get("payment_verified")),
+            "land": ((u.get("location") or {}).get("country") or {}).get("name")}
+
+
 # ---------------------------------------------------------------- freelancer.com (offizielle API)
 def freelancer(suchbegriffe):
     out, fehler = [], []
     for q in suchbegriffe:
         url = ("https://www.freelancer.com/api/projects/0.1/projects/active/?query=" + quote(q) +
-               "&limit=40&job_details=true&full_description=true&compact=true&sort_field=time_updated")
+               "&limit=40&job_details=true&full_description=true&upgrade_details=true&user_details=true&user_reputation=true"
+               "&compact=true&sort_field=time_updated")
         r = _get(url)
         if r is None or r.status_code != 200:
             fehler.append(f"{q}: HTTP {getattr(r, 'status_code', 'Fehler')}")
             continue
         try:
-            projekte = r.json().get("result", {}).get("projects", []) or []
+            res = r.json().get("result", {})
+            projekte = res.get("projects", []) or []
+            nutzer = res.get("users") or {}
         except ValueError:
             fehler.append(f"{q}: keine JSON-Antwort")
             continue
@@ -123,6 +137,9 @@ def freelancer(suchbegriffe):
                 "tags": [j.get("name") for j in (p.get("jobs") or []) if j.get("name")],
                 "erstellt": _iso(p.get("time_submitted")),
                 "suchbegriff": q,
+                "upgrades": {k: v for k, v in (p.get("upgrades") or {}).items() if v},
+                "owner_id": p.get("owner_id"),
+                "kunde": _kunde(nutzer.get(str(p.get("owner_id"))) or nutzer.get(p.get("owner_id")) or {}),
             })
         time.sleep(1.2)
     return out, fehler

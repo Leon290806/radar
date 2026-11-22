@@ -46,6 +46,13 @@ LEON_MIN = {
     "wettbewerb": (30, 120),
 }
 
+# freelancer.com: Sperren für neue, kostenlose Konten
+FL_VERIFIZIERT = (os.environ.get("AUFTRAG_FL_VERIFIZIERT") or "").lower() in ("1", "ja", "true")
+FL_PREFERRED = (os.environ.get("AUFTRAG_FL_PREFERRED") or "").lower() in ("1", "ja", "true")
+FL_SPERR_UPGRADES = {"recruiter": "nur Preferred Freelancer (Recruiter-Projekt)", "pf_only": "nur Preferred Freelancer",
+                     "qualified": "nur qualifizierte Freelancer", "nonpublic": "nicht öffentlich", "sealed": None}
+FL_STUNDE_VERIFIZIERT_AB_USD = 50  # ab diesem Stundensatz nur mit "Verified by Freelancer"
+
 # Größere Projekte brauchen mehr als Claude allein (Abstimmung, Verantwortung): Wert wird gedeckelt
 WERT_DECKEL_EUR = {"freelance": 2500, "gesuch": 800, "bounty": 5000, "wettbewerb": 5000}
 # Wettbewerbe verlangen oft Demo-Video/Pitch und viel Feinschliff

@@ -7,7 +7,7 @@ import einstellungen as E
 
 FELDER = ("id", "quelle", "art", "titel", "url", "kat", "kat_name", "machbar", "chance", "wert_eur", "ew_eur", "leon_min",
           "eur_pro_std", "gebote", "alter_tage", "frisch", "aussortiert", "gruende", "empfehlbar", "feedback", "betrag_echt",
-          "erst_gesehen", "typ", "rang", "repo_ok", "versuche", "ki_regel", "repo", "frist", "schwer", "suchbegriff")
+          "erst_gesehen", "typ", "rang", "repo_ok", "kunde", "versuche", "ki_regel", "repo", "frist", "schwer", "suchbegriff")
 
 
 def _lies(*teile):

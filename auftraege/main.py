@@ -234,6 +234,7 @@ def main():
         print(f"  EW {e['ew_eur']:8.2f} € | Wert {e['wert_eur']:8.0f} € | p {e['chance']:.3f} | m {e['machbar']:.2f} | "
               f"{e['quelle']} | {e['kat']} | {e['titel'][:70]}")
         if e["art"] == "freelance":
+            print(f"      Upgrades {e.get('upgrades')} | Kunde {e.get('kunde')}")
             print(f"      Budget {e.get('budget_min_usd', 0):.0f}–{e.get('budget_max_usd', 0):.0f} USD, Ø-Gebot {e.get('gebot_avg_usd', 0):.0f}, "
                   f"{e.get('typ')}, Währung {e.get('waehrung')}, KI-Preis {(e.get('ki') or {}).get('preis_vorschlag_eur')}")
     print(f"Fertig: {len(dieser_lauf)} im Lauf, {lauf['neu']} neu, {lauf['empfehlbar']} empfehlbar, "

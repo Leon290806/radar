@@ -75,6 +75,7 @@ function metaZeile(e) {
   if (ok(e.alter_tage)) t.push(`<span>vor ${e.alter_tage < 1 ? Math.max(1, Math.round(e.alter_tage * 24)) + " Std." : zahl(e.alter_tage) + " T."}</span>`);
   if (e.art === "bounty" && e.ki_regel && e.ki_regel !== "unbekannt") t.push(`<span>KI-Regel: ${esc(e.ki_regel)}</span>`);
   if (e.frist) t.push(`<span>Frist: ${esc(String(e.frist).slice(0, 40))}</span>`);
+  if (e.kunde && e.kunde.seit) t.push(`<span>Kunde: ${e.kunde.bewertungen ? zahl(e.kunde.sterne, 1) + "★ · " + e.kunde.bewertungen + " Bew." : "neu, keine Bewertungen"}${e.kunde.zahlung_ok ? " · Zahlung verifiziert" : ""}</span>`);
   t.push(fbTag(e));
   return `<div class="meta">${t.join("")}</div>`;
 }
