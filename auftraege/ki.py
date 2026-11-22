@@ -49,7 +49,7 @@ def bewerte(e):
     try:
         r = requests.post("https://api.anthropic.com/v1/messages", timeout=90, headers={
             "x-api-key": E.ANTHROPIC_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-            json={"model": E.KI_MODELL, "max_tokens": 900, "system": SYSTEM,
+            json={"model": E.KI_MODELL, "max_tokens": 1600, "system": SYSTEM,
                   "messages": [{"role": "user", "content": prompt}]})
     except requests.RequestException as ex:
         return None, f"Verbindung: {ex.__class__.__name__}"
@@ -57,8 +57,9 @@ def bewerte(e):
         return None, f"API HTTP {r.status_code}: {r.text[:160]}"
     try:
         text = "".join(b.get("text", "") for b in r.json().get("content", []) if b.get("type") == "text")
+        text = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.M)
         m = re.search(r"\{.*\}", text, re.S)
-        daten = json.loads(m.group(0))
+        daten = json.loads(m.group(0), strict=False)  # erlaubt Zeilenumbrüche im Bewerbungstext
     except (ValueError, AttributeError):
         return None, "Antwort nicht lesbar"
     erlaubt = {"machbar", "verboten", "grund", "loesung", "claude_stunden", "leon_minuten", "risiko", "preis_vorschlag_eur", "bewerbung"}

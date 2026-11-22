@@ -22,7 +22,7 @@ import lernen as L  # noqa: E402
 import ki as KI  # noqa: E402
 import seite  # noqa: E402
 
-UEBERNEHMEN = ("erst_gesehen", "ki", "ki_fehler", "feedback", "betrag_echt", "ki_regel", "versuche", "benachrichtigt")
+UEBERNEHMEN = ("erst_gesehen", "ki", "ki_fehler", "ki_versuche", "feedback", "betrag_echt", "ki_regel", "versuche", "benachrichtigt")
 
 
 def journal_laden():
@@ -130,7 +130,8 @@ def main():
     if kt["datum"] != tag:
         kt.update({"datum": tag, "n": 0})
     for e in E_.values():  # Verbindungs-/Konfigurationsfehler beim nächsten Lauf erneut versuchen
-        if str(e.get("ki_fehler", "")).startswith(("API HTTP", "Verbindung")):
+        f = str(e.get("ki_fehler", ""))
+        if f.startswith(("API HTTP", "Verbindung")) or (f == "Antwort nicht lesbar" and e.get("ki_versuche", 0) < 2):
             e.pop("ki_fehler", None)
     kandidaten = sorted([e for e in E_.values() if B.empfehlbar(e) and not e.get("ki") and not e.get("ki_fehler")],
                         key=lambda x: -x["ew_eur"])
@@ -139,6 +140,7 @@ def main():
         daten, fehler = KI.bewerte(e)
         if fehler == "kein API-Schlüssel":
             break
+        e["ki_versuche"] = e.get("ki_versuche", 0) + 1
         kt["n"] += 1
         if daten:
             e["ki"] = daten
