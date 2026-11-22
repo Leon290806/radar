@@ -14,7 +14,7 @@ import requests
 
 import einstellungen as E
 
-AKTIONEN = {"beworben", "gewonnen", "verloren", "uninteressant"}
+AKTIONEN = {"beworben", "gewonnen", "verloren", "uninteressant", "pruefen"}
 
 
 def jetzt():
@@ -53,8 +53,11 @@ def feedback_holen(J):
                     betrag = float(m_bt.group(1).replace(".", "").replace(",", ".")) if "," in m_bt.group(1) else float(m_bt.group(1))
                 except ValueError:
                     betrag = None
-            J.setdefault("feedback", []).append({"zeit": it.get("created_at"), "id": m_id.group(1),
-                                                 "aktion": m_ak.group(1), "betrag": betrag})
+            if m_ak.group(1) == "pruefen":
+                J.setdefault("pruef_wunsch", []).append(m_id.group(1))
+            else:
+                J.setdefault("feedback", []).append({"zeit": it.get("created_at"), "id": m_id.group(1),
+                                                     "aktion": m_ak.group(1), "betrag": betrag})
             n += 1
         try:
             requests.post(f"https://api.github.com/repos/{E.REPO}/issues/{it['number']}/comments", headers=h, timeout=20,

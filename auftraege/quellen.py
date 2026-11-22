@@ -101,11 +101,9 @@ def freelancer(suchbegriffe):
             continue
         for p in projekte:
             cur = (p.get("currency") or {})
-            kurs = cur.get("exchange_rate")  # Faktor zu USD
-            if not kurs:
-                if (cur.get("code") or "USD") != "USD":
-                    continue  # ohne Umrechnungskurs lieber auslassen als falsch bewerten
-                kurs = 1.0
+            kurs = E.USD_JE_EINHEIT.get((cur.get("code") or "USD").upper())
+            if kurs is None:
+                continue  # unbekannte Währung: lieber auslassen als falsch bewerten
             b = p.get("budget") or {}
             bs = p.get("bid_stats") or {}
             out.append({
@@ -200,6 +198,28 @@ def github_betraege_nachladen(eintraege, max_n=40):
                 break
         attempts = sum(1 for k in r.json() if "/attempt" in (k.get("body") or ""))
         e["versuche"] = attempts
+
+
+def github_repo_ok(repo, cache):
+    """Ist das Repository etabliert (Sterne, Alter, nicht archiviert)? Schützt vor Fake-Bounties."""
+    if not repo:
+        return False
+    heute = datetime.now(timezone.utc)
+    c = cache.get(repo)
+    if c and c.get("geprueft", "")[:10] >= (heute.date().isoformat()[:8] + "01"):  # einmal pro Monat neu prüfen
+        return c["ok"]
+    r = _get(f"https://api.github.com/repos/{repo}", headers=_gh_headers())
+    if r is None or r.status_code != 200:
+        return False
+    d = r.json()
+    try:
+        alter = (heute - datetime.fromisoformat(d["created_at"].replace("Z", "+00:00"))).days
+    except (KeyError, ValueError):
+        alter = 0
+    ok = (d.get("stargazers_count", 0) >= E.REPO_MIN_STERNE and alter >= E.REPO_MIN_ALTER_TAGE
+          and not d.get("archived") and not d.get("disabled"))
+    cache[repo] = {"ok": ok, "sterne": d.get("stargazers_count", 0), "alter": alter, "geprueft": heute.isoformat()}
+    return ok
 
 
 def github_ki_regel(repo, cache):

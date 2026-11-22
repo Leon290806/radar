@@ -22,7 +22,7 @@ import lernen as L  # noqa: E402
 import ki as KI  # noqa: E402
 import seite  # noqa: E402
 
-UEBERNEHMEN = ("erst_gesehen", "ki", "ki_fehler", "ki_versuche", "feedback", "betrag_echt", "ki_regel", "versuche", "benachrichtigt")
+UEBERNEHMEN = ("erst_gesehen", "ki", "ki_fehler", "ki_versuche", "repo_ok", "feedback", "betrag_echt", "ki_regel", "versuche", "benachrichtigt")
 
 
 def journal_laden():
@@ -112,6 +112,10 @@ def main():
     for e in neue_bounties:
         e.setdefault("versuche", e.get("versuche", 0))
     cache = J.setdefault("ki_regel_cache", {})
+    repo_cache = J.setdefault("repo_cache", {})
+    for e in sorted([e for e in dieser_lauf.values() if e["art"] == "bounty" and "repo_ok" not in e],
+                    key=lambda x: -(x.get("betrag") or 0))[:40]:
+        e["repo_ok"] = Q.github_repo_ok(e.get("repo"), repo_cache)
     for e in sorted([e for e in dieser_lauf.values() if e["art"] == "bounty" and "ki_regel" not in e],
                     key=lambda x: -(x.get("betrag") or 0))[:15]:
         e["ki_regel"] = Q.github_ki_regel(e.get("repo"), cache)
@@ -125,7 +129,8 @@ def main():
         B.bewerte(e, gelernt)
 
     # 5) KI-Bewertung der aussichtsreichsten neuen Kandidaten (mit Kostenbremse)
-    tag = jetzt.strftime("%Y-%m-%d")
+    from zoneinfo import ZoneInfo
+    tag = jetzt.astimezone(ZoneInfo(E.ZEITZONE)).strftime("%Y-%m-%d")
     kt = J.setdefault("ki_tag", {"datum": tag, "n": 0})
     if kt["datum"] != tag:
         kt.update({"datum": tag, "n": 0})
@@ -135,7 +140,26 @@ def main():
             e.pop("ki_fehler", None)
     kandidaten = sorted([e for e in E_.values() if B.top_tauglich(e) and not e.get("ki") and not e.get("ki_fehler")],
                         key=lambda x: -x["rang"])
-    rest = max(0, min(E.KI_MAX_PRO_LAUF, E.KI_MAX_PRO_TAG - kt["n"]))
+    # 5a) Ausdrückliche Prüf-Wünsche aus dem Dashboard zuerst (zählen nur gegen die harte Obergrenze)
+    wunsch = [E_[i] for i in dict.fromkeys(J.pop("pruef_wunsch", [])) if i in E_ and not E_[i].get("ki")]
+    for e in wunsch[:E.KI_MAX_PRO_LAUF]:
+        if kt["n"] >= E.KI_HART_PRO_TAG:
+            break
+        daten, fehler = KI.bewerte(e)
+        if fehler == "kein API-Schlüssel":
+            break
+        kt["n"] += 1
+        if daten:
+            e["ki"] = daten
+            e.pop("ki_fehler", None)
+            lauf["ki"] += 1
+        else:
+            print("KI-Fehler (Wunsch):", fehler)
+        B.bewerte(e, gelernt)
+    # 5b) Automatisch: Tageskontingent; manuell gestartete Läufe dürfen bis zur harten Obergrenze
+    grenze_tag = E.KI_HART_PRO_TAG if E.MANUELL else E.KI_MAX_PRO_TAG
+    rest = max(0, min(E.KI_MAX_PRO_LAUF, grenze_tag - kt["n"]))
+    kandidaten = [e for e in kandidaten if not e.get("ki")]
     for e in kandidaten[:rest]:
         daten, fehler = KI.bewerte(e)
         if fehler == "kein API-Schlüssel":

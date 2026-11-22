@@ -13,6 +13,9 @@ ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 KI_MODELL = os.environ.get("AUFTRAG_MODELL") or "claude-sonnet-5-5"
 KI_MAX_PRO_TAG = int(os.environ.get("AUFTRAG_KI_MAX_PRO_TAG") or "24")   # Kostenbremse
 KI_MAX_PRO_LAUF = int(os.environ.get("AUFTRAG_KI_MAX_PRO_LAUF") or "8")
+KI_HART_PRO_TAG = int(os.environ.get("AUFTRAG_KI_HART_PRO_TAG") or "60")  # absolute Obergrenze inkl. manueller Prüfungen
+MANUELL = os.environ.get("GITHUB_EVENT_NAME") in ("workflow_dispatch", "issues")
+ZEITZONE = "Europe/Berlin"
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 REPO = os.environ.get("GITHUB_REPOSITORY", "Leon290806/radar")
 NTFY_THEMA = os.environ.get("NTFY_THEMA", "")
@@ -23,6 +26,12 @@ KAGGLE_KEY = os.environ.get("KAGGLE_KEY", "")
 
 USER_AGENT = "LN-Automation-Auftragsradar/1.0 (+https://www.ln-automation.de)"
 USD_EUR = 0.92          # grobe Umrechnung, nur für die Sortierung
+# Feste, grobe Kurse (USD je Einheit). Unbekannte Währungen werden ausgelassen statt falsch bewertet.
+USD_JE_EINHEIT = {"USD": 1, "EUR": 1.08, "GBP": 1.27, "CHF": 1.13, "AUD": 0.65, "CAD": 0.73, "NZD": 0.60, "SGD": 0.74,
+                  "HKD": 0.128, "JPY": 0.0067, "CNY": 0.14, "INR": 0.012, "PKR": 0.0036, "BDT": 0.0085, "LKR": 0.0033,
+                  "IDR": 0.000063, "PHP": 0.017, "MYR": 0.21, "THB": 0.028, "VND": 0.00004, "ZAR": 0.054, "NGN": 0.0007,
+                  "KES": 0.0077, "EGP": 0.02, "AED": 0.27, "SAR": 0.27, "TRY": 0.03, "SEK": 0.095, "NOK": 0.093,
+                  "DKK": 0.145, "PLN": 0.25, "BRL": 0.18, "MXN": 0.055, "CLP": 0.0011, "COP": 0.00025, "ARS": 0.001}
 FREELANCER_GEBUEHR = 0.10  # Plattformgebühr freelancer.com (mind. 5 $)
 
 # Wie lange ein Eintrag als "frisch" gilt (Tage), je Art
@@ -90,7 +99,13 @@ VERBOTEN = ["visa", "appointment bot", "ticket bot", "sneaker", "captcha", "fake
             "thesis", "dissertation", "exam", "essay writing", "crypto", "token presale", "memecoin", "casino", "betting", "gambling",
             "adult", "onlyfans", "followers", "likes", "scrape linkedin", "linkedin scraper", "instagram scraper", "facebook scraper",
             "email list", "leads list", "contact list", "phone verification", "account creation", "bypass", "cheat", "hack ",
-            "credit card", "forex signals", "mlm", "commission only", "provision", "pay after", "unpaid", "test task for free"]
+            "credit card", "forex signals", "mlm", "commission only", "provision", "pay after", "unpaid", "test task for free",
+            # typische Köder für KI-Agenten bei Fake-Bounties
+            "wallet address", "airdrop", "conformance mirror", "not reviewed on this mirror",
+            "pull requests from human engineers", "settlement"]
+# Bounty-Repos müssen etabliert sein (Schutz vor Fallen)
+REPO_MIN_STERNE = 25
+REPO_MIN_ALTER_TAGE = 90
 
 # Suchbegriffe für freelancer.com: aktiv + Kandidaten zum Testen (der Radar lernt, welche sich lohnen)
 FREELANCER_START = ["python script", "excel vba", "data processing", "pdf extract", "german translation", "landing page",

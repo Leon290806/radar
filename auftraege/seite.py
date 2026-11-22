@@ -7,7 +7,7 @@ import einstellungen as E
 
 FELDER = ("id", "quelle", "art", "titel", "url", "kat", "kat_name", "machbar", "chance", "wert_eur", "ew_eur", "leon_min",
           "eur_pro_std", "gebote", "alter_tage", "frisch", "aussortiert", "gruende", "empfehlbar", "feedback", "betrag_echt",
-          "erst_gesehen", "typ", "rang", "versuche", "ki_regel", "repo", "frist", "schwer", "suchbegriff")
+          "erst_gesehen", "typ", "rang", "repo_ok", "versuche", "ki_regel", "repo", "frist", "schwer", "suchbegriff")
 
 
 def _lies(*teile):
@@ -46,7 +46,7 @@ def daten(J):
         "protokoll": J.get("protokoll", [])[:80], "ergebnis": erg,
         "feedback": sorted(letzte.values(), key=lambda f: f.get("zeit") or "", reverse=True)[:100],
         "ki": {"aktiv": bool(E.ANTHROPIC_KEY), "modell": E.KI_MODELL, "heute": J.get("ki_tag", {}).get("n", 0),
-               "max": E.KI_MAX_PRO_TAG},
+               "max": E.KI_MAX_PRO_TAG, "hart": E.KI_HART_PRO_TAG},
         "annahmen": {"gewinn_basis": E.GEWINN_BASIS, "leon_min": E.LEON_MIN, "usd_eur": E.USD_EUR,
                      "kategorien": {k: {"name": v["name"], "machbar": v["machbar"]} for k, v in E.KATEGORIEN.items()},
                      "frisch_tage": E.FRISCH_TAGE, "push_ab": E.PUSH_AB_EUR,

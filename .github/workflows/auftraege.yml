@@ -5,7 +5,9 @@ name: Auftrags-Radar
 on:
   schedule:
     - cron: "17 5,8,11,14,17,20 * * *"   # alle 3 Stunden tagsüber (UTC), nicht zur Radar-Zeit
-  workflow_dispatch: {}
+  workflow_dispatch: {}          # Knopf „Jetzt scannen“ im Dashboard
+  issues:
+    types: [opened]               # Rückmeldungen und „Mit KI prüfen“ sofort verarbeiten
   push:
     branches: [auftrags-radar]
     paths: ["auftraege/**", ".github/workflows/auftraege.yml"]
@@ -22,6 +24,7 @@ concurrency:
 
 jobs:
   scan:
+    if: github.event_name != 'issues' || startsWith(github.event.issue.title, '[Auftrag]')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

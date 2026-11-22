@@ -108,6 +108,9 @@ def bewerte(e, gelernt):
     gruende = []
     if verboten:
         gruende.append("aussortiert wegen: " + ", ".join(sorted(set(verboten)))[:80])
+    if e["art"] == "bounty" and e.get("repo_ok") is False:
+        verboten = verboten or ["Repo unbekannt"]
+        gruende.append("Repository zu neu oder zu unbekannt – mögliche Falle")
     if e["art"] == "bounty" and e.get("ki_regel") == "verbietet":
         verboten = verboten or ["KI-Beiträge verboten"]
         gruende.append("Projekt verbietet KI-Beiträge")
@@ -167,6 +170,8 @@ def rang(e):
 
 def top_tauglich(e):
     if not empfehlbar(e) or e.get("chance", 0) < E.TOP_MIN_CHANCE:
+        return False
+    if e.get("art") == "bounty" and e.get("repo_ok") is not True:
         return False
     return not (e.get("art") == "freelance" and (e.get("gebote") or 0) > E.TOP_MAX_GEBOTE)
 

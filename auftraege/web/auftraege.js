@@ -38,6 +38,7 @@ document.addEventListener("click", ev => {
   const b = ev.target.closest("[data-fb]");
   if (b) {
     const e = NACH_ID[b.dataset.id]; const a = b.dataset.fb; let betrag = null;
+    if (a === "pruefen") toast("GitHub öffnet sich – „Submit new issue“ tippen, Ergebnis in ca. 3 Minuten");
     if (a === "gewonnen") { betrag = prompt("Betrag in Euro (leer lassen, wenn er nicht öffentlich sichtbar sein soll):", e.ki && e.ki.preis_vorschlag_eur ? Math.round(e.ki.preis_vorschlag_eur) : ""); if (betrag === null) return; }
     window.open(issueUrl(e, a, betrag), "_blank", "noopener"); return;
   }
@@ -54,7 +55,9 @@ function badgeArt(e) { const kl = e.art === "bounty" ? "b-warn" : e.art === "wet
 function fbTag(e) { return e.feedback ? `<span class="fb ${esc(e.feedback)}">${esc(e.feedback)}</span>` : ""; }
 function bewerbung(e) {
   if (e.ki && e.ki.bewerbung) return `<div class="bew"><button class="knopf kopie" data-kopie="${esc(e.id)}">Kopieren</button>${esc(e.ki.bewerbung)}</div>`;
-  return `<div class="box warn" style="margin-top:10px">Noch keine KI-Bewertung. ${D.ki.aktiv ? "Kommt im nächsten Lauf, falls der Auftrag oben bleibt." : "Für Bewerbungstexte den Schlüssel ANTHROPIC_API_KEY als GitHub-Secret hinterlegen."}</div>`;
+  if (!D.ki.aktiv) return `<div class="box warn" style="margin-top:10px">Für Bewerbungstexte den Schlüssel ANTHROPIC_API_KEY als GitHub-Secret hinterlegen.</div>`;
+  return `<div class="box warn" style="margin-top:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+    <span>Noch keine KI-Bewertung.</span><button class="knopf haupt" data-fb="pruefen" data-id="${esc(e.id)}">Mit KI prüfen</button></div>`;
 }
 function zahlenBox(e) {
   return `<div class="zahlen"><div class="lbl">Erwarteter Wert ${tippI("Wert nach Gebühren × Gewinnchance × Machbarkeit × gelernter Interesse-Faktor. Das ist der Durchschnitt, den eine Bewerbung bringt.")}</div>
@@ -118,7 +121,8 @@ document.body.innerHTML = `
     <div class="marke"><div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M4 17l5-5 4 4 7-8"/><path d="M15 8h5v5"/></svg></div>
       <div><h1>Auftrags-Radar</h1><div class="stand">Stand ${esc(zeit(D.stand))}<span class="lang"> · scannt ${Object.values(D.quellen).filter(q => q.status !== "pausiert").length} Quellen alle 3 Stunden</span></div></div></div>
     <div class="rechts"><a class="pill" href="../">← Aktien-Radar</a>
-      <span class="pill"><i style="background:var(${D.ki.aktiv ? "--good" : "--warn"})"></i>KI ${D.ki.aktiv ? D.ki.heute + "/" + D.ki.max + " heute" : "aus"}</span></div>
+      <a class="pill" href="https://github.com/${esc(D.repo)}/actions/workflows/auftraege.yml" target="_blank" rel="noopener" title="Öffnet GitHub: dort „Run workflow“ tippen. Manuelle Läufe prüfen auch nach dem Tageskontingent bis zu 8 Aufträge mit KI.">↻ Jetzt scannen</a>
+      <span class="pill" title="Automatisch höchstens ${D.ki.max} Prüfungen pro Tag, mit manuellen Prüfungen höchstens ${D.ki.hart}. Zähler beginnt um 0 Uhr."><i style="background:var(${D.ki.aktiv ? "--good" : "--warn"})"></i>KI ${D.ki.aktiv ? D.ki.heute + "/" + D.ki.max + " heute" : "aus"}</span></div>
   </div>
   <nav class="tabs">${tabs.map(([k, t, z], i) => `<button data-tab="${k}" class="${i === 0 ? "aktiv" : ""}">${t}${z ? `<span class="zahl">${z}</span>` : ""}</button>`).join("")}</nav>
 </div></header>
