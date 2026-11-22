@@ -229,6 +229,10 @@ def main():
         f.write(html)
     journal_speichern(J)
     from collections import Counter
+    fl = [e for e in dieser_lauf.values() if e["art"] == "freelance"]
+    if fl:
+        zaehl = Counter(f.split(":")[0] for e in fl for f in (e.get("flags") or []))
+        print("Merkmale freelancer.com (Anteil):", {k: round(v / len(fl), 2) for k, v in zaehl.most_common(8)})
     print("Empfehlbar je Art:", dict(Counter(e["art"] for e in E_.values() if e["empfehlbar"])))
     for e in sorted([e for e in E_.values() if B.top_tauglich(e)], key=lambda x: -x["rang"])[:10]:
         print(f"  EW {e['ew_eur']:8.2f} € | Wert {e['wert_eur']:8.0f} € | p {e['chance']:.3f} | m {e['machbar']:.2f} | "
