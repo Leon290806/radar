@@ -56,12 +56,13 @@ def wert_usd(e):
     if e["art"] == "freelance":
         lo, hi, avg = e.get("budget_min_usd") or 0, e.get("budget_max_usd") or 0, e.get("gebot_avg_usd") or 0
         if e.get("typ") == "hourly":
-            satz = avg or (lo + hi) / 2 or 15
+            satz = avg or lo or 15
             return min(satz, 60) * 6  # Annahme: ~6 abrechenbare Stunden
-        basis = avg or (lo + hi) / 2 or lo
-        if hi:
-            basis = min(basis, hi)
-        return max(basis, lo)
+        if avg:
+            basis = min(avg, hi) if hi else avg
+        else:
+            basis = lo or hi  # ohne Gebote: Untergrenze des Budgets (vorsichtig)
+        return max(basis, 0)
     b = e.get("betrag") or 0
     if e.get("waehrung") == "EUR":
         b /= E.USD_EUR
