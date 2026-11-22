@@ -78,6 +78,8 @@ def gewinnchance(e, gelernt):
     n = e.get("gebote") or 0
     if e["art"] == "freelance":
         p = basis / (1 + n / 15)
+        if any(f.startswith(("pool:", "enterprise:")) for f in (e.get("flags") or [])):
+            p *= 0.3  # eingeschränkter Bieterkreis (z. B. Preferred-Freelancer-Pool)
         k = e.get("kunde") or {}
         if k and not k.get("bewertungen"):
             p *= 0.8  # neue Auftraggeber springen öfter ab
@@ -122,6 +124,8 @@ def bewerte(e, gelernt):
         if e.get("typ") == "hourly" and (e.get("budget_min_usd") or 0) >= E.FL_STUNDE_VERIFIZIERT_AB_USD and not E.FL_VERIFIZIERT:
             verboten = verboten or ["gesperrt"]
             gruende.append(f"Für dein Konto gesperrt: ab {E.FL_STUNDE_VERIFIZIERT_AB_USD} $/Std. nur mit „Verified by Freelancer“")
+        if any(f.startswith(("pool:", "enterprise:")) for f in (e.get("flags") or [])):
+            gruende.append("Eingeschränkter Bieterkreis möglich (Pool/Enterprise)")
         treffer_fl = [f for f in (e.get("flags") or []) if f in gelernt.get("gesperrt_flags", [])]
         if treffer_fl:
             verboten = verboten or ["gesperrt"]

@@ -110,8 +110,6 @@ def freelancer(suchbegriffe):
             res = r.json().get("result", {})
             projekte = res.get("projects", []) or []
             nutzer = res.get("users") or {}
-            if q == suchbegriffe[0]:
-                print("  freelancer.com Antwortfelder:", sorted(res.keys()), "| Projektfelder:", sorted((projekte[0] if projekte else {}).keys())[:60])
         except ValueError:
             fehler.append(f"{q}: keine JSON-Antwort")
             continue
@@ -141,7 +139,9 @@ def freelancer(suchbegriffe):
                 "suchbegriff": q,
                 "upgrades": {k: v for k, v in (p.get("upgrades") or {}).items() if v},
                 "flags": sorted([k for k, v in p.items() if v is True] +
-                                ["up:" + k for k, v in (p.get("upgrades") or {}).items() if v is True]),
+                                ["up:" + k for k, v in (p.get("upgrades") or {}).items() if v is True] +
+                                [f"pool:{x}" for x in (p.get("pool_ids") or [])] +
+                                [f"enterprise:{x}" for x in (p.get("enterprise_ids") or [])]),
                 "owner_id": p.get("owner_id"),
                 "kunde": _kunde(nutzer.get(str(p.get("owner_id"))) or nutzer.get(p.get("owner_id")) or {}),
             })
