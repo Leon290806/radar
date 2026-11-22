@@ -127,9 +127,13 @@ def bewerte(e, gelernt):
     if e["art"] == "freelance":
         usd = usd - max(usd * E.FREELANCER_GEBUEHR, 5)
     wert_eur = max(usd, 0) * E.USD_EUR
+    if e["art"] == "freelance" and (e.get("budget_min_usd") or 0) > 20000 and not ki.get("preis_vorschlag_eur"):
+        verboten = verboten or ["unplausibles Budget"]
+        gruende.append("Budget unplausibel hoch (Tippfehler oder Lockangebot)")
     if ki.get("preis_vorschlag_eur"):
         try:
-            wert_eur = 0.5 * wert_eur + 0.5 * float(ki["preis_vorschlag_eur"])
+            kp = float(ki["preis_vorschlag_eur"])
+            wert_eur = min(0.5 * wert_eur + 0.5 * kp, 3 * kp)  # KI-Preis begrenzt Fantasie-Budgets
         except (TypeError, ValueError):
             pass
     wert_eur *= gelernt.get("wert_mult", {}).get(e["quelle"], 1.0)
