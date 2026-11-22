@@ -7,7 +7,7 @@ import einstellungen as E
 
 FELDER = ("id", "quelle", "art", "titel", "url", "kat", "kat_name", "machbar", "chance", "wert_eur", "ew_eur", "leon_min",
           "eur_pro_std", "gebote", "alter_tage", "frisch", "aussortiert", "gruende", "empfehlbar", "feedback", "betrag_echt",
-          "erst_gesehen", "typ", "versuche", "ki_regel", "repo", "frist", "schwer", "suchbegriff")
+          "erst_gesehen", "typ", "rang", "versuche", "ki_regel", "repo", "frist", "schwer", "suchbegriff")
 
 
 def _lies(*teile):
@@ -49,7 +49,8 @@ def daten(J):
                "max": E.KI_MAX_PRO_TAG},
         "annahmen": {"gewinn_basis": E.GEWINN_BASIS, "leon_min": E.LEON_MIN, "usd_eur": E.USD_EUR,
                      "kategorien": {k: {"name": v["name"], "machbar": v["machbar"]} for k, v in E.KATEGORIEN.items()},
-                     "frisch_tage": E.FRISCH_TAGE, "push_ab": E.PUSH_AB_EUR},
+                     "frisch_tage": E.FRISCH_TAGE, "push_ab": E.PUSH_AB_EUR,
+                     "top_min_chance": E.TOP_MIN_CHANCE, "top_max_gebote": E.TOP_MAX_GEBOTE, "top_volle_chance": E.TOP_VOLLE_CHANCE},
     }
 
 

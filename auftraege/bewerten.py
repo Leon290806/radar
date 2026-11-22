@@ -156,7 +156,19 @@ def bewerte(e, gelernt):
         "aussortiert": bool(verboten), "gruende": gruende, "schwer": [s for s in schwer][:3],
         "alter_tage": None if alter is None else round(alter, 1), "frisch": frisch,
     })
+    e["rang"] = round(rang(e), 2)
     return e
+
+
+def rang(e):
+    """Sortierwert der Top 5: erwarteter Wert, bei weniger als 10 % Chance anteilig abgewertet."""
+    return e.get("ew_eur", 0) * min(1.0, e.get("chance", 0) / E.TOP_VOLLE_CHANCE)
+
+
+def top_tauglich(e):
+    if not empfehlbar(e) or e.get("chance", 0) < E.TOP_MIN_CHANCE:
+        return False
+    return not (e.get("art") == "freelance" and (e.get("gebote") or 0) > E.TOP_MAX_GEBOTE)
 
 
 def empfehlbar(e):

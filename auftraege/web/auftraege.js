@@ -135,7 +135,7 @@ $$("nav.tabs button").forEach(b => b.addEventListener("click", () => {
 function uebersicht() {
   const gewonnen = D.ergebnis.umsatz || 0;
   const kp = [
-    ["Erwarteter Wert Top 5", eur(TOP.reduce((s, e) => s + e.ew_eur, 0)), "Summe der Durchschnittswerte, wenn du dich auf alle 5 bewirbst"],
+    ["Erwarteter Wert Top 5", eur(TOP.reduce((s, e) => s + e.ew_eur, 0)), "Ø-Ertrag, wenn du dich auf alle 5 bewirbst"],
     ["Empfehlbare Aufträge", zahl(empf.length), "machbar, frisch, seriös, noch nicht bearbeitet"],
     ["Neu im letzten Lauf", zahl(L.neu), `${zahl(Object.values(L.quellen || {}).reduce((s, q) => s + q.n, 0))} Einträge geprüft`],
     ["Bester €/Leon-Std.", eur(Math.max(0, ...empf.map(e => e.eur_pro_std))), "unter allen empfehlbaren"],
@@ -143,7 +143,7 @@ function uebersicht() {
   ];
   let h = `<div class="kpis">${kp.map(([k, v, n]) => `<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div><div class="n">${esc(n)}</div></div>`).join("")}</div>`;
   if (!D.ki.aktiv) h += `<div class="box warn" style="margin-bottom:16px">KI-Bewertung ist aus. Hinterlege das GitHub-Secret <b>ANTHROPIC_API_KEY</b>, dann bekommst du Lösungsweg, Risiko und fertige Bewerbungstexte.</div>`;
-  h += `<div class="ch"><div><h2 class="ct" style="font-size:18px">Top 5 Empfehlungen</h2><div class="cs">Sortiert nach erwartetem Wert in Euro. Bewirb dich, kopiere den Auftrag in den Claude-Chat, Claude löst ihn.</div></div></div>`;
+  h += `<div class="ch"><div><h2 class="ct" style="font-size:18px">Top 5 Empfehlungen</h2><div class="cs">Mischung aus Wert und echter Chance: Unter ${pct(D.annahmen.top_volle_chance)} Gewinnchance wird der erwartete Wert anteilig abgewertet, unter ${pct(D.annahmen.top_min_chance)} oder mit mehr als ${D.annahmen.top_max_gebote} Geboten fliegt ein Auftrag raus. Bewirb dich, kopiere den Auftrag in den Claude-Chat, Claude löst ihn.</div></div></div>`;
   h += TOP.length ? `<div class="top-liste">${TOP.map((e, i) => `<div class="card top-karte">
       <div class="rang">${i + 1}</div>
       <div>${metaZeile(e)}<h3><a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.titel)}</a></h3>
@@ -157,7 +157,7 @@ function uebersicht() {
 }
 
 /* ---------- Alle Aufträge ---------- */
-const F = { art: "alle", quelle: "alle", kat: "alle", q: "", nurEmpf: true, sort: "ew_eur", ab: false };
+const F = { art: "alle", quelle: "alle", kat: "alle", q: "", nurEmpf: true, sort: "rang", ab: false };
 function alle() {
   const quellen = [...new Set(D.eintraege.map(e => e.quelle))].sort(), kats = [...new Set(D.eintraege.map(e => e.kat_name))].sort();
   $("#t-alle").innerHTML = `<div class="card"><div class="steuer">
@@ -166,7 +166,7 @@ function alle() {
       <select class="feld" id="f-kat"><option value="alle">Alle Kategorien</option>${kats.map(q => `<option>${esc(q)}</option>`).join("")}</select>
       <input class="feld" id="f-q" placeholder="Suchen …"><label class="chip"><input type="checkbox" id="f-empf" checked> nur empfehlbar</label></div></div>
     <div class="tw"><table class="tbl karten"><thead><tr>
-      <th class="l">Auftrag</th><th class="sort" data-s="ew_eur">Erw. Wert</th><th class="sort" data-s="wert_eur">Wert</th><th class="sort" data-s="chance">Chance</th>
+      <th class="l">Auftrag</th><th class="sort" data-s="rang">Rang ${tippI("Erwarteter Wert, bei weniger als 10 % Chance anteilig abgewertet. Danach sind die Top 5 sortiert.")}</th><th class="sort" data-s="ew_eur">Erw. Wert</th><th class="sort" data-s="wert_eur">Wert</th><th class="sort" data-s="chance">Chance</th>
       <th class="sort" data-s="machbar">Machbar</th><th class="sort" data-s="eur_pro_std">€/Std.</th><th class="sort" data-s="gebote">Konk.</th><th class="sort" data-s="alter_tage">Alter</th></tr></thead>
       <tbody id="f-body"></tbody></table></div><div class="fuss" id="f-fuss"></div></div>`;
   const neu = () => {
@@ -177,10 +177,10 @@ function alle() {
     l.sort((a, b) => ((a[s] ?? 1e9) - (b[s] ?? 1e9)) * rich);
     $("#f-body").innerHTML = l.slice(0, 400).map(e => `<tr class="klick" data-id="${esc(e.id)}">
       <td class="l titelzelle"><div class="tick">${esc(e.titel)}</div><div class="meta">${badgeArt(e)}<span>${esc(e.quelle)}</span><span>${esc(e.kat_name)}</span>${fbTag(e)}${e.aussortiert ? `<span class="neg">${esc((e.gruende || [])[0] || "aussortiert")}</span>` : ""}</div></td>
-      <td class="m-r"><b>${eur(e.ew_eur)}</b></td><td class="m-aus">${eur(e.wert_eur)}</td><td class="m-aus">${pct(e.chance, 1)}</td>
+      <td class="m-r"><b>${zahl(e.rang, 1)}</b></td><td class="m-aus">${eur(e.ew_eur)}</td><td class="m-aus">${eur(e.wert_eur)}</td><td class="m-aus">${pct(e.chance, 1)}</td>
       <td class="m-aus">${pct(e.machbar)}<span class="balken"><i style="width:${Math.round(e.machbar * 100)}%"></i></span></td>
       <td class="m-aus">${eur(e.eur_pro_std)}</td><td class="m-aus">${zahl(e.gebote)}</td><td class="m-aus">${ok(e.alter_tage) ? zahl(e.alter_tage, e.alter_tage < 2 ? 1 : 0) + " T." : "–"}</td></tr>`).join("") ||
-      `<tr><td colspan="8" class="leer">Keine Treffer mit diesen Filtern.</td></tr>`;
+      `<tr><td colspan="9" class="leer">Keine Treffer mit diesen Filtern.</td></tr>`;
     $("#f-fuss").textContent = `${l.length} von ${D.eintraege.length} Einträgen (letzte 30 Tage). Klick auf eine Zeile öffnet Details.`;
   };
   $$("#f-art .chip").forEach(c => c.addEventListener("click", () => { F.art = c.dataset.v; $$("#f-art .chip").forEach(x => x.classList.toggle("an", x === c)); neu(); }));

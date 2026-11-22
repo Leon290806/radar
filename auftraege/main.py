@@ -133,8 +133,8 @@ def main():
         f = str(e.get("ki_fehler", ""))
         if f.startswith(("API HTTP", "Verbindung")) or (f == "Antwort nicht lesbar" and e.get("ki_versuche", 0) < 2):
             e.pop("ki_fehler", None)
-    kandidaten = sorted([e for e in E_.values() if B.empfehlbar(e) and not e.get("ki") and not e.get("ki_fehler")],
-                        key=lambda x: -x["ew_eur"])
+    kandidaten = sorted([e for e in E_.values() if B.top_tauglich(e) and not e.get("ki") and not e.get("ki_fehler")],
+                        key=lambda x: -x["rang"])
     rest = max(0, min(E.KI_MAX_PRO_LAUF, E.KI_MAX_PRO_TAG - kt["n"]))
     for e in kandidaten[:rest]:
         daten, fehler = KI.bewerte(e)
@@ -169,7 +169,7 @@ def main():
     # 7) Top 5 + Push
     for e in E_.values():
         e["empfehlbar"] = B.empfehlbar(e)
-    top = sorted([e for e in E_.values() if e["empfehlbar"]], key=lambda x: -x["ew_eur"])[:5]
+    top = sorted([e for e in E_.values() if B.top_tauglich(e)], key=lambda x: -x["rang"])[:5]
     gesendet = 0
     for e in top:
         if e.get("benachrichtigt") or e["ew_eur"] < E.PUSH_AB_EUR or gesendet >= 2:
@@ -206,7 +206,7 @@ def main():
     journal_speichern(J)
     from collections import Counter
     print("Empfehlbar je Art:", dict(Counter(e["art"] for e in E_.values() if e["empfehlbar"])))
-    for e in sorted([e for e in E_.values() if e["empfehlbar"]], key=lambda x: -x["ew_eur"])[:10]:
+    for e in sorted([e for e in E_.values() if B.top_tauglich(e)], key=lambda x: -x["rang"])[:10]:
         print(f"  EW {e['ew_eur']:8.2f} € | Wert {e['wert_eur']:8.0f} € | p {e['chance']:.3f} | m {e['machbar']:.2f} | "
               f"{e['quelle']} | {e['kat']} | {e['titel'][:70]}")
     print(f"Fertig: {len(dieser_lauf)} im Lauf, {lauf['neu']} neu, {lauf['empfehlbar']} empfehlbar, "
