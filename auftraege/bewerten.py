@@ -94,6 +94,8 @@ def bewerte(e, gelernt):
     schwer = _treffer(_SCHWER, text)
     if schwer:
         machbar *= 0.45
+    if e["art"] == "wettbewerb":
+        machbar *= E.WETTBEWERB_MACHBAR_FAKTOR
     verboten = _treffer(_VERBOTEN, text)
     gruende = []
     if verboten:
@@ -119,6 +121,10 @@ def bewerte(e, gelernt):
         except (TypeError, ValueError):
             pass
     wert_eur *= gelernt.get("wert_mult", {}).get(e["quelle"], 1.0)
+    deckel = E.WERT_DECKEL_EUR.get(e["art"])
+    if deckel and wert_eur > deckel:
+        gruende.append(f"Wert auf {deckel} € gedeckelt (großes Projekt)")
+        wert_eur = deckel
 
     p = gewinnchance(e, gelernt)
     interesse = gelernt.get("kat_mult", {}).get(kat, 1.0)

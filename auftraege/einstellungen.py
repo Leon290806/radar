@@ -34,8 +34,13 @@ LEON_MIN = {
     "freelance": (5, 30),
     "bounty": (5, 25),
     "gesuch": (8, 35),
-    "wettbewerb": (10, 40),
+    "wettbewerb": (30, 120),
 }
+
+# Größere Projekte brauchen mehr als Claude allein (Abstimmung, Verantwortung): Wert wird gedeckelt
+WERT_DECKEL_EUR = {"freelance": 2500, "gesuch": 800, "bounty": 5000, "wettbewerb": 5000}
+# Wettbewerbe verlangen oft Demo-Video/Pitch und viel Feinschliff
+WETTBEWERB_MACHBAR_FAKTOR = 0.5
 
 # Startwerte für die Gewinnchance (werden durch Feedback gelernt)
 GEWINN_BASIS = {"freelance": 0.22, "bounty": 0.30, "gesuch": 0.10, "wettbewerb": 0.04}
@@ -69,7 +74,10 @@ KATEGORIEN = {
 SCHWER = ["video", "animation", "after effects", "mobile app", "ios", "android", "flutter", "swift", "kotlin", "unity", "unreal",
           "3d", "blender", "photoshop", "retouch", "voice", "voiceover", "call", "phone", "telefon", "on-site", "onsite", "vor ort",
           "full-time", "full time", "vollzeit", "long term", "long-term", "ongoing", "social media manager", "backlink", "tiktok",
-          "instagram growth", "figma", "hardware", "embedded", "plc", "sps"]
+          "instagram growth", "figma", "hardware", "embedded", "plc", "sps", "robot", "robotic", "mechanical", "cad", "autocad",
+          "solidworks", "revit", "floor plan", "drafting", "pcb", "electrical", "business partner", "partner wanted", "co-founder", "cofounder", "equity",
+          "business development", "sales rep", "sales agent", "lead generation", "cold calling", "virtual assistant", "data entry", "typing",
+          "demo video", "pitch video"]
 
 # Regelwidrig/unseriös -> aussortieren
 VERBOTEN = ["visa", "appointment bot", "ticket bot", "sneaker", "captcha", "fake review", "reviews for", "homework", "assignment",

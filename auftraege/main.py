@@ -77,7 +77,7 @@ def main():
             daten, fehler = [], [f"{ex.__class__.__name__}: {ex}"]
             traceback.print_exc()
         lauf["quellen"][name] = {"n": len(daten), "fehler": fehler[:5], "empfehlbar": 0}
-        print(f"{name}: {len(daten)} Einträge, {len(fehler)} Fehler")
+        print(f"{name}: {len(daten)} Einträge, {len(fehler)} Fehler", ("– " + " | ".join(fehler[:2])) if fehler else "")
         neue_liste.extend(daten)
 
     # 2) Zusammenführen (doppelte Treffer aus mehreren Suchbegriffen zusammenfassen)
