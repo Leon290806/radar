@@ -70,8 +70,8 @@ def wert_usd(e):
         b = E.AUSSCHREIBUNG_WERT_UNBEKANNT_EUR
     if e.get("waehrung") == "EUR":
         b /= E.USD_EUR
-    if e["art"] == "wettbewerb":
-        return b * 0.25  # nur ein Teil des Preisgeldes geht an einen Gewinner
+    if e["art"] == "wettbewerb" and not e.get("preis_ganz"):
+        return b * 0.25  # Hackathons: Preisgeld wird auf mehrere Gewinner/Teams verteilt
     if e["art"] == "gesuch" and not b:
         return 400  # unbekanntes Budget: vorsichtige Annahme
     return b

@@ -503,6 +503,59 @@ def bund():
     return out, []
 
 
+# ---------------------------------------------------------------- freelancer.com Wettbewerbe (offizielle API)
+def freelancer_wettbewerbe():
+    r = _get("https://www.freelancer.com/api/contests/0.1/contests/active/?limit=60&full_description=true&job_details=true")
+    if r is None or r.status_code != 200:
+        return [], [f"Wettbewerbe: HTTP {getattr(r, 'status_code', 'Fehler')}"]
+    out = []
+    for c in r.json().get("result", {}).get("contests", []) or []:
+        cur = c.get("currency") or {}
+        kurs = E.USD_JE_EINHEIT.get((cur.get("code") or "USD").upper())
+        if kurs is None or not c.get("prize"):
+            continue
+        out.append({
+            "id": f"flc-{c.get('id')}", "quelle": "freelancer.com Wettbewerbe", "art": "wettbewerb", "preis_ganz": True,
+            "titel": _text(c.get("title"), 200), "url": "https://www.freelancer.com/" + str(c.get("seo_url") or ""),
+            "text": _text(c.get("description") or c.get("preview_description"), 1200), "typ": "wettbewerb",
+            "betrag": float(c["prize"]) * kurs, "waehrung": "USD", "gebote": c.get("entry_count") or 0,
+            "tags": [j.get("name") for j in (c.get("jobs") or []) if j.get("name")][:6],
+            "erstellt": _iso(c.get("time_submitted")), "frist": f"{c.get('duration')} Tage Laufzeit" if c.get("duration") else None,
+        })
+    return out, []
+
+
+# ---------------------------------------------------------------- Twine (öffentliche Projektliste, robots.txt geprüft)
+def twine():
+    url = "https://www.twine.net/projects"
+    if not _erlaubt(url):
+        return [], ["Twine: laut robots.txt nicht erlaubt"]
+    r = _get(url, headers={"Accept": "text/html"})
+    if r is None or r.status_code != 200:
+        return [], [f"Twine: HTTP {getattr(r, 'status_code', 'Fehler')}"]
+    seite = r.text
+    treffer = list(re.finditer(r'href="(/projects/([a-z0-9]+)-([^"?#]+))"', seite))
+    out, gesehen = [], set()
+    for i, m in enumerate(treffer):
+        pfad, pid, slug = m.groups()
+        if pid in gesehen:
+            continue
+        gesehen.add(pid)
+        ende = treffer[i + 1].start() if i + 1 < len(treffer) else m.end() + 3000
+        segment = _text(seite[m.end(): min(ende, m.end() + 3000)], 1200)
+        titel = re.sub(r"-remote-job$|-job$", "", slug).replace("-", " ").strip()
+        titel = re.sub(r"^urgent ", "", titel).capitalize()
+        betrag, waehr = _betrag_aus_text(segment)
+        out.append({
+            "id": f"tw-{pid}", "quelle": "Twine", "art": "gesuch", "titel": titel[:200],
+            "url": "https://www.twine.net" + pfad, "text": segment, "typ": "gesuch", "betrag": betrag,
+            "waehrung": waehr or "USD", "gebote": 0, "tags": [], "erstellt": None,
+        })
+    if not out:
+        return [], ["Twine: Seite gelesen, aber keine Projekte erkannt"]
+    return out, []
+
+
 # Registrierte Quellen: Name -> (Funktion, Startstatus). "test" = wird beobachtet, bis klar ist, ob sie sich lohnt.
 QUELLEN = {
     "freelancer.com": ("freelancer", "aktiv"),
@@ -513,5 +566,7 @@ QUELLEN = {
     "Remotive": (remotive, "test"),
     "Kaggle": (kaggle, "test"),
     "TED (EU)": (ted, "test"),
+    "freelancer.com Wettbewerbe": (freelancer_wettbewerbe, "test"),
+    "Twine": (twine, "test"),
     "service.bund.de": (bund, "test"),
 }
