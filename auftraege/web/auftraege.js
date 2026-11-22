@@ -137,6 +137,19 @@ $$("nav.tabs button").forEach(b => b.addEventListener("click", () => {
   zeichneCharts();
 }));
 
+/* ---------- Monatsziel ---------- */
+function monatsziel() {
+  const a = D.annahmen, jetzt = new Date(), ym = jetzt.toISOString().slice(0, 7);
+  const umsatz = D.feedback.filter(f => f.aktion === "gewonnen" && (f.zeit || "").slice(0, 7) === ym)
+    .reduce((s, f) => s + (f.betrag || (NACH_ID[f.id] || {}).wert_eur || 0), 0);
+  const netto = umsatz * a.netto_faktor, rest = Math.max(0, a.ziel_netto - netto);
+  const basis = empf.slice().sort((x, y) => (y.rang || 0) - (x.rang || 0)).slice(0, 20);
+  const ewProGebot = basis.length ? basis.reduce((s, e) => s + e.ew_eur, 0) / basis.length : 0;
+  const gebote = ewProGebot > 0 ? Math.ceil((rest / a.netto_faktor) / ewProGebot) : null;
+  const tage = new Date(jetzt.getFullYear(), jetzt.getMonth() + 1, 0).getDate() - jetzt.getDate() + 1;
+  return { netto, umsatz, rest, gebote, tage, anteil: Math.min(1, netto / a.ziel_netto) };
+}
+
 /* ---------- Übersicht ---------- */
 function uebersicht() {
   const gewonnen = D.ergebnis.umsatz || 0;
@@ -147,7 +160,13 @@ function uebersicht() {
     ["Bester €/Leon-Std.", eur(Math.max(0, ...empf.map(e => e.eur_pro_std))), "unter allen empfehlbaren"],
     ["Gewonnen bisher", eur(gewonnen), `${D.ergebnis.gewonnen} von ${D.ergebnis.beworben} Bewerbungen`],
   ];
-  let h = `<div class="kpis">${kp.map(([k, v, n]) => `<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div><div class="n">${esc(n)}</div></div>`).join("")}</div>`;
+  const Z = monatsziel();
+  let h = `<div class="card" style="margin-bottom:16px"><div class="ch"><div><h3 class="ct">Monatsziel: ${eur(D.annahmen.ziel_netto)} netto</h3>
+      <div class="cs">Gewonnen diesen Monat ${eur(Z.umsatz)} Umsatz ≈ ${eur(Z.netto)} netto ${tippI("Netto grob geschätzt: Umsatz × " + zahl(D.annahmen.netto_faktor * 100) + " % (nach ca. 10 % Plattformgebühr und ca. 20 % Steuern). Zählt Aufträge, die du mit „Gewonnen“ meldest.")} · noch ${Z.tage} Tage</div></div>
+      <div style="text-align:right"><div class="lbl">Noch nötig</div><div style="font-size:22px;font-weight:750">${eur(Z.rest)}</div></div></div>
+    <div style="height:10px;border-radius:5px;background:var(--chip);overflow:hidden"><i style="display:block;height:100%;width:${Math.round(Z.anteil * 100)}%;background:var(--good)"></i></div>
+    <p class="fuss" style="margin-top:10px">${Z.rest <= 0 ? "Ziel erreicht – stark!" : Z.gebote ? `Bei den aktuellen Empfehlungen brauchst du dafür rechnerisch noch etwa <b>${Z.gebote} Gebote</b> (Ø-Ertrag pro Gebot ${eur(Z.netto >= 0 ? (Z.rest / D.annahmen.netto_faktor) / Z.gebote : 0)}). Mit Bewertungen steigt die Gewinnchance und die Zahl sinkt.` : "Noch keine Empfehlungen für eine Schätzung."}</p></div>`;
+  h += `<div class="kpis">${kp.map(([k, v, n]) => `<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div><div class="n">${esc(n)}</div></div>`).join("")}</div>`;
   if (!D.ki.aktiv) h += `<div class="box warn" style="margin-bottom:16px">KI-Bewertung ist aus. Hinterlege das GitHub-Secret <b>ANTHROPIC_API_KEY</b>, dann bekommst du Lösungsweg, Risiko und fertige Bewerbungstexte.</div>`;
   h += `<div class="ch"><div><h2 class="ct" style="font-size:18px">Top 5 Empfehlungen</h2><div class="cs">Mischung aus Wert und echter Chance: Unter ${pct(D.annahmen.top_volle_chance)} Gewinnchance wird der erwartete Wert anteilig abgewertet, unter ${pct(D.annahmen.top_min_chance)} oder mit mehr als ${D.annahmen.top_max_gebote} Geboten fliegt ein Auftrag raus. Bewirb dich, kopiere den Auftrag in den Claude-Chat, Claude löst ihn.</div></div></div>`;
   h += TOP.length ? `<div class="top-liste">${TOP.map((e, i) => `<div class="card top-karte">

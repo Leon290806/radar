@@ -59,6 +59,10 @@ WERT_DECKEL_EUR = {"freelance": 2500, "gesuch": 800, "bounty": 5000, "wettbewerb
 # Wettbewerbe verlangen oft Demo-Video/Pitch und viel Feinschliff
 WETTBEWERB_MACHBAR_FAKTOR = 0.5
 
+# Monatsziel
+ZIEL_NETTO_EUR = float(os.environ.get("AUFTRAG_ZIEL_NETTO") or "1000")
+NETTO_FAKTOR = float(os.environ.get("AUFTRAG_NETTO_FAKTOR") or "0.72")  # nach ~10 % Gebühr und ~20 % Steuern (grob)
+
 # Ranking der Top 5: Mischung aus Wert und echter Chance
 TOP_MIN_CHANCE = 0.04      # darunter: Lotto, fliegt aus den Top 5
 TOP_MAX_GEBOTE = 80        # mehr Konkurrenz: fliegt aus den Top 5 (Freelance)
