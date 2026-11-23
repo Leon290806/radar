@@ -15,6 +15,14 @@ def _lies(*teile):
         return f.read()
 
 
+def konto_daten(J):
+    K = J.get("konto") or {}
+    gebote = sorted(({"id": i, **g} for i, g in (K.get("gebote") or {}).items()), key=lambda g: g.get("zeit") or "", reverse=True)
+    return {"verbunden": bool(E.FREELANCER_TOKEN), "name": K.get("name"), "verifiziert": K.get("verifiziert"),
+            "abgleich": K.get("abgleich"), "fehler": K.get("fehler"), "nachrichten_fehler": K.get("nachrichten_fehler"),
+            "gebote": gebote[:30]}
+
+
 def daten(J):
     eintraege = []
     for e in J.get("eintraege", {}).values():
@@ -45,6 +53,7 @@ def daten(J):
         "quellen": quellen, "suchbegriffe": J.get("suchbegriffe", {}), "gelernt": J.get("gelernt", {}),
         "protokoll": J.get("protokoll", [])[:80], "ergebnis": erg,
         "feedback": sorted(letzte.values(), key=lambda f: f.get("zeit") or "", reverse=True)[:100],
+        "konto": konto_daten(J),
         "ki": {"aktiv": bool(E.ANTHROPIC_KEY), "modell": E.KI_MODELL, "heute": J.get("ki_tag", {}).get("n", 0),
                "max": E.KI_MAX_PRO_TAG, "hart": E.KI_HART_PRO_TAG},
         "annahmen": {"gewinn_basis": E.GEWINN_BASIS, "leon_min": E.LEON_MIN, "usd_eur": E.USD_EUR,

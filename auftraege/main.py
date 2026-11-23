@@ -20,6 +20,7 @@ import quellen as Q  # noqa: E402
 import bewerten as B  # noqa: E402
 import lernen as L  # noqa: E402
 import ki as KI  # noqa: E402
+import konto  # noqa: E402
 import seite  # noqa: E402
 
 UEBERNEHMEN = ("erst_gesehen", "ki", "ki_fehler", "ki_versuche", "repo_ok", "feedback", "betrag_echt", "ki_regel", "versuche", "benachrichtigt")
@@ -55,6 +56,32 @@ def push(text, titel):
         pass
 
 
+def seite_schreiben(J):
+    html = seite.erstelle(J)
+    os.makedirs(os.path.dirname(E.SEITE), exist_ok=True)
+    if E.PASSWORT:
+        import schutz
+        html = schutz.dashboard_sperren(html, E.PASSWORT)
+    with open(E.SEITE, "w", encoding="utf-8") as f:
+        f.write(html)
+
+
+def nur_konto(J, geaendert):
+    """Schneller Lauf alle 30 Minuten: nur Konto (Gebote, Zuschläge, Nachrichten). Speichert nur bei Änderungen,
+    damit nicht jede halbe Stunde ein Commit und ein Seiten-Upload entsteht."""
+    if not geaendert:
+        print("Konto: nichts Neues.")
+        return
+    gelernt = L.feedback_anwenden(J)
+    for e in J.get("eintraege", {}).values():
+        B.bewerte(e, gelernt)
+        e["empfehlbar"] = B.empfehlbar(e)
+    J["top"] = [i for i in J.get("top", []) if J["eintraege"].get(i, {}).get("empfehlbar")]
+    seite_schreiben(J)
+    journal_speichern(J)
+    print("Konto: Änderungen gespeichert.")
+
+
 def main():
     J = journal_laden()
     jetzt = datetime.now(timezone.utc)
@@ -63,6 +90,9 @@ def main():
         L.protokoll(J, "Auftrags-Radar gestartet. Startwerte für Gewinnchancen und Machbarkeit stehen im Reiter Lernen.")
 
     L.feedback_holen(J)
+    konto_neu = konto.abgleichen(J, push)
+    if E.MODUS == "konto":
+        return nur_konto(J, konto_neu)
 
     # 1) Scannen
     begriffe, getestet = L.suchbegriffe(J)
@@ -220,13 +250,7 @@ def main():
     J["top"] = [e["id"] for e in top]
     J["stand"] = lauf["zeit"]
 
-    html = seite.erstelle(J)
-    os.makedirs(os.path.dirname(E.SEITE), exist_ok=True)
-    if E.PASSWORT:
-        import schutz
-        html = schutz.dashboard_sperren(html, E.PASSWORT)
-    with open(E.SEITE, "w", encoding="utf-8") as f:
-        f.write(html)
+    seite_schreiben(J)
     journal_speichern(J)
     from collections import Counter
     fl = [e for e in dieser_lauf.values() if e["art"] == "freelance"]

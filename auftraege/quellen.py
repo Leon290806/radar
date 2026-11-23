@@ -96,6 +96,42 @@ def _kunde(u):
 
 
 # ---------------------------------------------------------------- freelancer.com (offizielle API)
+def fl_eintrag(p, nutzer, q):
+    """Ein Projekt der freelancer.com-API in einen Radar-Eintrag umwandeln (auch für eigene Gebote)."""
+    cur = (p.get("currency") or {})
+    kurs = E.USD_JE_EINHEIT.get((cur.get("code") or "USD").upper())
+    if kurs is None:
+        return None  # unbekannte Währung: lieber auslassen als falsch bewerten
+    b = p.get("budget") or {}
+    bs = p.get("bid_stats") or {}
+    return {
+        "id": f"fl-{p.get('id')}",
+        "quelle": "freelancer.com",
+        "art": "freelance",
+        "titel": _text(p.get("title"), 200),
+        "url": "https://www.freelancer.com/projects/" + str(p.get("seo_url") or p.get("id")),
+        "text": _text(p.get("description") or p.get("preview_description")),
+        "typ": p.get("type") or "fixed",
+        "budget_min_usd": (b.get("minimum") or 0) * kurs,
+        "budget_max_usd": (b.get("maximum") or 0) * kurs,
+        "gebot_avg_usd": (bs.get("bid_avg") or 0) * kurs,
+        "gebote": bs.get("bid_count") or 0,
+        "waehrung": cur.get("code"),
+        "sprache": p.get("language"),
+        "tags": [j.get("name") for j in (p.get("jobs") or []) if j.get("name")],
+        "erstellt": _iso(p.get("time_submitted")),
+        "suchbegriff": q,
+        "upgrades": {k: v for k, v in (p.get("upgrades") or {}).items() if v},
+        "flags": sorted([k for k, v in p.items() if v is True] +
+                        ["up:" + k for k, v in (p.get("upgrades") or {}).items() if v is True] +
+                        [f"pool:{x}" for x in (p.get("pool_ids") or [])] +
+                        [f"enterprise:{x}" for x in (p.get("enterprise_ids") or [])]),
+        "owner_id": p.get("owner_id"),
+        "status_fl": (p.get("frontend_project_status") or p.get("status") or "").lower(),
+        "kunde": _kunde(nutzer.get(str(p.get("owner_id"))) or nutzer.get(p.get("owner_id")) or {}),
+    }
+
+
 def freelancer(suchbegriffe):
     out, fehler = [], []
     for q in suchbegriffe:
@@ -114,38 +150,9 @@ def freelancer(suchbegriffe):
             fehler.append(f"{q}: keine JSON-Antwort")
             continue
         for p in projekte:
-            cur = (p.get("currency") or {})
-            kurs = E.USD_JE_EINHEIT.get((cur.get("code") or "USD").upper())
-            if kurs is None:
-                continue  # unbekannte Währung: lieber auslassen als falsch bewerten
-            b = p.get("budget") or {}
-            bs = p.get("bid_stats") or {}
-            out.append({
-                "id": f"fl-{p.get('id')}",
-                "quelle": "freelancer.com",
-                "art": "freelance",
-                "titel": _text(p.get("title"), 200),
-                "url": "https://www.freelancer.com/projects/" + str(p.get("seo_url") or p.get("id")),
-                "text": _text(p.get("description") or p.get("preview_description")),
-                "typ": p.get("type") or "fixed",
-                "budget_min_usd": (b.get("minimum") or 0) * kurs,
-                "budget_max_usd": (b.get("maximum") or 0) * kurs,
-                "gebot_avg_usd": (bs.get("bid_avg") or 0) * kurs,
-                "gebote": bs.get("bid_count") or 0,
-                "waehrung": cur.get("code"),
-                "sprache": p.get("language"),
-                "tags": [j.get("name") for j in (p.get("jobs") or []) if j.get("name")],
-                "erstellt": _iso(p.get("time_submitted")),
-                "suchbegriff": q,
-                "upgrades": {k: v for k, v in (p.get("upgrades") or {}).items() if v},
-                "flags": sorted([k for k, v in p.items() if v is True] +
-                                ["up:" + k for k, v in (p.get("upgrades") or {}).items() if v is True] +
-                                [f"pool:{x}" for x in (p.get("pool_ids") or [])] +
-                                [f"enterprise:{x}" for x in (p.get("enterprise_ids") or [])]),
-                "owner_id": p.get("owner_id"),
-                "status_fl": (p.get("frontend_project_status") or p.get("status") or "").lower(),
-                "kunde": _kunde(nutzer.get(str(p.get("owner_id"))) or nutzer.get(p.get("owner_id")) or {}),
-            })
+            e = fl_eintrag(p, nutzer, q)
+            if e:
+                out.append(e)
         time.sleep(1.2)
     return out, fehler
 

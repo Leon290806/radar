@@ -49,6 +49,9 @@ LEON_MIN = {
 
 # freelancer.com: Sperren für neue, kostenlose Konten
 FL_VERIFIZIERT = (os.environ.get("AUFTRAG_FL_VERIFIZIERT") or "").lower() in ("1", "ja", "true")
+# Persönliches freelancer.com-Token (nur lesend): erkennt eigene Gebote, Zuschläge, Verifizierung und neue Nachrichten
+FREELANCER_TOKEN = (os.environ.get("FREELANCER_TOKEN") or "").strip()
+MODUS = (os.environ.get("AUFTRAG_MODUS") or "voll").strip()  # "konto" = nur Konto-Abgleich (alle 30 Min.)
 FL_PREFERRED = (os.environ.get("AUFTRAG_FL_PREFERRED") or "").lower() in ("1", "ja", "true")
 FL_SPERR_UPGRADES = {"recruiter": "nur Preferred Freelancer (Recruiter-Projekt)", "pf_only": "nur Preferred Freelancer",
                      "qualified": "nur qualifizierte Freelancer", "nonpublic": "nicht öffentlich", "sealed": None}

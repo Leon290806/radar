@@ -167,6 +167,22 @@ function monatsziel() {
   return { netto, umsatz, rest, gebote, tage, anteil: Math.min(1, netto / a.ziel_netto) };
 }
 
+/* ---------- Mein freelancer.com-Konto ---------- */
+function kontoKarte() {
+  const K = D.konto || {};
+  if (!K.verbunden) return `<div class="box" style="margin-bottom:16px"><b>Konto noch nicht verbunden.</b> Mit dem Secret <b>FREELANCER_TOKEN</b> erkennt das Radar deine Gebote, Zuschläge und Absagen automatisch und schickt dir eine Push-Nachricht, wenn ein Kunde schreibt.</div>`;
+  const Z = { offen: ["Läuft", "b-neutral"], gewonnen: ["Gewonnen 🎉", "b-kauf"], verloren: ["Nicht bekommen", "b-warn"], "zurückgezogen": ["Zurückgezogen", "b-neutral"] };
+  const g = K.gebote || [];
+  return `<div class="card" style="margin-bottom:16px"><div class="ch"><div><h3 class="ct">Mein freelancer.com-Konto${K.name ? " · " + esc(K.name) : ""}</h3>
+      <div class="cs">${K.verifiziert ? "✅ verifiziert" : "⏳ Verifizierung noch nicht bestätigt"} · Abgleich ${zeit(K.abgleich)} (alle 30 Min.) ${tippI("Gebote, Zuschläge und Absagen werden automatisch übernommen – du musst „Beworben“, „Gewonnen“ und „Verloren“ nicht mehr drücken. Neue Kunden-Nachrichten kommen als Push aufs Handy.")}</div></div></div>
+    ${K.fehler ? `<div class="box warn" style="margin-bottom:10px">Verbindung: ${esc(K.fehler)}</div>` : ""}
+    ${g.length ? `<table class="tbl"><thead><tr><th class="l">Auftrag</th><th>Gebot</th><th>Abgegeben</th><th>Status</th></tr></thead><tbody>${g.map(x => `<tr>
+      <td class="l"><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.titel)}</a></td>
+      <td>${zahl(x.betrag)} ${esc(x.waehrung)}${x.tage ? ` · ${x.tage} T.` : ""}</td><td>${tag(x.zeit)}</td>
+      <td><span class="badge ${(Z[x.zustand] || ["", "b-neutral"])[1]}">${(Z[x.zustand] || [esc(x.zustand)])[0]}</span></td></tr>`).join("")}</tbody></table>`
+      : `<p class="mute">Noch keine Gebote gefunden.</p>`}</div>`;
+}
+
 /* ---------- Übersicht ---------- */
 function uebersicht() {
   const gewonnen = D.ergebnis.umsatz || 0;
@@ -183,6 +199,7 @@ function uebersicht() {
       <div style="text-align:right"><div class="lbl">Noch nötig</div><div style="font-size:22px;font-weight:750">${eur(Z.rest)}</div></div></div>
     <div style="height:10px;border-radius:5px;background:var(--chip);overflow:hidden"><i style="display:block;height:100%;width:${Math.round(Z.anteil * 100)}%;background:var(--good)"></i></div>
     <p class="fuss" style="margin-top:10px">${Z.rest <= 0 ? "Ziel erreicht – stark!" : Z.gebote ? `Bei den aktuellen Empfehlungen brauchst du dafür rechnerisch noch etwa <b>${Z.gebote} Gebote</b> (Ø-Ertrag pro Gebot ${eur(Z.netto >= 0 ? (Z.rest / D.annahmen.netto_faktor) / Z.gebote : 0)}). Mit Bewertungen steigt die Gewinnchance und die Zahl sinkt.` : "Noch keine Empfehlungen für eine Schätzung."}</p></div>`;
+  h += kontoKarte();
   h += `<div class="kpis">${kp.map(([k, v, n]) => `<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div><div class="n">${esc(n)}</div></div>`).join("")}</div>`;
   if (!D.ki.aktiv) h += `<div class="box warn" style="margin-bottom:16px">KI-Bewertung ist aus. Hinterlege das GitHub-Secret <b>ANTHROPIC_API_KEY</b>, dann bekommst du Lösungsweg, Risiko und fertige Bewerbungstexte.</div>`;
   h += `<div class="ch"><div><h2 class="ct" style="font-size:18px">Top 5 Empfehlungen</h2><div class="cs">Mischung aus Wert und echter Chance: Unter ${pct(D.annahmen.top_volle_chance)} Gewinnchance wird der erwartete Wert anteilig abgewertet, unter ${pct(D.annahmen.top_min_chance)} oder mit mehr als ${D.annahmen.top_max_gebote} Geboten fliegt ein Auftrag raus. Bewirb dich, kopiere den Auftrag in den Claude-Chat, Claude löst ihn.</div></div></div>`;

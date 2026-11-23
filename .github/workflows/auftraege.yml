@@ -5,6 +5,7 @@ name: Auftrags-Radar
 on:
   schedule:
     - cron: "17 5,8,11,14,17,20 * * *"   # alle 3 Stunden tagsüber (UTC), nicht zur Radar-Zeit
+    - cron: "*/30 5-21 * * *"             # nur Konto-Abgleich: Gebote, Zuschläge, neue Kunden-Nachrichten
   workflow_dispatch: {}          # Knopf „Jetzt scannen“ im Dashboard
   issues:
     types: [opened]               # Rückmeldungen und „Mit KI prüfen“ sofort verarbeiten
@@ -27,6 +28,8 @@ jobs:
     if: github.event_name != 'issues' || startsWith(github.event.issue.title, '[Auftrag]')
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      geaendert: ${{ steps.speichern.outputs.geaendert }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -43,10 +46,13 @@ jobs:
           AUFTRAG_MODELL: ${{ vars.AUFTRAG_MODELL }}
           AUFTRAG_KI_MAX_PRO_TAG: ${{ vars.AUFTRAG_KI_MAX_PRO_TAG || '24' }}
           AUFTRAG_PUSH_AB_EUR: ${{ vars.AUFTRAG_PUSH_AB_EUR || '40' }}
+          FREELANCER_TOKEN: ${{ secrets.FREELANCER_TOKEN }}
+          AUFTRAG_MODUS: ${{ github.event.schedule == '*/30 5-21 * * *' && 'konto' || 'voll' }}
           GITHUB_TOKEN: ${{ github.token }}
           DASHBOARD_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/auftraege/
         run: python auftraege/main.py
       - name: Ergebnis speichern
+        id: speichern
         run: |
           git config user.name "radar-bot"
           git config user.email "radar-bot@users.noreply.github.com"
@@ -54,14 +60,14 @@ jobs:
           git diff --cached --quiet && exit 0
           git commit -m "Auftrags-Radar $(date -u +'%F %H:%M')"
           for i in 1 2 3; do
-            git pull --rebase -X theirs origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            git pull --rebase -X theirs origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && echo "geaendert=true" >> "$GITHUB_OUTPUT" && exit 0
             sleep 15
           done
           exit 1
 
   deploy:
     needs: scan
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && needs.scan.outputs.geaendert == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
