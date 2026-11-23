@@ -20,6 +20,7 @@ Titel: {titel}
 Beschreibung: {text}
 Tags: {tags}
 {extra}
+{preis}
 
 Gib zurück:
 {{"machbar": Zahl 0..1 (wie vollständig und gut Claude das liefern kann),
@@ -43,7 +44,10 @@ def bewerte(e):
     extra = ""
     if e["art"] == "bounty":
         extra = f"Repository: {e.get('repo')} | KI-Regel laut CONTRIBUTING: {e.get('ki_regel', 'unbekannt')} | Versuche: {e.get('versuche', 0)}"
-    prompt = VORLAGE.format(quelle=e["quelle"], art=e["art"], budget=budget, gebote=e.get("gebote", 0),
+    g = e.get("gebot") or {}
+    preis = (f"Empfohlenes Gebot: {g['betrag_usd']} USD {g['einheit']}" + (f", Lieferung in {g['tage']} Tagen" if g.get("tage") else "") +
+             ". Leon ist neu auf der Plattform; verwende genau diesen Preis im Bewerbungstext.") if g else ""
+    prompt = VORLAGE.format(quelle=e["quelle"], art=e["art"], budget=budget, gebote=e.get("gebote", 0), preis=preis,
                             titel=e.get("titel", ""), text=(e.get("text") or "")[:2500],
                             tags=", ".join(e.get("tags") or []), extra=extra)
     try:

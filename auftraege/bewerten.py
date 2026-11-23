@@ -204,12 +204,47 @@ def bewerte(e, gelernt):
         "alter_tage": None if alter is None else round(alter, 1), "frisch": frisch,
     })
     e["rang"] = round(rang(e), 2)
+    e["gebot"] = gebot_vorschlag(e, gelernt)
     return e
 
 
 def rang(e):
-    """Sortierwert der Top 5: erwarteter Wert, bei weniger als 10 % Chance anteilig abgewertet."""
-    return e.get("ew_eur", 0) * min(1.0, e.get("chance", 0) / E.TOP_VOLLE_CHANCE)
+    """Sortierwert der Top 5: erwarteter Wert, bei weniger als 10 % Chance anteilig abgewertet,
+    ältere Freelance-Aufträge abgewertet (frühe Gebote gewinnen öfter)."""
+    r = e.get("ew_eur", 0) * min(1.0, e.get("chance", 0) / E.TOP_VOLLE_CHANCE)
+    a = e.get("alter_tage")
+    if e.get("art") == "freelance" and a is not None:
+        r *= 1.0 if a < 1 else 0.8 if a < 2 else 0.6
+    return r
+
+
+def gebot_vorschlag(e, gelernt):
+    """Empfohlener Gebotsbetrag (USD) und Lieferzeit für Freelance-Aufträge."""
+    if e.get("art") != "freelance":
+        return None
+    lo, hi, avg = e.get("budget_min_usd") or 0, e.get("budget_max_usd") or 0, e.get("gebot_avg_usd") or 0
+    gewonnen = sum(s.get("gewonnen", 0) for s in (gelernt.get("stat_quelle") or {}).values())
+    faktor = E.ANFANGS_RABATT if gewonnen < E.ANFANGS_BIS_GEWONNEN else E.NORMAL_FAKTOR
+    if e.get("typ") == "hourly":
+        satz = max(lo, (avg or lo or 15) * faktor)
+        return {"betrag_usd": round(satz), "einheit": "pro Stunde", "tage": None,
+                "netto_usd": round(satz * (1 - E.FREELANCER_GEBUEHR))}
+    basis = avg or (lo + hi) / 2 or lo
+    ki_preis = (e.get("ki") or {}).get("preis_vorschlag_eur")
+    if ki_preis:
+        try:
+            basis = min(basis, float(ki_preis) / E.USD_EUR) if basis else float(ki_preis) / E.USD_EUR
+        except (TypeError, ValueError):
+            pass
+    betrag = max(lo, basis * faktor)
+    betrag = round(betrag / 5) * 5 or round(betrag)
+    std = (e.get("ki") or {}).get("claude_stunden") or 3
+    try:
+        tage = 1 if float(std) <= 2 else 2 if float(std) <= 6 else 4 if float(std) <= 15 else 7
+    except (TypeError, ValueError):
+        tage = 2
+    return {"betrag_usd": betrag, "einheit": "Festpreis", "tage": tage,
+            "netto_usd": round(betrag - max(betrag * E.FREELANCER_GEBUEHR, 5)), "rabatt": faktor < 1}
 
 
 def top_tauglich(e):

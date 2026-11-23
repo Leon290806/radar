@@ -35,7 +35,7 @@ USD_JE_EINHEIT = {"USD": 1, "EUR": 1.08, "GBP": 1.27, "CHF": 1.13, "AUD": 0.65, 
 FREELANCER_GEBUEHR = 0.10  # Plattformgebühr freelancer.com (mind. 5 $)
 
 # Wie lange ein Eintrag als "frisch" gilt (Tage), je Art
-FRISCH_TAGE = {"freelance": 4, "bounty": 45, "wettbewerb": 60, "gesuch": 20, "ausschreibung": 30}
+FRISCH_TAGE = {"freelance": 3, "bounty": 45, "wettbewerb": 60, "gesuch": 20, "ausschreibung": 30}
 AUFBEWAHREN_TAGE = 30
 
 # Leon-Zeit in Minuten: Bewerben + (falls Zuschlag) Abstimmung und Abliefern
@@ -66,6 +66,11 @@ SPRACHEN_HEIKEL = ["somali", "amharic", "tigrinya", "swahili", "yoruba", "hausa"
 WERT_DECKEL_EUR = {"freelance": 2500, "gesuch": 800, "bounty": 5000, "wettbewerb": 5000, "ausschreibung": 10000}
 # Wettbewerbe verlangen oft Demo-Video/Pitch und viel Feinschliff
 WETTBEWERB_MACHBAR_FAKTOR = 0.5
+
+# Gebotsvorschlag: Rabatt, solange noch keine Bewertungen da sind
+ANFANGS_RABATT = 0.7         # 30 % unter dem Durchschnittsgebot
+ANFANGS_BIS_GEWONNEN = 3     # danach normaler Preis
+NORMAL_FAKTOR = 0.95
 
 # Monatsziel
 ZIEL_NETTO_EUR = float(os.environ.get("AUFTRAG_ZIEL_NETTO") or "1000")
@@ -131,7 +136,9 @@ VERBOTEN = ["visa", "appointment bot", "ticket bot", "sneaker", "captcha", "fake
             "credit card", "forex signals", "mlm", "commission only", "provision", "pay after", "unpaid", "test task for free",
             # typische Köder für KI-Agenten bei Fake-Bounties
             "wallet address", "airdrop", "conformance mirror", "not reviewed on this mirror",
-            "pull requests from human engineers", "settlement"]
+            "pull requests from human engineers", "settlement",
+            # Welle von Lockangeboten neuer Konten (gleiche Vorlage, unrealistische Budgets)
+            "beginners level", "beginner level", "task beginners"]
 # Bounty-Repos müssen etabliert sein (Schutz vor Fallen)
 REPO_MIN_STERNE = 25
 REPO_MIN_ALTER_TAGE = 90

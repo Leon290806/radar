@@ -62,8 +62,16 @@ function bewerbung(e) {
   return `<div class="box warn" style="margin-top:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
     <span>Noch keine KI-Bewertung.</span><button class="knopf haupt" data-fb="pruefen" data-id="${esc(e.id)}">Mit KI prüfen</button></div>`;
 }
+function gebotBox(e) {
+  const g = e.gebot; if (!g) return "";
+  return `<div class="zahlen" style="margin-bottom:10px;border-color:color-mix(in srgb,var(--good) 40%,var(--line2))">
+    <div class="lbl">Dein Gebot ${tippI(g.rabatt ? "Etwa 30 % unter dem Durchschnittsgebot, solange du weniger als 3 gewonnene Aufträge hast – so kommst du an die ersten Bewertungen." : "Knapp unter dem Durchschnittsgebot.")}</div>
+    <div class="ew">${zahl(g.betrag_usd)} $ <span style="font-size:14px;font-weight:600;color:var(--ink3)">${esc(g.einheit)}</span></div>
+    ${g.tage ? `<div class="zr"><span>Lieferzeit</span><span>${g.tage} ${g.tage === 1 ? "Tag" : "Tage"}</span></div>` : ""}
+    <div class="zr"><span>Bei dir an (nach Gebühr)</span><span>${zahl(g.netto_usd)} $</span></div></div>`;
+}
 function zahlenBox(e) {
-  return `<div class="zahlen"><div class="lbl">Erwarteter Wert ${tippI("Wert nach Gebühren × Gewinnchance × Machbarkeit × gelernter Interesse-Faktor. Das ist der Durchschnitt, den eine Bewerbung bringt.")}</div>
+  return `<div>` + gebotBox(e) + `<div class="zahlen"><div class="lbl">Erwarteter Wert ${tippI("Wert nach Gebühren × Gewinnchance × Machbarkeit × gelernter Interesse-Faktor. Das ist der Durchschnitt, den eine Bewerbung bringt.")}</div>
     <div class="ew">${eur(e.ew_eur)}</div>
     <div class="zr"><span>Wert bei Zuschlag</span><span>${eur(e.wert_eur)}</span></div>
     <div class="zr"><span>Gewinnchance</span><span>${pct(e.chance, 1)}</span></div>
@@ -71,7 +79,7 @@ function zahlenBox(e) {
     <div class="zr"><span>€ pro Leon-Stunde ${tippI("Erwarteter Wert geteilt durch deine erwartete Zeit: Bewerben plus (mit der Gewinnchance gewichtet) Abstimmung und Abliefern.")}</span><span>${eur(e.eur_pro_std)}</span></div>
     <div class="zr"><span>Deine Zeit (Ø)</span><span>${zahl(e.leon_min)} Min.</span></div>
     <div class="zr"><span>Konkurrenz</span><span>${e.art === "ausschreibung" ? "unbekannt" : zahl(e.gebote) + " " + (e.art === "bounty" ? "Kommentare" : e.art === "wettbewerb" ? "Teilnehmer" : "Gebote")}</span></div>
-  </div>`;
+  </div></div>`;
 }
 function metaZeile(e) {
   const t = [badgeArt(e), `<span>${esc(e.quelle)}</span>`, `<span>${esc(e.kat_name)}</span>`];
