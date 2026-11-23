@@ -36,6 +36,58 @@ def _get(pfad, params=None):
         return None, "keine JSON-Antwort"
 
 
+def _post(pfad, daten):
+    try:
+        r = requests.post(API + pfad, json=daten, timeout=30,
+                          headers={"freelancer-oauth-v1": E.FREELANCER_TOKEN, "User-Agent": "auftrags-radar (privat)"})
+    except requests.RequestException as ex:
+        return None, f"Verbindung: {ex.__class__.__name__}"
+    try:
+        j = r.json()
+    except ValueError:
+        j = {}
+    if r.status_code != 200 or j.get("status") == "error":
+        return None, (j.get("message") or r.text[:200] or f"HTTP {r.status_code}")
+    return j.get("result") or {}, None
+
+
+def gebote_abgeben(J, push):
+    """Gebote, die Leon im Dashboard mit „Jetzt bieten“ freigegeben hat, über die offizielle API abgeben.
+    Nur auf ausdrückliche Freigabe – das Radar bietet nie von selbst."""
+    wuensche = J.pop("bieten", [])
+    if not wuensche:
+        return False
+    if not E.FREELANCER_TOKEN:
+        push("Gebot nicht abgegeben: Das Secret FREELANCER_TOKEN fehlt.", "Gebot fehlgeschlagen")
+        return False
+    ich, f = _get("/users/0.1/self/")
+    if f:
+        push(f"Gebot nicht abgegeben – Konto nicht erreichbar ({f[:80]}).", "Gebot fehlgeschlagen")
+        return False
+    erledigt = J.setdefault("konto", {}).setdefault("gebote_abgegeben", [])
+    for w in wuensche:
+        pid = str(w["id"]).replace("fl-", "")
+        e = (J.get("eintraege") or {}).get(w["id"], {})
+        titel = e.get("titel") or pid
+        if pid in erledigt:
+            continue
+        if not w.get("betrag") or len(w.get("text") or "") < 100:
+            push(f"{titel}\nBetrag fehlt oder Bewerbungstext zu kurz (mind. 100 Zeichen).", "Gebot nicht abgegeben")
+            continue
+        res, f = _post("/projects/0.1/bids/", {"project_id": int(pid), "bidder_id": ich.get("id"), "amount": float(w["betrag"]),
+                                               "period": int(w.get("tage") or 3), "milestone_percentage": 100,
+                                               "description": w["text"][:4000]})
+        if f:
+            print("Gebot-Fehler:", f)
+            push(f"{titel}\n{f[:200]}", "Gebot nicht abgegeben")
+            continue
+        erledigt.append(pid)
+        J.setdefault("feedback", []).append({"zeit": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                                             "id": w["id"], "aktion": "beworben", "betrag": None, "von": "radar"})
+        push(f"{titel}\n{w['betrag']} {e.get('waehrung') or ''} · {w.get('tage')} Tage", "✅ Gebot abgegeben")
+    return True
+
+
 def _ts(x):
     try:
         return datetime.fromtimestamp(int(x), timezone.utc).isoformat(timespec="seconds")

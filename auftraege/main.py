@@ -90,7 +90,8 @@ def main():
         L.protokoll(J, "Auftrags-Radar gestartet. Startwerte für Gewinnchancen und Machbarkeit stehen im Reiter Lernen.")
 
     L.feedback_holen(J)
-    konto_neu = konto.abgleichen(J, push)
+    geboten = konto.gebote_abgeben(J, push)
+    konto_neu = konto.abgleichen(J, push) or geboten
     if E.MODUS == "konto":
         return nur_konto(J, konto_neu)
 

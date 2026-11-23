@@ -28,6 +28,9 @@ def daten(J):
     for e in J.get("eintraege", {}).values():
         d = {k: e.get(k) for k in FELDER if e.get(k) is not None}
         d["text"] = (e.get("text") or "")[:600]
+        if e.get("art") == "freelance" and e.get("waehrung"):
+            d["waehrung"] = e["waehrung"]
+            d["kurs"] = E.USD_JE_EINHEIT.get(str(e["waehrung"]).upper())
         d["tags"] = (e.get("tags") or [])[:5]
         if e.get("ki"):
             d["ki"] = {k: e["ki"].get(k) for k in ("loesung", "risiko", "bewerbung", "preis_vorschlag_eur", "claude_stunden",

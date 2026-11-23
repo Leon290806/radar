@@ -45,6 +45,17 @@ document.addEventListener("click", ev => {
     if (a === "gewonnen") { betrag = prompt("Betrag in Euro (leer lassen, wenn er nicht öffentlich sichtbar sein soll):", e.ki && e.ki.preis_vorschlag_eur ? Math.round(e.ki.preis_vorschlag_eur) : ""); if (betrag === null) return; }
     window.open(issueUrl(e, a, betrag), "_blank", "noopener"); return;
   }
+  const bl = ev.target.closest(".b-los");
+  if (bl) {
+    const box = bl.closest("[data-bid]"), e = NACH_ID[box.dataset.bid];
+    const betrag = box.querySelector(".b-betrag").value, tage = box.querySelector(".b-tage").value, text = box.querySelector(".b-text").value.trim();
+    if (!(+betrag > 0)) { toast("Bitte einen Betrag eintragen"); return; }
+    if (text.length < 100) { toast("Bewerbungstext zu kurz (mind. 100 Zeichen)"); return; }
+    const titel = `[Auftrag] bieten: ${e.titel.slice(0, 60)}`;
+    const body = `id: ${e.id}\naktion: bieten\nbetrag: ${betrag}\ntage: ${tage}\ntext:\n${text}\n(Vom Auftrags-Radar erzeugt. „Submit new issue“ tippen – das Gebot wird in ca. 1–2 Minuten abgegeben.)`;
+    toast("GitHub öffnet sich – „Submit new issue“ tippen");
+    window.open(`https://github.com/${D.repo}/issues/new?title=${encodeURIComponent(titel)}&body=${encodeURIComponent(body)}`, "_blank", "noopener"); return;
+  }
   const k = ev.target.closest("[data-kopie]");
   if (k) { const t = NACH_ID[k.dataset.kopie]; const txt = t && t.ki ? t.ki.bewerbung : "";
     (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast("Text kopiert"), () => toast("Kopieren nicht möglich")); return; }
@@ -61,6 +72,19 @@ function bewerbung(e) {
   if (!D.ki.aktiv) return `<div class="box warn" style="margin-top:10px">Für Bewerbungstexte den Schlüssel ANTHROPIC_API_KEY als GitHub-Secret hinterlegen.</div>`;
   return `<div class="box warn" style="margin-top:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
     <span>Noch keine KI-Bewertung.</span><button class="knopf haupt" data-fb="pruefen" data-id="${esc(e.id)}">Mit KI prüfen</button></div>`;
+}
+function bietenBox(e) {
+  if (e.art !== "freelance" || !(D.konto && D.konto.verbunden) || e.aussortiert) return "";
+  const g = e.gebot || {}, kurs = e.kurs || 1, cur = e.waehrung || "USD";
+  const vorschlag = g.betrag_usd ? Math.round(g.betrag_usd / kurs / (kurs < 0.05 ? 100 : 1)) * (kurs < 0.05 ? 100 : 1) : "";
+  const text = (e.ki && e.ki.bewerbung) || "";
+  return `<div class="bieten" data-bid="${esc(e.id)}">
+    <div class="lbl">Jetzt bieten ${tippI("Das Radar gibt das Gebot mit deinem freelancer.com-Konto ab – erst wenn du unten klickst und auf GitHub „Submit new issue“ tippst. Ca. 1–2 Minuten später kommt eine Push-Nachricht. Hinweis: Das Issue (mit Text und Betrag) ist im öffentlichen Repo sichtbar.")}</div>
+    <div class="bfeld"><label>Betrag (${esc(cur)}${g.einheit === "pro Stunde" ? " pro Std." : ""})<input type="number" min="1" step="any" class="b-betrag" value="${vorschlag}"></label>
+    <label>Lieferzeit (Tage)<input type="number" min="1" max="60" class="b-tage" value="${g.tage || 3}"></label></div>
+    <label>Bewerbungstext<textarea class="b-text" rows="8">${esc(text)}</textarea></label>
+    <button class="knopf haupt b-los">Gebot abgeben →</button>
+    ${text ? "" : `<div class="mute" style="font-size:13px;margin-top:6px">Noch kein KI-Text – oben „Mit KI prüfen“ drücken oder selbst schreiben (mind. 100 Zeichen).</div>`}</div>`;
 }
 function gebotBox(e) {
   const g = e.gebot; if (!g) return "";
@@ -208,7 +232,7 @@ function uebersicht() {
       <div>${metaZeile(e)}<h3><a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.titel)}</a></h3>
         ${e.ki && e.ki.loesung ? `<div><b>Lösung:</b> <span class="ink2">${esc(e.ki.loesung)}</span></div>` : `<div class="ink2 klein">${esc((e.text || "").slice(0, 220))}…</div>`}
         ${e.ki && e.ki.risiko ? `<div class="klein" style="margin-top:4px"><b>Risiko:</b> <span class="ink2">${esc(e.ki.risiko)}</span></div>` : ""}
-        ${bewerbung(e)}${feedbackKnoepfe(e)}</div>
+        ${bewerbung(e)}${bietenBox(e)}${feedbackKnoepfe(e)}</div>
       ${zahlenBox(e)}</div>`).join("")}</div>`
     : `<div class="card"><div class="ruhe">Gerade nichts Lohnendes</div><p class="erkl">Kein Auftrag erfüllt im Moment alle Bedingungen (machbar, frisch, seriös, genug Wert). Der Radar schaut in 90 Minuten wieder.</p></div>`;
   h += `<div class="grid" style="margin-top:16px"><div class="card c12"><div class="ch"><div><h3 class="ct">Verlauf</h3><div class="cs">Erwarteter Wert der Top 5 und Zahl empfehlbarer Aufträge je Lauf</div></div></div><div id="ch-verlauf"></div></div></div>`;
@@ -260,7 +284,7 @@ function oeffne(e) {
       ${e.schwer && e.schwer.length ? `<p class="mute klein">Schwierig für KI: ${esc(e.schwer.join(", "))}</p>` : ""}
       <div class="lbl" style="margin-top:12px">Beschreibung (gekürzt)</div><p class="ink2">${esc(e.text)}</p>
       ${e.tags && e.tags.length ? `<div class="chips">${e.tags.map(t => `<span class="mtag">${esc(t)}</span>`).join("")}</div>` : ""}
-      ${bewerbung(e)}${feedbackKnoepfe(e)}</div>${zahlenBox(e)}</div>`;
+      ${bewerbung(e)}${bietenBox(e)}${feedbackKnoepfe(e)}</div>${zahlenBox(e)}</div>`;
   $(".modal").classList.add("offen");
 }
 

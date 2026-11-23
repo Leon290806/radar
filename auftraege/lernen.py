@@ -14,7 +14,7 @@ import requests
 
 import einstellungen as E
 
-AKTIONEN = {"beworben", "gewonnen", "verloren", "uninteressant", "pruefen", "gesperrt"}
+AKTIONEN = {"beworben", "gewonnen", "verloren", "uninteressant", "pruefen", "gesperrt", "bieten"}
 
 
 def jetzt():
@@ -55,6 +55,13 @@ def feedback_holen(J):
                     betrag = None
             if m_ak.group(1) == "pruefen":
                 J.setdefault("pruef_wunsch", []).append(m_id.group(1))
+            elif m_ak.group(1) == "bieten":
+                roh = it.get("body") or ""
+                m_tg = re.search(r"tage:\s*(\d+)", roh)
+                m_tx = re.search(r"text:\s*\n(.*?)(?:\n\(Vom Auftrags-Radar|\Z)", roh, re.S)
+                J.setdefault("bieten", []).append({"id": m_id.group(1), "betrag": betrag,
+                                                   "tage": int(m_tg.group(1)) if m_tg else 3,
+                                                   "text": (m_tx.group(1).strip() if m_tx else ""), "issue": it.get("number")})
             else:
                 J.setdefault("feedback", []).append({"zeit": it.get("created_at"), "id": m_id.group(1),
                                                      "aktion": m_ak.group(1), "betrag": betrag})
