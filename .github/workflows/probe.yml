@@ -1,0 +1,8 @@
+name: probe
+on: { push: { branches: [quellen-test] } }
+jobs:
+  p:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install requests -q && python probe.py
