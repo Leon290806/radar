@@ -210,7 +210,7 @@ function uebersicht() {
         ${e.ki && e.ki.risiko ? `<div class="klein" style="margin-top:4px"><b>Risiko:</b> <span class="ink2">${esc(e.ki.risiko)}</span></div>` : ""}
         ${bewerbung(e)}${feedbackKnoepfe(e)}</div>
       ${zahlenBox(e)}</div>`).join("")}</div>`
-    : `<div class="card"><div class="ruhe">Gerade nichts Lohnendes</div><p class="erkl">Kein Auftrag erfüllt im Moment alle Bedingungen (machbar, frisch, seriös, genug Wert). Der Radar schaut in 3 Stunden wieder.</p></div>`;
+    : `<div class="card"><div class="ruhe">Gerade nichts Lohnendes</div><p class="erkl">Kein Auftrag erfüllt im Moment alle Bedingungen (machbar, frisch, seriös, genug Wert). Der Radar schaut in 90 Minuten wieder.</p></div>`;
   h += `<div class="grid" style="margin-top:16px"><div class="card c12"><div class="ch"><div><h3 class="ct">Verlauf</h3><div class="cs">Erwarteter Wert der Top 5 und Zahl empfehlbarer Aufträge je Lauf</div></div></div><div id="ch-verlauf"></div></div></div>`;
   $("#t-uebersicht").innerHTML = h;
 }
