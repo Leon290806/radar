@@ -280,6 +280,18 @@ def main():
         zaehl = Counter(f.split(":")[0] for e in fl for f in (e.get("flags") or []))
         print("Merkmale freelancer.com (Anteil):", {k: round(v / len(fl), 2) for k, v in zaehl.most_common(8)})
     print("Empfehlbar je Art:", dict(Counter(e["art"] for e in E_.values() if e["empfehlbar"])))
+    # Diagnose: offene freelancer.com-Aufträge mit wenig Konkurrenz, die NICHT empfohlen werden – und warum
+    wenig = [e for e in E_.values() if e["art"] == "freelance" and B.noch_offen(e) and (e.get("gebote") or 0) <= 12
+             and not e.get("empfehlbar") and not e.get("feedback")]
+    print(f"Wenig-Gebote-aber-aussortiert: {len(wenig)}")
+    gruende_z = Counter()
+    for e in wenig:
+        g = "; ".join(e.get("gruende") or [])[:150] or f"machbar {e.get('machbar', 0):.2f}, wert {e.get('wert_eur', 0):.0f}, frisch {e.get('frisch')}"
+        gruende_z[g.split(";")[0][:60]] += 1
+    print("  häufigste Gründe:", gruende_z.most_common(12))
+    for e in sorted(wenig, key=lambda x: -(x.get("wert_eur") or 0))[:40]:
+        print(f"  WG {e.get('gebote')} | {e.get('budget_min_usd', 0):.0f}-{e.get('budget_max_usd', 0):.0f}$ | m {e.get('machbar', 0):.2f} | "
+              f"{e.get('kat')} | {e['titel'][:60]} || {'; '.join(e.get('gruende') or [])[:140]}")
     for e in sorted([e for e in E_.values() if B.top_tauglich(e)], key=lambda x: -x["rang"])[:10]:
         print(f"  EW {e['ew_eur']:8.2f} € | Wert {e['wert_eur']:8.0f} € | p {e['chance']:.3f} | m {e['machbar']:.2f} | "
               f"{e['quelle']} | {e['kat']} | {e['titel'][:70]}")
