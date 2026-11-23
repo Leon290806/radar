@@ -641,6 +641,45 @@ def expensify():
     return out, []
 
 
+# ---------------------------------------------------------------- Superteam Earn (öffentliche API; nur Aufträge, die KI-Agenten ausdrücklich erlauben)
+def superteam():
+    r = _get("https://earn.superteam.fun/api/listings/?type=bounty&isWinnersAnnounced=false&take=80")
+    if r is None or r.status_code != 200:
+        return [], [f"Superteam: HTTP {getattr(r, 'status_code', 'Fehler')}"]
+    try:
+        daten = r.json()
+    except ValueError:
+        return [], ["Superteam: keine JSON-Antwort"]
+    liste = daten if isinstance(daten, list) else (daten.get("listings") or daten.get("data") or daten.get("bounties") or [])
+    if liste and isinstance(liste[0], dict):
+        print("Superteam-Felder:", sorted(liste[0].keys())[:30])
+    out = []
+    for it in liste:
+        if not isinstance(it, dict):
+            continue
+        agent = str(it.get("agentAccess") or "").upper()
+        if not (it.get("isAgentAllowed") or "AGENT" in agent and "NOT" not in agent and "HUMAN_ONLY" not in agent):
+            continue
+        betrag = it.get("rewardAmount") or it.get("usdValue") or 0
+        try:
+            betrag = float(betrag)
+        except (TypeError, ValueError):
+            betrag = 0
+        token = (it.get("token") or "USDC").upper()
+        if betrag <= 0 or token not in ("USDC", "USDT", "USD"):
+            continue
+        slug = it.get("slug") or ""
+        out.append({"id": "st-" + str(it.get("id") or slug)[:40], "quelle": "Superteam Earn", "art": "wettbewerb", "preis_ganz": True,
+                    "titel": _text(it.get("title") or slug, 200), "url": f"https://earn.superteam.fun/listing/{slug}",
+                    "text": _text(str(it.get("description") or it.get("type") or "") +
+                                  " (Superteam Earn, KI-Agenten erlaubt, Auszahlung in USDC an Solana-Wallet)", 1500),
+                    "typ": "wettbewerb", "betrag": betrag, "waehrung": "USD", "gebote": int(it.get("_count", {}).get("Submission", 0)
+                    if isinstance(it.get("_count"), dict) else 0),
+                    "tags": [str(x) for x in (it.get("skills") or [])][:6] if isinstance(it.get("skills"), list) else [],
+                    "erstellt": it.get("publishedAt") or it.get("createdAt"), "frist": it.get("deadline")})
+    return out, []
+
+
 QUELLEN = {
     "freelancer.com": ("freelancer", "aktiv"),
     "GitHub-Bounty": (github_bounties, "aktiv"),
@@ -655,4 +694,5 @@ QUELLEN = {
     "service.bund.de": (bund, "test"),
     "Opire": (opire, "test"),
     "Expensify": (expensify, "test"),
+    "Superteam Earn": (superteam, "test"),
 }
