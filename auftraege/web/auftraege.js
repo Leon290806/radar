@@ -12,6 +12,8 @@ const zeit = iso => { if (!iso) return "–"; const d = new Date(iso); return d.
 const tag = iso => { if (!iso) return ""; const d = new Date(iso); return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }); };
 const tippI = txt => `<span class="tipp" tabindex="0" data-tipp="${esc(txt)}">?</span>`;
 const ART = { freelance: "Freelance", bounty: "Bounty", wettbewerb: "Wettbewerb", gesuch: "Gesuch", ausschreibung: "Ausschreibung" };
+/* Hell/Dunkel: gleiche Einstellung wie im Aktien-Radar (radar_thema) */
+try { const t = JSON.parse(localStorage.getItem("radar_thema") || "null"); if (t) document.documentElement.dataset.theme = t; } catch (e) { }
 const NACH_ID = {}; D.eintraege.forEach(e => NACH_ID[e.id] = e);
 const TOP = D.top.map(i => NACH_ID[i]).filter(Boolean);
 
@@ -124,12 +126,19 @@ document.body.innerHTML = `
       <div><h1>Auftrags-Radar</h1><div class="stand">Stand ${esc(zeit(D.stand))}<span class="lang"> · scannt ${Object.values(D.quellen).filter(q => q.status !== "pausiert").length} Quellen alle 3 Stunden</span></div></div></div>
     <div class="rechts"><a class="pill" href="../">← Aktien-Radar</a>
       <a class="pill" href="https://github.com/${esc(D.repo)}/actions/workflows/auftraege.yml" target="_blank" rel="noopener" title="Öffnet GitHub: dort „Run workflow“ tippen. Manuelle Läufe prüfen auch nach dem Tageskontingent bis zu 8 Aufträge mit KI.">↻ Jetzt scannen</a>
+      <button class="ikon" id="thema" aria-label="Hell/Dunkel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
       <span class="pill" title="Automatisch höchstens ${D.ki.max} Prüfungen pro Tag, mit manuellen Prüfungen höchstens ${D.ki.hart}. Zähler beginnt um 0 Uhr."><i style="background:var(${D.ki.aktiv ? "--good" : "--warn"})"></i>KI ${D.ki.aktiv ? D.ki.heute + "/" + D.ki.max + " heute" : "aus"}</span></div>
   </div>
   <nav class="tabs">${tabs.map(([k, t, z], i) => `<button data-tab="${k}" class="${i === 0 ? "aktiv" : ""}">${t}${z ? `<span class="zahl">${z}</span>` : ""}</button>`).join("")}</nav>
 </div></header>
 <main>${tabs.map(([k], i) => `<section class="tab${i === 0 ? " aktiv" : ""}" id="t-${k}"></section>`).join("")}</main>
 <div class="modal"><div class="blatt"><div class="blatt-kopf"><div id="m-kopf"></div><button class="schliessen">×</button></div><div class="blatt-inhalt" id="m-inhalt"></div></div></div>`;
+$("#thema").addEventListener("click", () => {
+  const dunkel = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme = dunkel ? "light" : "dark";
+  try { localStorage.setItem("radar_thema", JSON.stringify(document.documentElement.dataset.theme)); } catch (e) { }
+  zeichneCharts();
+});
 $$("nav.tabs button").forEach(b => b.addEventListener("click", () => {
   $$("nav.tabs button").forEach(x => x.classList.toggle("aktiv", x === b));
   $$("section.tab").forEach(s => s.classList.toggle("aktiv", s.id === "t-" + b.dataset.tab));

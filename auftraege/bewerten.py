@@ -128,6 +128,9 @@ def bewerte(e, gelernt):
         if e.get("typ") == "hourly" and (e.get("budget_min_usd") or 0) >= E.FL_STUNDE_VERIFIZIERT_AB_USD and not E.FL_VERIFIZIERT:
             verboten = verboten or ["gesperrt"]
             gruende.append(f"Für dein Konto gesperrt: ab {E.FL_STUNDE_VERIFIZIERT_AB_USD} $/Std. nur mit „Verified by Freelancer“")
+        if "local" in (e.get("flags") or []) or "up:local" in (e.get("flags") or []):
+            verboten = verboten or ["gesperrt"]
+            gruende.append("Für dein Konto gesperrt: nur Freelancer in der Nähe des Auftraggebers (Vor-Ort-Projekt)")
         treffer_fl = [f for f in (e.get("flags") or []) if f in gelernt.get("gesperrt_flags", [])]
         if treffer_fl:
             verboten = verboten or ["gesperrt"]

@@ -52,7 +52,15 @@ FL_VERIFIZIERT = (os.environ.get("AUFTRAG_FL_VERIFIZIERT") or "").lower() in ("1
 FL_PREFERRED = (os.environ.get("AUFTRAG_FL_PREFERRED") or "").lower() in ("1", "ja", "true")
 FL_SPERR_UPGRADES = {"recruiter": "nur Preferred Freelancer (Recruiter-Projekt)", "pf_only": "nur Preferred Freelancer",
                      "qualified": "nur qualifizierte Freelancer", "nonpublic": "nicht öffentlich", "sealed": None}
-FL_STUNDE_VERIFIZIERT_AB_USD = 50  # ab diesem Stundensatz nur mit "Verified by Freelancer"
+FL_STUNDE_VERIFIZIERT_AB_USD = 50
+# Sprachen, deren Ergebnis Leon prüfen kann bzw. bei denen Claude sehr sicher ist
+SPRACHEN_GUT = ["english", "englisch", "german", "deutsch", "french", "französisch", "spanish", "spanisch",
+                "italian", "italienisch", "portuguese", "portugiesisch", "dutch", "niederländisch"]
+SPRACHEN_HEIKEL = ["somali", "amharic", "tigrinya", "swahili", "yoruba", "hausa", "igbo", "zulu", "pashto", "dari",
+                   "farsi", "persian", "urdu", "hindi", "bengali", "tamil", "telugu", "nepali", "sinhala", "burmese",
+                   "khmer", "lao", "thai", "vietnamese", "tagalog", "indonesian", "malay", "arabic", "hebrew",
+                   "japanese", "korean", "chinese", "mandarin", "cantonese", "mongolian", "kazakh", "uzbek",
+                   "georgian", "armenian", "albanian", "haitian", "creole"]  # ab diesem Stundensatz nur mit "Verified by Freelancer"
 
 # Größere Projekte brauchen mehr als Claude allein (Abstimmung, Verantwortung): Wert wird gedeckelt
 WERT_DECKEL_EUR = {"freelance": 2500, "gesuch": 800, "bounty": 5000, "wettbewerb": 5000, "ausschreibung": 10000}
@@ -112,7 +120,8 @@ SCHWER = ["video", "animation", "after effects", "mobile app", "ios", "android",
           "solidworks", "revit", "floor plan", "drafting", "pcb", "electrical", "business partner", "partner wanted", "co-founder", "cofounder", "equity",
           "business development", "sales rep", "sales agent", "lead generation", "cold calling", "virtual assistant", "data entry", "typing",
           "demo video", "pitch video", "attorney", "lawyer", "legal advice", "notary", "courier", "delivery driver", "driver",
-          "cfo", "chartered accountant", "tax filing", "photographer", "cleaning", "in person", "in-person", "physical"]
+          "cfo", "chartered accountant", "tax filing", "photographer", "cleaning", "in person", "in-person", "physical",
+          "legal translation", "certified translation", "sworn translation", "native speaker", "nativo", "nativa"]
 
 # Regelwidrig/unseriös -> aussortieren
 VERBOTEN = ["visa", "appointment bot", "ticket bot", "sneaker", "captcha", "fake review", "reviews for", "homework", "assignment",
