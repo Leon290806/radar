@@ -106,6 +106,36 @@ def kickoff_text(p, b):
             "If anything is unclear I'll ask early. Looking forward to working with you!")
 
 
+def _suche(d, pfad=""):
+    """Alle Felder finden, die nach Gebots-Kontingent aussehen."""
+    funde = {}
+    if isinstance(d, dict):
+        for k, v in d.items():
+            p = f"{pfad}.{k}" if pfad else k
+            if any(w in k.lower() for w in ("bid", "quota")) and not isinstance(v, (dict, list)):
+                funde[p] = v
+            funde.update(_suche(v, p))
+    elif isinstance(d, list):
+        for i, v in enumerate(d[:3]):
+            funde.update(_suche(v, f"{pfad}[{i}]"))
+    return funde
+
+
+def gebote_rest():
+    """Verbleibende Gebote direkt von freelancer.com (falls die Schnittstelle sie liefert)."""
+    versuche = [("/users/0.1/self/", {"membership_details": "true", "limited_account": "true"}),
+                ("/memberships/0.1/subscriptions/", {}), ("/users/0.1/self/bid_quota/", {}),
+                ("/projects/0.1/bid_quota/", {}), ("/users/0.1/self/membership/", {})]
+    for pfad, params in versuche:
+        res, f = _get(pfad, params)
+        funde = _suche(res) if res else {}
+        print("Kontingent-Test", pfad, "->", (f or "")[:60], funde)
+        for k, v in funde.items():
+            if any(w in k.lower() for w in ("remaining", "bids_left", "bid_count_remaining", "left")) and isinstance(v, (int, float)):
+                return int(v)
+    return None
+
+
 def abgleichen(J, push):
     """Gleicht Konto und Journal ab. Gibt True zurück, wenn sich etwas geändert hat."""
     if not E.FREELANCER_TOKEN:
@@ -137,6 +167,7 @@ def abgleichen(J, push):
     K["verifiziert"] = verifiziert
     E.FL_VERIFIZIERT = E.FL_VERIFIZIERT or verifiziert
     K["abgleich"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    K["gebote_rest"] = gebote_rest()
 
     # ---- eigene Gebote
     res, f = _get("/projects/0.1/bids/", {"bidders[]": K["id"], "limit": 100, "project_details": "true",
