@@ -652,7 +652,9 @@ def superteam():
         return [], ["Superteam: keine JSON-Antwort"]
     liste = daten if isinstance(daten, list) else (daten.get("listings") or daten.get("data") or daten.get("bounties") or [])
     if liste and isinstance(liste[0], dict):
-        print("Superteam-Felder:", sorted(liste[0].keys())[:30])
+        from collections import Counter
+        print("Superteam:", len(liste), "Einträge; agentAccess", dict(Counter(str(x.get("agentAccess")) for x in liste)),
+              "; Token", dict(Counter(str(x.get("token")) for x in liste)))
     out = []
     for it in liste:
         if not isinstance(it, dict):
