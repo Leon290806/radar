@@ -624,14 +624,14 @@ def opire():
 
 # ---------------------------------------------------------------- Expensify: feste Bug-Prämien (meist 250 $) für externe Entwickler
 def expensify():
-    q = 'repo:Expensify/App label:"Help Wanted" is:issue is:open no:assignee'
+    q = 'repo:Expensify/App label:"Help Wanted" is:issue is:open'
     r = _get("https://api.github.com/search/issues?q=" + quote(q) + "&sort=created&order=desc&per_page=40", headers=_gh_headers())
     if r is None or r.status_code != 200:
         return [], [f"Expensify: HTTP {getattr(r, 'status_code', 'Fehler')}"]
     out = []
     for it in r.json().get("items", []):
         m = re.search(r"\[\$\s*([\d,]+)\]", it.get("title") or "")
-        if not m:
+        if not m or len(it.get("assignees") or []) > 1:  # schon an einen externen Entwickler vergeben
             continue
         out.append({"id": "gh-" + str(it["id"]), "quelle": "Expensify", "art": "bounty", "titel": _text(it.get("title"), 200),
                     "url": it["html_url"], "typ": "bounty", "betrag": float(m.group(1).replace(",", "")), "waehrung": "USD",
