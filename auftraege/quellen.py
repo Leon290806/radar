@@ -683,6 +683,26 @@ def superteam():
     return out, []
 
 
+# ---------------------------------------------------------------- DEV-Wettbewerbe (Schreib-/Bau-Challenges mit Preisgeld, öffentliche API)
+def dev_challenges():
+    r = _get("https://dev.to/api/articles?username=devteam&per_page=40")
+    if r is None or r.status_code != 200:
+        return [], [f"DEV: HTTP {getattr(r, 'status_code', 'Fehler')}"]
+    out = []
+    for a in r.json():
+        titel = a.get("title") or ""
+        m = re.search(r"\$\s?([\d,]+)", titel)
+        if not titel.lower().startswith("join") or not m:
+            continue
+        out.append({"id": "dev-" + str(a.get("id")), "quelle": "DEV Challenges", "art": "wettbewerb", "preis_ganz": True,
+                    "titel": _text(titel, 200), "url": a.get("url"), "typ": "wettbewerb",
+                    "betrag": float(m.group(1).replace(",", "")), "waehrung": "USD",
+                    "text": _text((a.get("description") or "") + " (Preisgeld wird auf mehrere Gewinner verteilt; Einreichung als "
+                                  "Beitrag auf dev.to, Bewertung vor allem nach Schreibqualität)", 1500),
+                    "gebote": a.get("comments_count") or 0, "tags": a.get("tag_list") or [], "erstellt": a.get("published_at")})
+    return out, []
+
+
 QUELLEN = {
     "freelancer.com": ("freelancer", "aktiv"),
     "GitHub-Bounty": (github_bounties, "aktiv"),
@@ -698,4 +718,5 @@ QUELLEN = {
     "Opire": (opire, "test"),
     "Expensify": (expensify, "test"),
     "Superteam Earn": (superteam, "test"),
+    "DEV Challenges": (dev_challenges, "test"),
 }
