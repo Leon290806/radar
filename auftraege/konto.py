@@ -65,7 +65,10 @@ def abgleichen(J, push):
     K["name"] = ich.get("username")
     K["id"] = ich.get("id")
     K["status"] = {k: bool(v) for k, v in status.items() if isinstance(v, bool)}
-    verifiziert = bool(status.get("freelancer_verified_user") or status.get("identity_verified"))
+    print("Konto-Status:", {k: v for k, v in status.items() if isinstance(v, bool)})
+    # „Verified by Freelancer“ (KYC) ist das, was Stundenprojekte ab 50 $/Std. verlangen; Ausweis allein reicht nicht
+    verifiziert = bool(status.get("freelancer_verified_user")) if "freelancer_verified_user" in status \
+        else bool(status.get("identity_verified"))
     if verifiziert and not K.get("verifiziert"):
         push("Dein Konto ist verifiziert – das Radar zeigt ab jetzt auch Stundenprojekte ab 50 $/Std.", "Verifizierung erkannt")
     K["verifiziert"] = verifiziert

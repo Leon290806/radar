@@ -5,6 +5,7 @@ Jede Quelle liefert eine Liste einheitlicher Einträge (dict). Nichts wird einge
 Für Seiten ohne offizielle API wird robots.txt geprüft.
 """
 import html
+import json
 import re
 import time
 import urllib.robotparser
@@ -564,6 +565,82 @@ def twine():
 
 
 # Registrierte Quellen: Name -> (Funktion, Startstatus). "test" = wird beobachtet, bis klar ist, ob sie sich lohnt.
+# ---------------------------------------------------------------- Opire (öffentliche API, ohne Anmeldung)
+def _finde(d, *schluessel):
+    """Ersten passenden Wert in verschachteltem JSON finden (Opire-Format ist nicht dokumentiert)."""
+    if isinstance(d, dict):
+        for k in schluessel:
+            if d.get(k) not in (None, "", [], {}):
+                return d[k]
+        for v in d.values():
+            w = _finde(v, *schluessel)
+            if w is not None:
+                return w
+    elif isinstance(d, list):
+        for v in d:
+            w = _finde(v, *schluessel)
+            if w is not None:
+                return w
+    return None
+
+
+def opire():
+    r = _get("https://api.opire.dev/rewards")
+    if r is None or r.status_code != 200:
+        return [], [f"Opire: HTTP {getattr(r, 'status_code', 'Fehler')}"]
+    try:
+        daten = r.json()
+    except ValueError:
+        return [], ["Opire: keine JSON-Antwort"]
+    liste = daten if isinstance(daten, list) else (daten.get("rewards") or daten.get("data") or daten.get("items") or [])
+    if liste:
+        print("Opire-Felder:", sorted(liste[0].keys())[:25] if isinstance(liste[0], dict) else type(liste[0]))
+    out = []
+    for it in liste:
+        if not isinstance(it, dict):
+            continue
+        roh = json.dumps(it)
+        m = re.search(r"https://github\.com/([\w.-]+/[\w.-]+)/issues/\d+", roh)
+        if not m:
+            continue
+        preis = _finde(it, "pendingPrice", "price", "amount", "reward", "value")
+        if isinstance(preis, dict):
+            einheit = (preis.get("unit") or preis.get("currency") or "USD_CENT").upper()
+            wert = preis.get("value") or preis.get("amount") or 0
+            preis = wert / 100 if "CENT" in einheit else wert
+        try:
+            betrag = float(preis or 0)
+        except (TypeError, ValueError):
+            betrag = 0
+        if betrag <= 0:
+            continue
+        titel = _finde(it, "title", "name") or m.group(0)
+        out.append({"id": "op-" + str(it.get("id") or abs(hash(m.group(0))))[:40], "quelle": "Opire", "art": "bounty",
+                    "titel": _text(str(titel), 200), "url": m.group(0), "text": _text(str(_finde(it, "body", "description") or ""), 1500),
+                    "typ": "bounty", "betrag": betrag, "waehrung": "USD", "gebote": int(_finde(it, "claimerCount", "tries") or 0),
+                    "repo": m.group(1), "tags": ["opire"], "erstellt": _finde(it, "createdAt", "created_at")})
+    return out, []
+
+
+# ---------------------------------------------------------------- Expensify: feste Bug-Prämien (meist 250 $) für externe Entwickler
+def expensify():
+    q = 'repo:Expensify/App label:"Help Wanted" is:issue is:open no:assignee'
+    r = _get("https://api.github.com/search/issues?q=" + quote(q) + "&sort=created&order=desc&per_page=40", headers=_gh_headers())
+    if r is None or r.status_code != 200:
+        return [], [f"Expensify: HTTP {getattr(r, 'status_code', 'Fehler')}"]
+    out = []
+    for it in r.json().get("items", []):
+        m = re.search(r"\[\$\s*([\d,]+)\]", it.get("title") or "")
+        if not m:
+            continue
+        out.append({"id": "gh-" + str(it["id"]), "quelle": "Expensify", "art": "bounty", "titel": _text(it.get("title"), 200),
+                    "url": it["html_url"], "typ": "bounty", "betrag": float(m.group(1).replace(",", "")), "waehrung": "USD",
+                    "text": _text("Expensify-Prämie (Auszahlung über Upwork, Vorschlag im Issue nach CONTRIBUTING.md). " + (it.get("body") or ""), 1500),
+                    "gebote": it.get("comments") or 0, "repo": "Expensify/App",
+                    "tags": [l.get("name") for l in it.get("labels", [])][:8], "erstellt": it.get("created_at"), "zugewiesen": False})
+    return out, []
+
+
 QUELLEN = {
     "freelancer.com": ("freelancer", "aktiv"),
     "GitHub-Bounty": (github_bounties, "aktiv"),
@@ -576,4 +653,6 @@ QUELLEN = {
     "freelancer.com Wettbewerbe": (freelancer_wettbewerbe, "test"),
     "Twine": (twine, "test"),
     "service.bund.de": (bund, "test"),
+    "Opire": (opire, "test"),
+    "Expensify": (expensify, "test"),
 }
