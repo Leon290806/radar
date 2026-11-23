@@ -121,19 +121,13 @@ def _suche(d, pfad=""):
     return funde
 
 
-def gebote_rest():
-    """Verbleibende Gebote direkt von freelancer.com (falls die Schnittstelle sie liefert)."""
-    versuche = [("/users/0.1/self/", {"membership_details": "true", "limited_account": "true"}),
-                ("/memberships/0.1/subscriptions/", {}), ("/users/0.1/self/bid_quota/", {}),
-                ("/projects/0.1/bid_quota/", {}), ("/users/0.1/self/membership/", {})]
-    for pfad, params in versuche:
-        res, f = _get(pfad, params)
-        funde = _suche(res) if res else {}
-        print("Kontingent-Test", pfad, "->", (f or "")[:60], funde)
-        for k, v in funde.items():
-            if any(w in k.lower() for w in ("remaining", "bids_left", "bid_count_remaining", "left")) and isinstance(v, (int, float)):
-                return int(v)
-    return None
+def gebote_limit():
+    """Gebote pro Monat laut freelancer.com-Mitgliedschaft (kostenlos: 6)."""
+    res, f = _get("/users/0.1/self/", {"membership_details": "true"})
+    try:
+        return int((res or {}).get("membership_package", {}).get("bid_limit")) if not f else None
+    except (TypeError, ValueError):
+        return None
 
 
 def abgleichen(J, push):
@@ -167,7 +161,9 @@ def abgleichen(J, push):
     K["verifiziert"] = verifiziert
     E.FL_VERIFIZIERT = E.FL_VERIFIZIERT or verifiziert
     K["abgleich"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    K["gebote_rest"] = gebote_rest()
+    lim = gebote_limit()
+    if lim:
+        K["gebote_limit"] = lim
 
     # ---- eigene Gebote
     res, f = _get("/projects/0.1/bids/", {"bidders[]": K["id"], "limit": 100, "project_details": "true",

@@ -59,7 +59,7 @@ def daten(J):
         "feedback": sorted(letzte.values(), key=lambda f: f.get("zeit") or "", reverse=True)[:100],
         "konto": konto_daten(J),
         "heute": J.get("heute") or [],
-        "gebote_monat": {"limit": E.FL_GEBOTE_MONAT, "genutzt": B.gebote_im_monat(J)},
+        "gebote_monat": {"limit": (J.get("konto") or {}).get("gebote_limit") or E.FL_GEBOTE_MONAT, "genutzt": B.gebote_im_monat(J)},
         "ki": {"aktiv": bool(E.ANTHROPIC_KEY), "modell": E.KI_MODELL, "heute": J.get("ki_tag", {}).get("n", 0),
                "max": E.KI_MAX_PRO_TAG, "hart": E.KI_HART_PRO_TAG},
         "annahmen": {"gewinn_basis": E.GEWINN_BASIS, "leon_min": E.LEON_MIN, "usd_eur": E.USD_EUR,

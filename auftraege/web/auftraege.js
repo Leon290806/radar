@@ -222,9 +222,10 @@ function heuteTab() {
   const host = $("#t-heute");
   const GM = D.gebote_monat || { limit: 6, genutzt: 0 };
   const unterwegs = LS.get("auftrag_unterwegs", {}), weg = LS.get("auftrag_weg", {});
-  const frisch = 6 * 3600e3, jetzt = Date.now();
+  // Abgeschickte Karten 30 Min. ausblenden – nicht abgeschickt (GitHub nur geöffnet)? Dann tauchen sie danach wieder auf.
+  const frisch = 30 * 60e3, jetzt = Date.now();
   const liste = HEUTE.filter(e => !(unterwegs[e.id] && jetzt - unterwegs[e.id] < frisch) && !weg[e.id]);
-  const uebrig = Math.max(0, GM.limit - GM.genutzt - Object.values(unterwegs).filter(t => jetzt - t < frisch).length);
+  const uebrig = Math.max(0, GM.limit - GM.genutzt);
   const datum = new Date().toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" });
   const ewSumme = liste.reduce((s, e) => s + (e.ew_eur || 0), 0);
   const mz = monatsziel();
@@ -234,7 +235,7 @@ function heuteTab() {
   <section class="h-held">
     <div><div class="h-datum">${esc(datum)}</div>
       <h2 class="h-titel">${liste.length ? `${liste.length} ${liste.length === 1 ? "Auftrag wartet" : "Aufträge warten"} auf deine Freigabe` : "Für heute ist alles erledigt"}</h2>
-      <p class="h-unter">${liste.length ? "Häkchen setzen, Preis prüfen, unten einmal auf „Gebote abgeben“. Den Rest macht das Radar – und Claude, sobald ein Zuschlag kommt." : "Neue Aufträge kommen alle 90 Minuten dazu. Du bekommst eine Push-Nachricht, sobald sich etwas tut."}</p></div>
+      <p class="h-unter">${liste.length ? "Häkchen setzen, Preis prüfen, unten einmal auf „Gebote abgeben“. Der Bewerbungstext der KI wird automatisch mitgeschickt – aufklappen nur, wenn du etwas ändern willst." : "Neue Aufträge kommen alle 90 Minuten dazu. Du bekommst eine Push-Nachricht, sobald sich etwas tut."}</p></div>
     <div class="h-kpis">
       <div><span>Erwarteter Wert</span><b>${eur(ewSumme)}</b><small>wenn du auf alle bietest</small></div>
       <div><span>Gebote übrig</span><b class="${uebrig ? "" : "rot"}">${uebrig}<i>/${GM.limit}</i></b><small>diesen Monat</small></div>
@@ -255,7 +256,7 @@ function heuteTab() {
         <h3><a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.titel)}</a></h3>
         ${warum ? `<p class="hk-warum">${esc(warum)}</p>` : ""}
         ${hatText ? `<details class="hk-text"><summary>Bewerbung ansehen oder anpassen</summary><textarea rows="9" data-orig="${esc(text)}">${esc(text)}</textarea></details>`
-          : `<div class="hk-ohne">Noch kein Bewerbungstext. <button class="knopf" data-fb="pruefen" data-id="${esc(e.id)}">Mit KI schreiben lassen</button></div>`}
+          : `<div class="hk-ohne">Noch kein Bewerbungstext – darum noch nicht auswählbar. <button class="knopf" data-fb="pruefen" data-id="${esc(e.id)}">Mit KI schreiben lassen</button></div>`}
         <div class="hk-fuss"><button class="knopf" data-detail="${esc(e.id)}">Details</button><button class="knopf h-weg" data-weg="${esc(e.id)}">Nicht für mich</button></div>
       </div>
       <div class="hk-zahlen">

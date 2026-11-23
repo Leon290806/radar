@@ -67,7 +67,7 @@ def morgen_push(J):
         return
     E_ = J["eintraege"]
     ew = sum(E_[i]["ew_eur"] for i in ids if i in E_)
-    uebrig = max(0, E.FL_GEBOTE_MONAT - B.gebote_im_monat(J))
+    uebrig = max(0, ((J.get("konto") or {}).get("gebote_limit") or E.FL_GEBOTE_MONAT) - B.gebote_im_monat(J))
     zeilen = "\n".join(f"• {E_[i]['titel'][:60]}" for i in ids[:5] if i in E_)
     push(f"{len(ids)} Aufträge warten auf deine Freigabe (zusammen ca. {ew:.0f} € erwarteter Wert, {uebrig} Gebote übrig).\n{zeilen}",
          "☀️ Deine Aufträge für heute")
