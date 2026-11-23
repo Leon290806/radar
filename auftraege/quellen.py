@@ -660,7 +660,8 @@ def superteam():
         if not isinstance(it, dict):
             continue
         agent = str(it.get("agentAccess") or "").upper()
-        if not (it.get("isAgentAllowed") or "AGENT" in agent and "NOT" not in agent and "HUMAN_ONLY" not in agent):
+        # Leon reicht als Mensch ein (KI hilft nur) – darum auch HUMAN_ONLY; nur reine Agenten-Aufträge brauchen die Agenten-API
+        if agent == "AGENT_ONLY":
             continue
         betrag = it.get("rewardAmount") or it.get("usdValue") or 0
         try:
@@ -668,13 +669,13 @@ def superteam():
         except (TypeError, ValueError):
             betrag = 0
         token = (it.get("token") or "USDC").upper()
-        if betrag <= 0 or token not in ("USDC", "USDT", "USD"):
+        if betrag <= 0 or token not in ("USDC", "USDT", "USD", "USDG"):
             continue
         slug = it.get("slug") or ""
         out.append({"id": "st-" + str(it.get("id") or slug)[:40], "quelle": "Superteam Earn", "art": "wettbewerb", "preis_ganz": True,
                     "titel": _text(it.get("title") or slug, 200), "url": f"https://earn.superteam.fun/listing/{slug}",
                     "text": _text(str(it.get("description") or it.get("type") or "") +
-                                  " (Superteam Earn, KI-Agenten erlaubt, Auszahlung in USDC an Solana-Wallet)", 1500),
+                                  " (Superteam Earn, Krypto-Szene; Einreichung als Mensch, Auszahlung in USDC an eine Solana-Wallet)", 1500),
                     "typ": "wettbewerb", "betrag": betrag, "waehrung": "USD", "gebote": int(it.get("_count", {}).get("Submission", 0)
                     if isinstance(it.get("_count"), dict) else 0),
                     "tags": [str(x) for x in (it.get("skills") or [])][:6] if isinstance(it.get("skills"), list) else [],
