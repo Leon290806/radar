@@ -112,6 +112,11 @@ def bewerte(e, gelernt):
         machbar *= E.WETTBEWERB_MACHBAR_FAKTOR
     if e["art"] == "ausschreibung":
         machbar *= E.AUSSCHREIBUNG_MACHBAR_FAKTOR
+    if kat == "uebersetzung":
+        heikel = [w for w in E.SPRACHEN_HEIKEL if re.search(r"\b" + w + r"\b", text)]
+        if heikel:
+            machbar *= 0.45  # Ergebnis kann Leon nicht prüfen, Qualitätsrisiko für die ersten Bewertungen
+            schwer = schwer + ["Sprache: " + ", ".join(heikel[:2])]
     sprache = (e.get("sprache") or "en").lower()[:2]
     if e["art"] == "freelance" and sprache not in ("en", "de"):
         machbar *= 0.6  # Leon kann Ergebnis und Kommunikation in dieser Sprache schlecht prüfen
