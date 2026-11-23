@@ -138,7 +138,20 @@ VERBOTEN = ["visa", "appointment bot", "ticket bot", "sneaker", "captcha", "fake
             "wallet address", "airdrop", "conformance mirror", "not reviewed on this mirror",
             "pull requests from human engineers", "settlement",
             # Welle von Lockangeboten neuer Konten (gleiche Vorlage, unrealistische Budgets)
-            "beginners level", "beginner level", "task beginners"]
+            "beginners level", "beginner level", "task beginners",
+            # Kunde prüft mit KI-Detektoren -> Streit um Bezahlung vorprogrammiert
+            "ai-detection", "ai detection", "ai detector", "ai-detector", "gptzero", "originality.ai", "zerogpt",
+            # Arbeit vor Ort (geht nicht remote)
+            "field verification", "gps-tagged", "gps tagged", "visit the specified", "in person",
+            "booth", "sales representative", "brand ambassador"]
+# Lockangebote: Schreibaufträge mit "Beginner" im Titel (heute mehrfach von frisch angelegten Konten mit überhöhtem Budget)
+LOCK_TITEL = ["beginner"]
+# Marken, deren Namen Phishing-Links gern im Pfad tragen (echte Domain -> erlaubte Endungen)
+PHISHING_MARKEN = {"docusign": ["docusign.com", "docusign.net"], "dropbox": ["dropbox.com"], "wetransfer": ["wetransfer.com"],
+                   "onedrive": ["live.com", "microsoft.com", "sharepoint.com"], "sharepoint": ["sharepoint.com"],
+                   "microsoft": ["microsoft.com", "live.com", "office.com"], "office365": ["office.com", "microsoft.com"],
+                   "google": ["google.com", "goo.gl"], "drive": ["google.com"], "adobe": ["adobe.com"],
+                   "paypal": ["paypal.com"], "freelancer": ["freelancer.com"]}
 # Bounty-Repos müssen etabliert sein (Schutz vor Fallen)
 REPO_MIN_STERNE = 25
 REPO_MIN_ALTER_TAGE = 90

@@ -19,6 +19,24 @@ _SCHWER = [(w.strip(), _muster(w)) for w in E.SCHWER]
 _VERBOTEN = [(w.strip(), _muster(w)) for w in E.VERBOTEN]
 
 
+_URL = re.compile(r"(?:https?://)?((?:[a-z0-9-]+\.)+[a-z]{2,})(/[^\s)\]]*)?", re.I)
+
+
+def phishing_links(text):
+    """Links, deren Pfad eine bekannte Marke vortäuscht, deren Domain aber nicht dazu gehört
+    (z. B. auth1.online/www.docusign.com/...)."""
+    funde = []
+    for m in _URL.finditer(text or ""):
+        host, pfad = m.group(1).lower(), (m.group(2) or "").lower()
+        if "/" not in m.group(0) and "://" not in m.group(0):
+            continue
+        for marke, echt in E.PHISHING_MARKEN.items():
+            if marke in pfad and not any(host == d or host.endswith("." + d) for d in echt):
+                funde.append(m.group(0))
+                break
+    return funde
+
+
 def _treffer(muster, text):
     return [w for w, m in muster if m.search(text)]
 
@@ -125,6 +143,13 @@ def bewerte(e, gelernt):
     gruende = []
     if verboten:
         gruende.append("aussortiert wegen: " + ", ".join(sorted(set(verboten)))[:80])
+    phish = phishing_links(e.get("text", ""))
+    if phish:
+        verboten = verboten or ["Phishing-Link"]
+        gruende.append("Verdächtiger Link (Phishing?): " + phish[0][:60])
+    if kat == "text" and any(w in (e.get("titel") or "").lower() for w in E.LOCK_TITEL):
+        verboten = verboten or ["Lockangebot"]
+        gruende.append("Typisches Lockangebot („Beginner“-Schreibauftrag)")
     if e["art"] == "freelance":
         for k, grund in E.FL_SPERR_UPGRADES.items():
             if grund and e.get("upgrades", {}).get(k) and not (k in ("recruiter", "pf_only") and E.FL_PREFERRED):
@@ -174,7 +199,7 @@ def bewerte(e, gelernt):
     if e["art"] == "freelance":
         usd = usd - max(usd * E.FREELANCER_GEBUEHR, 5)
     wert_eur = max(usd, 0) * E.USD_EUR
-    if e["art"] == "freelance" and (e.get("budget_min_usd") or 0) > 20000 and not ki.get("preis_vorschlag_eur"):
+    if e["art"] == "freelance" and (e.get("budget_min_usd") or 0) > 20000:
         verboten = verboten or ["unplausibles Budget"]
         gruende.append("Budget unplausibel hoch (Tippfehler oder Lockangebot)")
     if ki.get("preis_vorschlag_eur"):
