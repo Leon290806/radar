@@ -4,6 +4,7 @@ import json
 import os
 
 import einstellungen as E
+import bewerten as B
 
 FELDER = ("id", "quelle", "art", "titel", "url", "kat", "kat_name", "machbar", "chance", "wert_eur", "ew_eur", "leon_min",
           "eur_pro_std", "gebote", "alter_tage", "frisch", "aussortiert", "gruende", "empfehlbar", "feedback", "betrag_echt",
@@ -57,6 +58,8 @@ def daten(J):
         "protokoll": J.get("protokoll", [])[:80], "ergebnis": erg,
         "feedback": sorted(letzte.values(), key=lambda f: f.get("zeit") or "", reverse=True)[:100],
         "konto": konto_daten(J),
+        "heute": J.get("heute") or [],
+        "gebote_monat": {"limit": E.FL_GEBOTE_MONAT, "genutzt": B.gebote_im_monat(J)},
         "ki": {"aktiv": bool(E.ANTHROPIC_KEY), "modell": E.KI_MODELL, "heute": J.get("ki_tag", {}).get("n", 0),
                "max": E.KI_MAX_PRO_TAG, "hart": E.KI_HART_PRO_TAG},
         "annahmen": {"gewinn_basis": E.GEWINN_BASIS, "leon_min": E.LEON_MIN, "usd_eur": E.USD_EUR,

@@ -71,6 +71,8 @@ def gebote_abgeben(J, push):
         titel = e.get("titel") or pid
         if pid in erledigt:
             continue
+        if not w.get("text"):
+            w["text"] = (e.get("ki") or {}).get("bewerbung") or ""
         if not w.get("betrag") or len(w.get("text") or "") < 100:
             push(f"{titel}\nBetrag fehlt oder Bewerbungstext zu kurz (mind. 100 Zeichen).", "Gebot nicht abgegeben")
             continue
@@ -93,6 +95,15 @@ def _ts(x):
         return datetime.fromtimestamp(int(x), timezone.utc).isoformat(timespec="seconds")
     except (TypeError, ValueError):
         return None
+
+
+def kickoff_text(p, b):
+    """Erste Nachricht nach dem Zuschlag (Englisch – die Sprache fast aller Kunden auf freelancer.com)."""
+    tage = b.get("period") or 3
+    return ("Hi, thank you for awarding me the project! To get started right away, could you please create the milestone "
+            "and send me all files and details I should work with (source documents, examples, preferred format)? "
+            f"As soon as the milestone is in place I'll start and deliver within {tage} day{'s' if tage != 1 else ''}. "
+            "If anything is unclear I'll ask early. Looking forward to working with you!")
 
 
 def abgleichen(J, push):
@@ -177,9 +188,12 @@ def abgleichen(J, push):
                 J.setdefault("feedback", []).append({"zeit": K["abgleich"], "id": i, "aktion": aktion,
                                                      "betrag": betrag_eur if aktion != "verloren" else None, "von": "konto"})
                 letzter[i] = aktion
+            if zustand == "gewonnen":
+                gebote[i]["kickoff"] = alt.get("kickoff") or kickoff_text(p, b)
             if zustand == "gewonnen" and alt.get("zustand") != "gewonnen":
-                push(f"{gebote[i]['titel']}\n{b.get('amount')} {cur} – Erst anfangen, wenn der Meilenstein bezahlt ist. "
-                     "Dann die Aufgabe an Claude geben.", "🎉 Zuschlag erhalten!")
+                push(f"{gebote[i]['titel']} – {b.get('amount')} {cur}\n\n1) Diese Nachricht an den Kunden schicken:\n"
+                     f"{gebote[i]['kickoff']}\n\n2) Erst anfangen, wenn der Meilenstein bezahlt ist – dann Aufgabe und Dateien an Claude.",
+                     "🎉 Zuschlag erhalten!")
         print(f"Konto {K.get('name')}: {len(gebote)} Gebote, verifiziert={verifiziert}")
 
     # ---- neue Nachrichten von Kunden

@@ -304,3 +304,24 @@ def noch_offen(e):
 def empfehlbar(e):
     return noch_offen(e) and (not e.get("aussortiert")) and e.get("frisch") and e.get("machbar", 0) >= 0.5 and \
         e.get("wert_eur", 0) >= 25 and not e.get("feedback")
+
+
+FERTIG_FB = ("beworben", "gewonnen", "verloren", "uninteressant", "gesperrt")
+
+
+def heute_liste(J):
+    """Die Morgen-Liste: bietbare freelancer.com-Aufträge, noch nicht bedient, beste zuerst."""
+    schon = set((J.get("konto") or {}).get("gebote") or {})
+    out = [e for e in (J.get("eintraege") or {}).values()
+           if e.get("art") == "freelance" and top_tauglich(e) and e.get("feedback") not in FERTIG_FB
+           and e["id"] not in schon and not (e.get("ki") or {}).get("verboten")]
+    # KI-geprüfte (mit fertigem Text) leicht bevorzugen
+    out.sort(key=lambda e: -(e.get("rang", 0) * (1.15 if (e.get("ki") or {}).get("bewerbung") else 1)))
+    return [e["id"] for e in out[:E.HEUTE_MAX]]
+
+
+def gebote_im_monat(J):
+    from datetime import datetime, timezone
+    monat = datetime.now(timezone.utc).strftime("%Y-%m")
+    gebote = (J.get("konto") or {}).get("gebote") or {}
+    return sum(1 for g in gebote.values() if (g.get("zeit") or "").startswith(monat))

@@ -8,6 +8,7 @@ import os
 import sys
 import traceback
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 
 HIER = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HIER)
@@ -56,6 +57,23 @@ def push(text, titel):
         pass
 
 
+def morgen_push(J):
+    """Einmal am Morgen (erster Lauf ab 6 Uhr Berliner Zeit): wie viele Aufträge auf Freigabe warten."""
+    jetzt = datetime.now(ZoneInfo(E.ZEITZONE))
+    if jetzt.hour < 6 or J.get("morgen_push") == jetzt.date().isoformat():
+        return
+    ids = J.get("heute") or []
+    if not ids:
+        return
+    E_ = J["eintraege"]
+    ew = sum(E_[i]["ew_eur"] for i in ids if i in E_)
+    uebrig = max(0, E.FL_GEBOTE_MONAT - B.gebote_im_monat(J))
+    zeilen = "\n".join(f"• {E_[i]['titel'][:60]}" for i in ids[:5] if i in E_)
+    push(f"{len(ids)} Aufträge warten auf deine Freigabe (zusammen ca. {ew:.0f} € erwarteter Wert, {uebrig} Gebote übrig).\n{zeilen}",
+         "☀️ Deine Aufträge für heute")
+    J["morgen_push"] = jetzt.date().isoformat()
+
+
 def seite_schreiben(J):
     html = seite.erstelle(J)
     os.makedirs(os.path.dirname(E.SEITE), exist_ok=True)
@@ -77,6 +95,7 @@ def nur_konto(J, geaendert):
         B.bewerte(e, gelernt)
         e["empfehlbar"] = B.empfehlbar(e)
     J["top"] = [i for i in J.get("top", []) if J["eintraege"].get(i, {}).get("empfehlbar")]
+    J["heute"] = B.heute_liste(J)
     seite_schreiben(J)
     journal_speichern(J)
     print("Konto: Änderungen gespeichert.")
@@ -249,7 +268,9 @@ def main():
     lauf["top_ew"] = round(sum(e["ew_eur"] for e in top), 2)
     J["laeufe"] = (J.get("laeufe", []) + [lauf])[-180:]
     J["top"] = [e["id"] for e in top]
+    J["heute"] = B.heute_liste(J)
     J["stand"] = lauf["zeit"]
+    morgen_push(J)
 
     seite_schreiben(J)
     journal_speichern(J)

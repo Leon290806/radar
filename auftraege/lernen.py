@@ -43,6 +43,35 @@ def feedback_holen(J):
         if not titel.startswith("[Auftrag]") or it.get("pull_request"):
             continue
         body = (it.get("body") or "") + "\n" + titel
+        if re.search(r"aktion:\s*bieten", body) and "### " in body:
+            bloecke = re.split(r"^### ", it.get("body") or "", flags=re.M)[1:]
+            m_n = re.search(r"nicht-interessant:\s*([^\n]+)", it.get("body") or "")
+            for i in (m_n.group(1).split(",") if m_n else []):
+                i = i.strip()
+                if re.fullmatch(r"[a-z]{2}-[\w-]+", i):
+                    J.setdefault("feedback", []).append({"zeit": it.get("created_at"), "id": i, "aktion": "uninteressant", "betrag": None})
+            for b in bloecke:
+                m_i = re.match(r"\s*([a-z]{2}-[\w-]+)", b)
+                m_b = re.search(r"betrag:\s*([\d.,]+)", b)
+                m_t = re.search(r"tage:\s*(\d+)", b)
+                m_x = re.search(r"text:\s*\n(.*?)(?:\n\(Vom Auftrags-Radar|\Z)", b, re.S)
+                if not (m_i and m_b):
+                    continue
+                try:
+                    betrag = float(m_b.group(1).replace(",", "."))
+                except ValueError:
+                    continue
+                J.setdefault("bieten", []).append({"id": m_i.group(1), "betrag": betrag, "tage": int(m_t.group(1)) if m_t else 3,
+                                                   "text": m_x.group(1).strip() if m_x else "", "issue": it.get("number")})
+                n += 1
+            try:
+                requests.post(f"https://api.github.com/repos/{E.REPO}/issues/{it['number']}/comments", headers=h, timeout=20,
+                              json={"body": "Vom Auftrags-Radar übernommen – die Gebote werden jetzt abgegeben."})
+                requests.patch(f"https://api.github.com/repos/{E.REPO}/issues/{it['number']}", headers=h, timeout=20,
+                               json={"state": "closed", "state_reason": "completed"})
+            except requests.RequestException:
+                pass
+            continue
         m_id = re.search(r"id:\s*([a-z]{2}-[\w-]+)", body)
         m_ak = re.search(r"aktion:\s*(\w+)", body)
         m_bt = re.search(r"betrag:\s*([\d.,]+)", body)

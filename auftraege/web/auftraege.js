@@ -149,13 +149,14 @@ function spark(werte, farbe = "--s1") {
 /* ---------- Kopf ---------- */
 const L = D.laeufe[D.laeufe.length - 1] || {};
 const empf = D.eintraege.filter(e => e.empfehlbar);
-const tabs = [["uebersicht", "Übersicht", TOP.length], ["alle", "Alle Aufträge", empf.length], ["quellen", "Quellen", Object.keys(D.quellen).length],
+const HEUTE = (D.heute || []).map(i => NACH_ID[i]).filter(Boolean);
+const tabs = [["heute", "Heute", HEUTE.length], ["uebersicht", "Übersicht", TOP.length], ["alle", "Alle Aufträge", empf.length], ["quellen", "Quellen", Object.keys(D.quellen).length],
   ["lernen", "Lernen", null], ["ergebnisse", "Ergebnisse", D.feedback.length || null]];
 document.body.innerHTML = `
 <header class="kopf"><div class="in">
   <div class="zeile1">
     <div class="marke"><div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M4 17l5-5 4 4 7-8"/><path d="M15 8h5v5"/></svg></div>
-      <div><h1>Auftrags-Radar</h1><div class="stand">Stand ${esc(zeit(D.stand))}<span class="lang"> · scannt ${Object.values(D.quellen).filter(q => q.status !== "pausiert").length} Quellen alle 3 Stunden</span></div></div></div>
+      <div><h1>Auftrags-Radar</h1><div class="stand">Stand ${esc(zeit(D.stand))}<span class="lang"> · scannt ${Object.values(D.quellen).filter(q => q.status !== "pausiert").length} Quellen alle 90 Minuten</span></div></div></div>
     <div class="rechts"><a class="pill" href="../">← Aktien-Radar</a>
       <a class="pill" href="https://github.com/${esc(D.repo)}/actions/workflows/auftraege.yml" target="_blank" rel="noopener" title="Öffnet GitHub: dort „Run workflow“ tippen. Manuelle Läufe prüfen auch nach dem Tageskontingent bis zu 8 Aufträge mit KI.">↻ Jetzt scannen</a>
       <button class="ikon" id="thema" aria-label="Hell/Dunkel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
@@ -205,6 +206,115 @@ function kontoKarte() {
       <td>${zahl(x.betrag)} ${esc(x.waehrung)}${x.tage ? ` · ${x.tage} T.` : ""}</td><td>${tag(x.zeit)}</td>
       <td><span class="badge ${(Z[x.zustand] || ["", "b-neutral"])[1]}">${(Z[x.zustand] || [esc(x.zustand)])[0]}</span></td></tr>`).join("")}</tbody></table>`
       : `<p class="mute">Noch keine Gebote gefunden.</p>`}</div>`;
+}
+
+
+/* ---------- Heute: Morgen-Routine – prüfen, auswählen, alle Gebote mit einem Klick ---------- */
+const LS = { get(k, d) { try { return JSON.parse(localStorage.getItem(k) || "null") || d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } } };
+function gebotVorschlag(e) {
+  const g = e.gebot || {}, kurs = e.kurs || 1;
+  if (!g.betrag_usd) return "";
+  const roh = g.betrag_usd / kurs, stufe = roh >= 2000 ? 100 : roh >= 200 ? 5 : 1;
+  return Math.max(stufe, Math.round(roh / stufe) * stufe);
+}
+function heuteTab() {
+  const host = $("#t-heute");
+  const GM = D.gebote_monat || { limit: 6, genutzt: 0 };
+  const unterwegs = LS.get("auftrag_unterwegs", {}), weg = LS.get("auftrag_weg", {});
+  const frisch = 6 * 3600e3, jetzt = Date.now();
+  const liste = HEUTE.filter(e => !(unterwegs[e.id] && jetzt - unterwegs[e.id] < frisch) && !weg[e.id]);
+  const uebrig = Math.max(0, GM.limit - GM.genutzt - Object.values(unterwegs).filter(t => jetzt - t < frisch).length);
+  const datum = new Date().toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" });
+  const ewSumme = liste.reduce((s, e) => s + (e.ew_eur || 0), 0);
+  const mz = monatsziel();
+  const andere = empf.filter(e => e.art !== "freelance" && !e.feedback).sort((x, y) => (y.rang || 0) - (x.rang || 0)).slice(0, 4);
+  let vorgewaehlt = 0;
+  host.innerHTML = `
+  <section class="h-held">
+    <div><div class="h-datum">${esc(datum)}</div>
+      <h2 class="h-titel">${liste.length ? `${liste.length} ${liste.length === 1 ? "Auftrag wartet" : "Aufträge warten"} auf deine Freigabe` : "Für heute ist alles erledigt"}</h2>
+      <p class="h-unter">${liste.length ? "Häkchen setzen, Preis prüfen, unten einmal auf „Gebote abgeben“. Den Rest macht das Radar – und Claude, sobald ein Zuschlag kommt." : "Neue Aufträge kommen alle 90 Minuten dazu. Du bekommst eine Push-Nachricht, sobald sich etwas tut."}</p></div>
+    <div class="h-kpis">
+      <div><span>Erwarteter Wert</span><b>${eur(ewSumme)}</b><small>wenn du auf alle bietest</small></div>
+      <div><span>Gebote übrig</span><b class="${uebrig ? "" : "rot"}">${uebrig}<i>/${GM.limit}</i></b><small>diesen Monat</small></div>
+      <div><span>Monatsziel</span><b>${eur(mz.netto)}</b><small>von ${eur(D.annahmen.ziel_netto)} netto</small><div class="h-ziel"><i style="width:${Math.round(mz.anteil * 100)}%"></i></div></div>
+    </div>
+  </section>
+  ${!uebrig && liste.length ? `<div class="box warn h-hinweis">Deine Gebote für diesen Monat sind aufgebraucht. Mit einer Freelancer-Mitgliedschaft bekommst du mehr – danach im Repository die Variable <b>AUFTRAG_GEBOTE_MONAT</b> anpassen.</div>` : ""}
+  <div class="h-liste">${liste.map((e, i) => {
+    const text = (e.ki && e.ki.bewerbung) || "", hatText = text.length >= 100;
+    const an = hatText && vorgewaehlt < Math.min(uebrig, 5); if (an) vorgewaehlt++;
+    const g = e.gebot || {}, cur = e.waehrung || "USD";
+    const warum = (e.ki && e.ki.grund) || (e.gruende || [])[0] || "";
+    return `<article class="hk${an ? " an" : ""}" data-hid="${esc(e.id)}">
+      <label class="hk-wahl" title="Auswählen"><input type="checkbox" ${an ? "checked" : ""} ${hatText ? "" : "disabled"}><span></span></label>
+      <div class="hk-haupt">
+        <div class="hk-meta"><span class="hk-nr">${i + 1}</span><span>${esc(e.kat_name || "")}</span><span>${zahl(e.gebote)} Gebote</span>
+          <span>${e.alter_tage < 1 ? "vor " + Math.max(1, Math.round(e.alter_tage * 24)) + " Std." : "vor " + zahl(e.alter_tage, 0) + " T."}</span></div>
+        <h3><a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.titel)}</a></h3>
+        ${warum ? `<p class="hk-warum">${esc(warum)}</p>` : ""}
+        ${hatText ? `<details class="hk-text"><summary>Bewerbung ansehen oder anpassen</summary><textarea rows="9" data-orig="${esc(text)}">${esc(text)}</textarea></details>`
+          : `<div class="hk-ohne">Noch kein Bewerbungstext. <button class="knopf" data-fb="pruefen" data-id="${esc(e.id)}">Mit KI schreiben lassen</button></div>`}
+        <div class="hk-fuss"><button class="knopf" data-detail="${esc(e.id)}">Details</button><button class="knopf h-weg" data-weg="${esc(e.id)}">Nicht für mich</button></div>
+      </div>
+      <div class="hk-zahlen">
+        <div class="hk-ew">${eur(e.ew_eur)}<small>erwarteter Wert</small></div>
+        <div class="hk-zr"><span>Chance</span><b>${pct(e.chance, 0)}</b></div>
+        <div class="hk-zr"><span>Bei Zuschlag</span><b>${eur(e.wert_eur)}</b></div>
+        <div class="hk-felder">
+          <label>Gebot<span class="hk-eing"><input type="number" min="1" step="any" class="h-betrag" value="${gebotVorschlag(e)}"><em>${esc(cur)}${g.einheit === "pro Stunde" ? "/Std." : ""}</em></span></label>
+          <label>Tage<span class="hk-eing"><input type="number" min="1" max="60" class="h-tage" value="${g.tage || 3}"></span></label>
+        </div>
+        ${g.betrag_usd ? `<div class="hk-klein">≈ ${eur(g.betrag_usd * 0.92)} · bei dir ≈ ${eur((g.netto_usd || 0) * 0.92)}${g.rabatt ? `<span class="hk-tag">Einstiegspreis</span>` : ""}</div>` : ""}
+      </div></article>`; }).join("")}
+  </div>
+  ${liste.length ? "" : `<div class="h-leer"><div class="h-haken">✓</div><p>Keine offenen Aufträge in deiner Liste.</p></div>`}
+  ${andere.length ? `<section class="h-andere"><h3>Weitere Chancen <span>ohne Gebot – Bounties, Wettbewerbe, Ausschreibungen</span></h3>
+    ${andere.map(e => `<button class="h-zeile" data-detail="${esc(e.id)}"><span class="badge b-neutral">${esc(ART[e.art] || e.art)}</span><span class="h-zt">${esc(e.titel)}</span><b>${eur(e.ew_eur)}</b></button>`).join("")}</section>` : ""}
+  ${liste.length ? `<div class="h-leiste"><div class="h-in"><div><b id="h-anz">0</b> ausgewählt · <span id="h-ew">0 €</span> erwarteter Wert<span id="h-warn"></span></div>
+    <button class="knopf haupt h-los" id="h-los">Gebote abgeben →</button></div></div>` : ""}`;
+  const zaehle = () => {
+    const sel = $$(".hk", host).filter(k => $("input[type=checkbox]", k).checked);
+    $$(".hk", host).forEach(k => k.classList.toggle("an", $("input[type=checkbox]", k).checked));
+    const anz = $("#h-anz", host); if (!anz) return;
+    anz.textContent = sel.length;
+    $("#h-ew", host).textContent = eur(sel.reduce((s, k) => s + (NACH_ID[k.dataset.hid].ew_eur || 0), 0));
+    $("#h-warn", host).innerHTML = sel.length > uebrig ? ` · <span class="rot">nur ${uebrig} Gebote übrig</span>` : "";
+    $("#h-los", host).disabled = !sel.length;
+    $("#h-los", host).textContent = sel.length ? `${sel.length} ${sel.length === 1 ? "Gebot" : "Gebote"} abgeben →` : "Gebote abgeben →";
+  };
+  host.addEventListener("change", ev => { if (ev.target.matches(".hk input[type=checkbox]")) zaehle(); });
+  host.addEventListener("click", ev => {
+    const d = ev.target.closest("[data-detail]"); if (d) { oeffne(NACH_ID[d.dataset.detail]); return; }
+    const w = ev.target.closest("[data-weg]");
+    if (w) { const x = LS.get("auftrag_weg", {}); x[w.dataset.weg] = Date.now(); LS.set("auftrag_weg", x);
+      const k = w.closest(".hk"); k.classList.add("raus"); setTimeout(() => { k.remove(); zaehle(); }, 250); toast("Ausgeblendet – wird beim Abgeben mitgemeldet"); return; }
+    if (ev.target.closest("#h-los")) abgeben();
+  });
+  function abgeben() {
+    const sel = $$(".hk", host).filter(k => $("input[type=checkbox]", k).checked);
+    if (!sel.length) return;
+    const bl = [];
+    for (const k of sel) {
+      const e = NACH_ID[k.dataset.hid], betrag = $(".h-betrag", k).value, tage = $(".h-tage", k).value, ta = $("textarea", k);
+      if (!(+betrag > 0)) { toast("Bitte bei allen ausgewählten einen Betrag eintragen"); return; }
+      let b = `### ${e.id}\nbetrag: ${betrag}\ntage: ${tage}\n`;
+      if (ta && ta.value.trim() !== ta.dataset.orig.trim()) { if (ta.value.trim().length < 100) { toast("Ein Bewerbungstext ist zu kurz (mind. 100 Zeichen)"); return; } b += `text:\n${ta.value.trim()}\n`; }
+      bl.push(b);
+    }
+    const nicht = Object.keys(LS.get("auftrag_weg", {})).filter(i => NACH_ID[i] && !(NACH_ID[i].feedback));
+    const titel = `[Auftrag] bieten: ${sel.length} ${sel.length === 1 ? "Gebot" : "Gebote"}`;
+    const body = `aktion: bieten\n` + (nicht.length ? `nicht-interessant: ${nicht.join(", ")}\n` : "") + `\n` + bl.join("\n") +
+      `\n(Vom Auftrags-Radar erzeugt. „Submit new issue“ tippen – die Gebote werden in ca. 1–2 Minuten abgegeben, du bekommst je eine Push-Nachricht.)`;
+    const url = `https://github.com/${D.repo}/issues/new?title=${encodeURIComponent(titel)}&body=${encodeURIComponent(body)}`;
+    if (url.length > 7800) { toast("Zu viel geänderter Text auf einmal – bitte in zwei Runden abgeben"); return; }
+    const u = LS.get("auftrag_unterwegs", {}); sel.forEach(k => u[k.dataset.hid] = Date.now()); LS.set("auftrag_unterwegs", u);
+    window.open(url, "_blank", "noopener");
+    toast("GitHub öffnet sich – „Submit new issue“ tippen");
+    sel.forEach(k => k.classList.add("raus")); setTimeout(heuteTab, 400);
+  }
+  zaehle();
 }
 
 /* ---------- Übersicht ---------- */
@@ -352,7 +462,7 @@ function zeichneCharts() {
     { name: "Erw. Wert Top 5 (€)", v: D.laeufe.map(l => l.top_ew || 0), farbe: "--s1", flaeche: true },
     { name: "Empfehlbare", v: D.laeufe.map(l => l.empfehlbar || 0), farbe: "--s3" }], v => zahl(v));
 }
-uebersicht(); alle(); quellenTab(); lernenTab(); ergebnisseTab();
+heuteTab(); uebersicht(); alle(); quellenTab(); lernenTab(); ergebnisseTab();
 let start = null; try { start = localStorage.getItem("auftrag_tab"); } catch (e) { }
 if (start && $(`nav.tabs button[data-tab="${start}"]`)) $(`nav.tabs button[data-tab="${start}"]`).click(); else zeichneCharts();
 window.addEventListener("resize", () => { clearTimeout(window._rz); window._rz = setTimeout(zeichneCharts, 150); });
