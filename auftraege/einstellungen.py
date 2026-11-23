@@ -12,7 +12,7 @@ PASSWORT = os.environ.get("RADAR_PASSWORT", "")
 ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 KI_MODELL = os.environ.get("AUFTRAG_MODELL") or "claude-sonnet-5-5"
 KI_MAX_PRO_TAG = int(os.environ.get("AUFTRAG_KI_MAX_PRO_TAG") or "24")   # Kostenbremse
-KI_MAX_PRO_LAUF = int(os.environ.get("AUFTRAG_KI_MAX_PRO_LAUF") or "8")
+KI_MAX_PRO_LAUF = int(os.environ.get("AUFTRAG_KI_MAX_PRO_LAUF") or "4")  # 6 Läufe × 4 = Tageskontingent gleichmäßig verteilt
 KI_HART_PRO_TAG = int(os.environ.get("AUFTRAG_KI_HART_PRO_TAG") or "60")  # absolute Obergrenze inkl. manueller Prüfungen
 MANUELL = os.environ.get("GITHUB_EVENT_NAME") in ("workflow_dispatch", "issues")
 ZEITZONE = "Europe/Berlin"
