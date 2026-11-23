@@ -136,6 +136,14 @@ def bewerte(e, gelernt):
         if "local" in (e.get("flags") or []) or "up:local" in (e.get("flags") or []):
             verboten = verboten or ["gesperrt"]
             gruende.append("Für dein Konto gesperrt: nur Freelancer in der Nähe des Auftraggebers (Vor-Ort-Projekt)")
+        if e.get("typ") == "hourly":
+            satz = e.get("gebot_avg_usd") or e.get("budget_max_usd") or 0
+            if satz and satz < 15:
+                verboten = verboten or ["Stundenlohn"]
+                gruende.append(f"Stundenlohn zu niedrig (ca. {satz:.0f} $/Std.)")
+            else:
+                machbar *= 0.6  # Stundenprojekte: Zeiterfassung über Freelancer, passt schlecht zu KI-Lieferung
+                gruende.append("Stundenprojekt mit Zeiterfassung – Festpreis passt besser")
         treffer_fl = [f for f in (e.get("flags") or []) if f in gelernt.get("gesperrt_flags", [])]
         if treffer_fl:
             verboten = verboten or ["gesperrt"]
