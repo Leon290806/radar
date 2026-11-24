@@ -169,7 +169,9 @@ REPO_MIN_ALTER_TAGE = 90
 # Suchbegriffe für freelancer.com: aktiv + Kandidaten zum Testen (der Radar lernt, welche sich lohnen)
 FREELANCER_START = ["python script", "excel vba", "data processing", "pdf extract", "german translation", "landing page",
                     "logo vector", "chatgpt prompt", "google sheets", "automation script"]
-FREELANCER_KANDIDATEN = ["power query", "n8n", "zapier", "web scraping api", "copywriting german", "proofreading german",
+FREELANCER_KANDIDATEN = ["code review", "bug fix", "debug python", "unit tests", "test cases", "api integration",
+                         "ai automation", "chatgpt integration", "claude api", "prompt engineering", "data cleaning",
+                         "power query", "n8n", "zapier", "web scraping api", "copywriting german", "proofreading german",
                          "csv cleaning", "json conversion", "wordpress fix", "javascript bug", "fastapi", "react component",
                          "chatbot", "invoice", "datev", "technical writing", "product descriptions", "market research",
                          "svg icon", "sql query", "regex", "excel dashboard", "pdf to excel", "openai api", "rag"]

@@ -159,7 +159,15 @@ def main():
     geboten = konto.gebote_abgeben(J, push)
     konto_neu = konto.abgleichen(J, push) or geboten
     if E.MODUS == "konto":
-        return nur_konto(J, konto_neu or schnellscan(J) > 0)
+        # Wenn ein voller Scan ausgefallen ist (GitHub verwirft wartende Läufe, wenn ein neuerer kommt),
+        # übernimmt der Schnelllauf ihn – so bleibt das Dashboard nie lange alt.
+        try:
+            alt_min = (jetzt - datetime.fromisoformat(J.get("stand"))).total_seconds() / 60
+        except (TypeError, ValueError):
+            alt_min = 999
+        if alt_min < 100:
+            return nur_konto(J, konto_neu or schnellscan(J) > 0)
+        print(f"Letzter voller Scan vor {alt_min:.0f} Min. – führe jetzt einen vollen Scan aus.")
 
     # 1) Scannen
     begriffe, getestet = L.suchbegriffe(J)
