@@ -225,7 +225,8 @@ function heuteTab() {
   // Abgeschickte Karten 30 Min. ausblenden – nicht abgeschickt (GitHub nur geöffnet)? Dann tauchen sie danach wieder auf.
   const frisch = 30 * 60e3, jetzt = Date.now();
   const liste = HEUTE.filter(e => !(unterwegs[e.id] && jetzt - unterwegs[e.id] < frisch) && !weg[e.id]);
-  const uebrig = Math.max(0, GM.limit - GM.genutzt);
+  // freelancer.com nennt per Schnittstelle nur das Monatskontingent, nicht den aktuellen Rest (Gebote füllen sich laufend auf).
+  const uebrig = GM.limit > 6 ? 10 : Math.max(0, GM.limit - GM.genutzt);
   const datum = new Date().toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" });
   const ewSumme = liste.reduce((s, e) => s + (e.ew_eur || 0), 0);
   const mz = monatsziel();
@@ -238,7 +239,8 @@ function heuteTab() {
       <p class="h-unter">${liste.length ? "Häkchen setzen, Preis prüfen, unten einmal auf „Gebote abgeben“. Der Bewerbungstext der KI wird automatisch mitgeschickt – aufklappen nur, wenn du etwas ändern willst." : "Neue Aufträge kommen alle 90 Minuten dazu. Du bekommst eine Push-Nachricht, sobald sich etwas tut."}</p></div>
     <div class="h-kpis">
       <div><span>Erwarteter Wert</span><b>${eur(ewSumme)}</b><small>wenn du auf alle bietest</small></div>
-      <div><span>Gebote übrig</span><b class="${uebrig ? "" : "rot"}">${uebrig}<i>/${GM.limit}</i></b><small>diesen Monat</small></div>
+      ${GM.limit > 6 ? `<div><span>Gebote diesen Monat</span><b>${GM.genutzt}<i>/${GM.limit}</i></b><small>abgegeben · Rest siehe freelancer.com</small></div>`
+        : `<div><span>Gebote übrig</span><b class="${uebrig ? "" : "rot"}">${uebrig}<i>/${GM.limit}</i></b><small>diesen Monat</small></div>`}
       <div><span>Monatsziel</span><b>${eur(mz.netto)}</b><small>von ${eur(D.annahmen.ziel_netto)} netto</small><div class="h-ziel"><i style="width:${Math.round(mz.anteil * 100)}%"></i></div></div>
     </div>
   </section>
@@ -285,7 +287,7 @@ function heuteTab() {
     const anz = $("#h-anz", host); if (!anz) return;
     anz.textContent = sel.length;
     $("#h-ew", host).textContent = eur(sel.reduce((s, k) => s + (NACH_ID[k.dataset.hid].ew_eur || 0), 0));
-    $("#h-warn", host).innerHTML = sel.length > uebrig ? ` · <span class="rot">nur ${uebrig} Gebote übrig</span>` : "";
+    $("#h-warn", host).innerHTML = GM.limit <= 6 && sel.length > uebrig ? ` · <span class="rot">nur ${uebrig} Gebote übrig</span>` : "";
     $("#h-los", host).disabled = !sel.length;
     $("#h-los", host).textContent = sel.length ? `${sel.length} ${sel.length === 1 ? "Gebot" : "Gebote"} abgeben →` : "Gebote abgeben →";
   };

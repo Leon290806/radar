@@ -81,6 +81,8 @@ def gebote_abgeben(J, push):
                                                "description": w["text"][:4000]})
         if f:
             print("Gebot-Fehler:", f)
+            if "bid" in f.lower() and ("enough" in f.lower() or "no more" in f.lower() or "limit" in f.lower()):
+                f = "Keine Gebote mehr frei – freelancer.com füllt sie nach und nach auf. Später nochmal versuchen."
             if "required skills" in f:
                 fehlt = ", ".join((e.get("tags") or [])[:5])
                 f = (f"Dir fehlt im freelancer.com-Profil einer dieser Skills: {fehlt}. Profil → Skills ergänzen "
