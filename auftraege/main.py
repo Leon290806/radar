@@ -24,7 +24,8 @@ import ki as KI  # noqa: E402
 import konto  # noqa: E402
 import seite  # noqa: E402
 
-UEBERNEHMEN = ("erst_gesehen", "ki", "ki_fehler", "ki_versuche", "repo_ok", "feedback", "betrag_echt", "ki_regel", "versuche", "benachrichtigt")
+UEBERNEHMEN = ("erst_gesehen", "ki", "ki_fehler", "ki_versuche", "repo_ok", "feedback", "betrag_echt", "ki_regel", "versuche", "benachrichtigt",
+               "blitz")
 
 
 def journal_laden():
@@ -47,12 +48,13 @@ def journal_speichern(J):
             json.dump(J, f, ensure_ascii=False, indent=1)
 
 
-def push(text, titel):
+def push(text, titel, dringend=False):
     if not E.NTFY_THEMA:
         return
     try:
         requests.post(f"https://ntfy.sh/{E.NTFY_THEMA}", data=text.encode("utf-8"), timeout=20,
-                      headers={"Title": titel.encode("utf-8"), "Click": E.DASHBOARD_URL, "Tags": "moneybag"})
+                      headers={"Title": titel.encode("utf-8"), "Click": E.DASHBOARD_URL, "Tags": "zap" if dringend else "moneybag",
+                               "Priority": "urgent" if dringend else "default"})
     except requests.RequestException:
         pass
 
@@ -72,6 +74,51 @@ def morgen_push(J):
     push(f"{len(ids)} Aufträge warten auf deine Freigabe (zusammen ca. {ew:.0f} € erwarteter Wert, {uebrig} Gebote übrig).\n{zeilen}",
          "☀️ Deine Aufträge für heute")
     J["morgen_push"] = jetzt.date().isoformat()
+
+
+def blitz_senden(J, zeit):
+    """Sondermeldung: passender freelancer.com-Auftrag, jünger als 3 Std., höchstens 5 Gebote.
+    Wer in der ersten Stunde bietet, wird zuerst gelesen und gewinnt deutlich öfter."""
+    B.heute_liste(J)  # setzt skill_fehlt für alle Einträge
+    E_ = J.get("eintraege") or {}
+    kand = sorted([e for e in E_.values() if e["art"] == "freelance" and B.top_tauglich(e) and not e.get("blitz")
+                   and not e.get("skill_fehlt") and (e.get("alter_tage") or 9) < 0.125 and (e.get("gebote") or 0) <= 5
+                   and e.get("ew_eur", 0) >= E.BLITZ_AB_EUR], key=lambda x: -x["rang"])[:2]
+    for e in kand:
+        g = e.get("gebot") or {}
+        push(f"{e['titel']}\nErst {e.get('gebote') or 0} Gebote · vor {max(1, round((e.get('alter_tage') or 0) * 24 * 60))} Min. eingestellt · "
+             f"erwarteter Wert ca. {e['ew_eur']:.0f} €" + (f" · Vorschlag {g.get('betrag_usd')} $" if g.get("betrag_usd") else "") +
+             "\nJetzt bieten bringt die beste Chance – im Radar unter „Heute“.", "⚡ Frischer Top-Auftrag", dringend=True)
+        e["blitz"] = zeit
+        e["benachrichtigt"] = e.get("benachrichtigt") or zeit
+    return len(kand)
+
+
+def schnellscan(J):
+    """Alle 15 Min.: nur die neuesten freelancer.com-Aufträge holen, bewerten, ggf. Sondermeldung. Ohne KI."""
+    zeit = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    try:
+        neu, _ = Q.freelancer(list(E.FREELANCER_START)[:8])
+    except Exception:
+        traceback.print_exc()
+        return 0
+    E_ = J.setdefault("eintraege", {})
+    gelernt = J.get("gelernt") or {}
+    for e in neu:
+        alt = E_.get(e["id"])
+        if alt:
+            for k in UEBERNEHMEN:
+                if k in alt:
+                    e[k] = alt[k]
+        else:
+            e["erst_gesehen"] = zeit
+        e["zuletzt"] = zeit
+        B.bewerte(e, gelernt)
+        e["empfehlbar"] = B.empfehlbar(e)
+        E_[e["id"]] = e
+    n = blitz_senden(J, zeit)
+    print(f"Schnellscan: {len(neu)} Aufträge geprüft, {n} Sondermeldung(en)")
+    return n
 
 
 def seite_schreiben(J):
@@ -112,7 +159,7 @@ def main():
     geboten = konto.gebote_abgeben(J, push)
     konto_neu = konto.abgleichen(J, push) or geboten
     if E.MODUS == "konto":
-        return nur_konto(J, konto_neu)
+        return nur_konto(J, konto_neu or schnellscan(J) > 0)
 
     # 1) Scannen
     begriffe, getestet = L.suchbegriffe(J)
@@ -252,16 +299,8 @@ def main():
         e["benachrichtigt"] = lauf["zeit"]
         gesendet += 1
 
-    # 7b) Blitz-Push: frischer, passender Auftrag mit kaum Konkurrenz – wer in der ersten Stunde bietet, gewinnt viel öfter
-    B.heute_liste(J)  # setzt skill_fehlt für alle Einträge
-    blitz = sorted([e for e in E_.values() if e["art"] == "freelance" and B.top_tauglich(e) and not e.get("blitz")
-                    and not e.get("skill_fehlt") and (e.get("alter_tage") or 9) < 0.125 and (e.get("gebote") or 0) <= 5
-                    and e["ew_eur"] >= E.BLITZ_AB_EUR], key=lambda x: -x["rang"])[:2]
-    for e in blitz:
-        push(f"{e['titel']}\nErst {e.get('gebote') or 0} Gebote · erwarteter Wert ca. {e['ew_eur']:.0f} € · {e['kat_name']}\n"
-             "Jetzt bieten bringt die beste Chance – im Radar unter „Heute“.", "⚡ Frischer Auftrag")
-        e["blitz"] = lauf["zeit"]
-        e["benachrichtigt"] = e.get("benachrichtigt") or lauf["zeit"]
+    # 7b) Blitz-Push: frischer, passender Auftrag mit kaum Konkurrenz
+    blitz_senden(J, lauf["zeit"])
 
     # 8) Aufräumen
     grenze = jetzt - timedelta(days=E.AUFBEWAHREN_TAGE)

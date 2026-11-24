@@ -6,7 +6,7 @@ on:
   schedule:
     - cron: "17 5,8,11,14,17,20 * * *"   # voller Scan alle 90 Minuten tagsüber (UTC) …
     - cron: "47 6,9,12,15,18,21 * * *"   # … zweite Hälfte (KI-Tageslimit bleibt gleich, Kosten steigen nicht)
-    - cron: "*/30 5-21 * * *"             # nur Konto-Abgleich: Gebote, Zuschläge, neue Kunden-Nachrichten
+    - cron: "*/15 5-21 * * *"             # Schnellscan: Konto (Gebote, Zuschläge, Nachrichten) + neueste Aufträge mit Sondermeldung
   workflow_dispatch: {}          # Knopf „Jetzt scannen“ im Dashboard
   issues:
     types: [opened]               # Rückmeldungen und „Mit KI prüfen“ sofort verarbeiten
@@ -48,7 +48,7 @@ jobs:
           AUFTRAG_KI_MAX_PRO_TAG: ${{ vars.AUFTRAG_KI_MAX_PRO_TAG || '24' }}
           AUFTRAG_PUSH_AB_EUR: ${{ vars.AUFTRAG_PUSH_AB_EUR || '40' }}
           FREELANCER_TOKEN: ${{ secrets.FREELANCER_TOKEN }}
-          AUFTRAG_MODUS: ${{ github.event.schedule == '*/30 5-21 * * *' && 'konto' || 'voll' }}
+          AUFTRAG_MODUS: ${{ github.event.schedule == '*/15 5-21 * * *' && 'konto' || 'voll' }}
           GITHUB_TOKEN: ${{ github.token }}
           DASHBOARD_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/auftraege/
         run: python auftraege/main.py

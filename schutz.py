@@ -5,6 +5,7 @@ Passwortschutz: Journal und Dashboard werden mit AES-256-GCM verschlüsselt
 Im öffentlichen Repository liegt so nur Kauderwelsch; ohne Passwort sieht niemand etwas.
 """
 import base64
+import gzip
 import json
 import os
 
@@ -34,12 +35,15 @@ def entschluesseln(text: str, passwort: str) -> bytes:
 
 def journal_laden(pfad_enc, passwort):
     with open(pfad_enc, encoding="ascii") as f:
-        return json.loads(entschluesseln(f.read().strip(), passwort).decode("utf-8"))
+        roh = entschluesseln(f.read().strip(), passwort)
+    if roh[:2] == b"\x1f\x8b":  # komprimiert gespeichert
+        roh = gzip.decompress(roh)
+    return json.loads(roh.decode("utf-8"))
 
 
 def journal_speichern(dep, pfad_enc, passwort):
     os.makedirs(os.path.dirname(pfad_enc), exist_ok=True)
-    daten = json.dumps(dep, ensure_ascii=False, default=float).encode("utf-8")
+    daten = gzip.compress(json.dumps(dep, ensure_ascii=False, default=float).encode("utf-8"), 9, mtime=0)
     tmp = pfad_enc + ".tmp"
     with open(tmp, "w", encoding="ascii") as f:
         f.write(verschluesseln(daten, passwort))
@@ -48,7 +52,7 @@ def journal_speichern(dep, pfad_enc, passwort):
 
 def dashboard_sperren(html: str, passwort: str) -> str:
     """Packt das fertige Dashboard in eine Seite mit Passwortabfrage (Entschlüsselung im Browser)."""
-    blob = verschluesseln(html.encode("utf-8"), passwort)
+    blob = verschluesseln(gzip.compress(html.encode("utf-8"), 9, mtime=0), passwort)
     return """<!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex">
 <title>Radar</title><style>
@@ -74,14 +78,19 @@ async function oeffne(pw){
   const roh=b64(B),salz=roh.slice(0,16),iv=roh.slice(16,28),ct=roh.slice(28);
   const basis=await crypto.subtle.importKey("raw",new TextEncoder().encode(pw),"PBKDF2",false,["deriveKey"]);
   const key=await crypto.subtle.deriveKey({name:"PBKDF2",salt:salz,iterations:R,hash:"SHA-256"},basis,{name:"AES-GCM",length:256},false,["decrypt"]);
-  const klar=await crypto.subtle.decrypt({name:"AES-GCM",iv},key,ct);
+  const klar=new Uint8Array(await crypto.subtle.decrypt({name:"AES-GCM",iv},key,ct));
+  if(klar[0]===0x1f&&klar[1]===0x8b){
+    if(typeof DecompressionStream==="undefined")throw new Error("alt");
+    return await new Response(new Blob([klar]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+  }
   return new TextDecoder().decode(klar);
 }
 async function los(pw,merken){
   try{const html=await oeffne(pw);
     if(merken){try{localStorage.setItem("radar_pw",pw)}catch(e){}}
     document.open();document.write(html);document.close();
-  }catch(e){document.getElementById("f").textContent="Falsches Passwort.";try{localStorage.removeItem("radar_pw")}catch(_){}}
+  }catch(e){if(e&&e.message==="alt"){document.getElementById("f").textContent="Bitte Browser aktualisieren.";return}
+    document.getElementById("f").textContent="Falsches Passwort.";try{localStorage.removeItem("radar_pw")}catch(_){}}
 }
 document.getElementById("form").addEventListener("submit",ev=>{ev.preventDefault();
   los(document.getElementById("pw").value,document.getElementById("merk").checked)});
