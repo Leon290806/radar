@@ -312,6 +312,17 @@ FERTIG_FB = ("beworben", "gewonnen", "verloren", "uninteressant", "gesperrt")
 def heute_liste(J):
     """Die Morgen-Liste: bietbare freelancer.com-Aufträge, noch nicht bedient, beste zuerst."""
     schon = set((J.get("konto") or {}).get("gebote") or {})
+    skills = {x.lower() for x in ((J.get("konto") or {}).get("skills") or [])}
+    from collections import Counter
+    tipps = Counter()
+    for e in (J.get("eintraege") or {}).values():
+        if e.get("art") != "freelance":
+            continue
+        tags = e.get("tags") or []
+        e["skill_fehlt"] = tags[:6] if (skills and tags and not any(t.lower() in skills for t in tags)) else None
+        if e["skill_fehlt"] and top_tauglich(e):
+            tipps.update(tags[:4])
+    J["skill_tipps"] = [t for t, _ in tipps.most_common(10)]
     out = [e for e in (J.get("eintraege") or {}).values()
            if e.get("art") == "freelance" and top_tauglich(e) and e.get("feedback") not in FERTIG_FB
            and e["id"] not in schon and not (e.get("ki") or {}).get("verboten")]

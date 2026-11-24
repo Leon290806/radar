@@ -202,7 +202,7 @@ function kontoKarte() {
       <div class="cs">${K.verifiziert ? "✅ verifiziert" : "⏳ Verifizierung noch nicht bestätigt"} · Abgleich ${zeit(K.abgleich)} (alle 30 Min.) ${tippI("Gebote, Zuschläge und Absagen werden automatisch übernommen – du musst „Beworben“, „Gewonnen“ und „Verloren“ nicht mehr drücken. Neue Kunden-Nachrichten kommen als Push aufs Handy.")}</div></div></div>
     ${K.fehler ? `<div class="box warn" style="margin-bottom:10px">Verbindung: ${esc(K.fehler)}</div>` : ""}
     ${g.length ? `<table class="tbl"><thead><tr><th class="l">Auftrag</th><th>Gebot</th><th>Abgegeben</th><th>Status</th></tr></thead><tbody>${g.map(x => `<tr>
-      <td class="l"><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.titel)}</a></td>
+      <td class="l"><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.titel)}</a>${x.text ? `<details class="k-text"><summary>gesendeter Text</summary><div>${esc(x.text)}</div></details>` : ""}</td>
       <td>${zahl(x.betrag)} ${esc(x.waehrung)}${x.tage ? ` · ${x.tage} T.` : ""}</td><td>${tag(x.zeit)}</td>
       <td><span class="badge ${(Z[x.zustand] || ["", "b-neutral"])[1]}">${(Z[x.zustand] || [esc(x.zustand)])[0]}</span></td></tr>`).join("")}</tbody></table>`
       : `<p class="mute">Noch keine Gebote gefunden.</p>`}</div>`;
@@ -242,19 +242,23 @@ function heuteTab() {
       <div><span>Monatsziel</span><b>${eur(mz.netto)}</b><small>von ${eur(D.annahmen.ziel_netto)} netto</small><div class="h-ziel"><i style="width:${Math.round(mz.anteil * 100)}%"></i></div></div>
     </div>
   </section>
+  ${(D.skill_tipps || []).length ? `<div class="box h-hinweis"><b>Mehr Aufträge freischalten:</b> Trag in deinem freelancer.com-Profil unter „Skills“ diese ein (kostenlos, bis zu 20) – dann kannst du auf deutlich mehr Aufträge bieten:
+    <div class="h-skills">${D.skill_tipps.map(t => `<span>${esc(t)}</span>`).join("")}</div>
+    <a href="https://www.freelancer.com/users/settings/skills" target="_blank" rel="noopener">Skills im Profil bearbeiten ↗</a></div>` : ""}
   ${!uebrig && liste.length ? `<div class="box warn h-hinweis">Deine Gebote für diesen Monat sind aufgebraucht. Mit einer Freelancer-Mitgliedschaft bekommst du mehr – danach im Repository die Variable <b>AUFTRAG_GEBOTE_MONAT</b> anpassen.</div>` : ""}
   <div class="h-liste">${liste.map((e, i) => {
-    const text = (e.ki && e.ki.bewerbung) || "", hatText = text.length >= 100;
-    const an = hatText && vorgewaehlt < Math.min(uebrig, 5); if (an) vorgewaehlt++;
+    const text = (e.ki && e.ki.bewerbung) || "", hatText = text.length >= 100, skill = e.skill_fehlt;
+    const an = hatText && !skill && vorgewaehlt < Math.min(uebrig, 5); if (an) vorgewaehlt++;
     const g = e.gebot || {}, cur = e.waehrung || "USD";
     const warum = (e.ki && e.ki.grund) || (e.gruende || [])[0] || "";
     return `<article class="hk${an ? " an" : ""}" data-hid="${esc(e.id)}">
-      <label class="hk-wahl" title="Auswählen"><input type="checkbox" ${an ? "checked" : ""} ${hatText ? "" : "disabled"}><span></span></label>
+      <label class="hk-wahl" title="Auswählen"><input type="checkbox" ${an ? "checked" : ""} ${hatText && !skill ? "" : "disabled"}><span></span></label>
       <div class="hk-haupt">
         <div class="hk-meta"><span class="hk-nr">${i + 1}</span><span>${esc(e.kat_name || "")}</span><span>${zahl(e.gebote)} Gebote</span>
           <span>${e.alter_tage < 1 ? "vor " + Math.max(1, Math.round(e.alter_tage * 24)) + " Std." : "vor " + zahl(e.alter_tage, 0) + " T."}</span></div>
         <h3><a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.titel)}</a></h3>
         ${warum ? `<p class="hk-warum">${esc(warum)}</p>` : ""}
+        ${skill ? `<div class="hk-skill">🔒 Freelancer lässt dich hier erst bieten, wenn einer dieser Skills in deinem Profil steht: <b>${skill.map(esc).join(", ")}</b></div>` : ""}
         ${hatText ? `<details class="hk-text"><summary>Bewerbung ansehen oder anpassen</summary><textarea rows="9" data-orig="${esc(text)}">${esc(text)}</textarea></details>`
           : `<div class="hk-ohne">Noch kein Bewerbungstext – darum noch nicht auswählbar. <button class="knopf" data-fb="pruefen" data-id="${esc(e.id)}">Mit KI schreiben lassen</button></div>`}
         <div class="hk-fuss"><button class="knopf" data-detail="${esc(e.id)}">Details</button><button class="knopf h-weg" data-weg="${esc(e.id)}">Nicht für mich</button></div>

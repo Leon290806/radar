@@ -6,7 +6,7 @@ import os
 import einstellungen as E
 import bewerten as B
 
-FELDER = ("id", "quelle", "art", "titel", "url", "kat", "kat_name", "machbar", "chance", "wert_eur", "ew_eur", "leon_min",
+FELDER = ("skill_fehlt", "tags", "id", "quelle", "art", "titel", "url", "kat", "kat_name", "machbar", "chance", "wert_eur", "ew_eur", "leon_min",
           "eur_pro_std", "gebote", "alter_tage", "frisch", "aussortiert", "gruende", "empfehlbar", "feedback", "betrag_echt",
           "erst_gesehen", "typ", "rang", "repo_ok", "kunde", "flags", "gebot", "versuche", "ki_regel", "repo", "frist", "schwer", "suchbegriff")
 
@@ -19,7 +19,7 @@ def _lies(*teile):
 def konto_daten(J):
     K = J.get("konto") or {}
     gebote = sorted(({"id": i, **g} for i, g in (K.get("gebote") or {}).items()), key=lambda g: g.get("zeit") or "", reverse=True)
-    return {"verbunden": bool(E.FREELANCER_TOKEN), "name": K.get("name"), "verifiziert": K.get("verifiziert"),
+    return {"verbunden": bool(E.FREELANCER_TOKEN), "name": K.get("name"), "skills": K.get("skills") or [], "verifiziert": K.get("verifiziert"),
             "abgleich": K.get("abgleich"), "fehler": K.get("fehler"), "nachrichten_fehler": K.get("nachrichten_fehler"),
             "gebote": gebote[:30]}
 
@@ -59,6 +59,7 @@ def daten(J):
         "feedback": sorted(letzte.values(), key=lambda f: f.get("zeit") or "", reverse=True)[:100],
         "konto": konto_daten(J),
         "heute": J.get("heute") or [],
+        "skill_tipps": J.get("skill_tipps") or [],
         "gebote_monat": {"limit": (J.get("konto") or {}).get("gebote_limit") or E.FL_GEBOTE_MONAT, "genutzt": B.gebote_im_monat(J)},
         "ki": {"aktiv": bool(E.ANTHROPIC_KEY), "modell": E.KI_MODELL, "heute": J.get("ki_tag", {}).get("n", 0),
                "max": E.KI_MAX_PRO_TAG, "hart": E.KI_HART_PRO_TAG},

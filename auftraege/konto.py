@@ -81,7 +81,11 @@ def gebote_abgeben(J, push):
                                                "description": w["text"][:4000]})
         if f:
             print("Gebot-Fehler:", f)
-            push(f"{titel}\n{f[:200]}", "Gebot nicht abgegeben")
+            if "required skills" in f:
+                fehlt = ", ".join((e.get("tags") or [])[:5])
+                f = (f"Dir fehlt im freelancer.com-Profil einer dieser Skills: {fehlt}. Profil → Skills ergänzen "
+                     "(kostenlos bis zu 20), dann nochmal bieten – das Gebot wurde NICHT verbraucht.")
+            push(f"{titel}\n{f[:300]}", "Gebot nicht abgegeben")
             continue
         erledigt.append(pid)
         J.setdefault("feedback", []).append({"zeit": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -137,7 +141,7 @@ def abgleichen(J, push):
     K = J.setdefault("konto", {})
     vorher = repr(sorted((K.get("gebote") or {}).items())) + str(K.get("verifiziert")) + str(K.get("fehler"))
 
-    ich, f = _get("/users/0.1/self/", {"status": "true", "reputation": "true"})
+    ich, f = _get("/users/0.1/self/", {"status": "true", "reputation": "true", "jobs": "true"})
     if f:
         print("Konto:", f)
         if f.startswith("HTTP 401") and not K.get("fehler_gemeldet"):
@@ -150,6 +154,7 @@ def abgleichen(J, push):
     K.pop("fehler_gemeldet", None)
     status = ich.get("status") or {}
     K["name"] = ich.get("username")
+    K["skills"] = [j.get("name") for j in (ich.get("jobs") or []) if isinstance(j, dict) and j.get("name")]
     K["id"] = ich.get("id")
     K["status"] = {k: bool(v) for k, v in status.items() if isinstance(v, bool)}
     print("Konto-Status:", {k: v for k, v in status.items() if isinstance(v, bool)})
@@ -209,6 +214,7 @@ def abgleichen(J, push):
                          "url": (E_.get(i) or {}).get("url") or f"https://www.freelancer.com/projects/{p.get('seo_url') or pid}",
                          "betrag": b.get("amount"), "waehrung": cur, "betrag_eur": betrag_eur, "tage": b.get("period"),
                          "zeit": _ts(b.get("time_submitted")), "zustand": zustand, "award": award or None,
+                         "text": (b.get("description") or "")[:3000],
                          "projekt_status": pstatus or None}
             aktion = {"offen": "beworben", "gewonnen": "gewonnen", "verloren": "verloren"}.get(zustand)
             if aktion and letzter.get(i) != aktion and not (aktion == "beworben" and letzter.get(i) in ("gewonnen", "verloren")):
