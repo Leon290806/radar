@@ -212,6 +212,7 @@ def abgleichen(J, push):
             else:
                 zustand = "offen"
             alt = gebote.get(i, {})
+            neu_erkannt = not alt and bool(K.get("gebote_bekannt")) and pid not in (K.get("gebote_abgegeben") or [])
             gebote[i] = {"titel": (E_.get(i) or {}).get("titel") or p.get("title") or pid,
                          "url": (E_.get(i) or {}).get("url") or f"https://www.freelancer.com/projects/{p.get('seo_url') or pid}",
                          "betrag": b.get("amount"), "waehrung": cur, "betrag_eur": betrag_eur, "tage": b.get("period"),
@@ -223,12 +224,16 @@ def abgleichen(J, push):
                 J.setdefault("feedback", []).append({"zeit": K["abgleich"], "id": i, "aktion": aktion,
                                                      "betrag": betrag_eur if aktion != "verloren" else None, "von": "konto"})
                 letzter[i] = aktion
+            if neu_erkannt and zustand == "offen":
+                push(f"{gebote[i]['titel']}\n{b.get('amount')} {cur} · {b.get('period') or '?'} Tage – direkt auf freelancer.com abgegeben. "
+                     "Das Radar verfolgt es jetzt und meldet sich bei Zuschlag oder Nachricht.", "📝 Gebot erkannt")
             if zustand == "gewonnen":
                 gebote[i]["kickoff"] = alt.get("kickoff") or kickoff_text(p, b)
             if zustand == "gewonnen" and alt.get("zustand") != "gewonnen":
                 push(f"{gebote[i]['titel']} – {b.get('amount')} {cur}\n\n1) Diese Nachricht an den Kunden schicken:\n"
                      f"{gebote[i]['kickoff']}\n\n2) Erst anfangen, wenn der Meilenstein bezahlt ist – dann Aufgabe und Dateien an Claude.",
                      "🎉 Zuschlag erhalten!")
+        K["gebote_bekannt"] = True
         print(f"Konto {K.get('name')}: {len(gebote)} Gebote, verifiziert={verifiziert}, Skills im Profil: {len(K.get('skills') or [])}")
         for i, g in sorted(gebote.items(), key=lambda x: x[1].get("zeit") or "")[-3:]:
             print(f"  Gebot {g.get('zeit')} | {g.get('titel', '')[:45]} | {g.get('betrag')} {g.get('waehrung')} | Text {len(g.get('text') or '')} Zeichen: "
