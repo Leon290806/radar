@@ -20,6 +20,7 @@ GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 REPO = os.environ.get("GITHUB_REPOSITORY", "Leon290806/radar")
 NTFY_THEMA = os.environ.get("NTFY_THEMA", "")
 PUSH_AB_EUR = float(os.environ.get("AUFTRAG_PUSH_AB_EUR") or "40")
+BLITZ_AB_EUR = float(os.environ.get("AUFTRAG_BLITZ_AB_EUR") or "12")  # Blitz-Push: < 3 Std. alt, ≤ 5 Gebote
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "https://leon290806.github.io/radar/auftraege/")
 KAGGLE_USER = os.environ.get("KAGGLE_USERNAME", "")
 KAGGLE_KEY = os.environ.get("KAGGLE_KEY", "")

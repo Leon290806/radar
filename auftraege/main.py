@@ -252,6 +252,16 @@ def main():
         e["benachrichtigt"] = lauf["zeit"]
         gesendet += 1
 
+    # 7b) Blitz-Push: frischer, passender Auftrag mit kaum Konkurrenz – wer in der ersten Stunde bietet, gewinnt viel öfter
+    blitz = sorted([e for e in E_.values() if e["art"] == "freelance" and B.top_tauglich(e) and not e.get("blitz")
+                    and not e.get("skill_fehlt") and (e.get("alter_tage") or 9) < 0.125 and (e.get("gebote") or 0) <= 5
+                    and e["ew_eur"] >= E.BLITZ_AB_EUR], key=lambda x: -x["rang"])[:2]
+    for e in blitz:
+        push(f"{e['titel']}\nErst {e.get('gebote') or 0} Gebote · erwarteter Wert ca. {e['ew_eur']:.0f} € · {e['kat_name']}\n"
+             "Jetzt bieten bringt die beste Chance – im Radar unter „Heute“.", "⚡ Frischer Auftrag")
+        e["blitz"] = lauf["zeit"]
+        e["benachrichtigt"] = e.get("benachrichtigt") or lauf["zeit"]
+
     # 8) Aufräumen
     grenze = jetzt - timedelta(days=E.AUFBEWAHREN_TAGE)
     for i in list(E_):
