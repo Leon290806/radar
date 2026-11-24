@@ -253,6 +253,7 @@ def main():
         gesendet += 1
 
     # 7b) Blitz-Push: frischer, passender Auftrag mit kaum Konkurrenz – wer in der ersten Stunde bietet, gewinnt viel öfter
+    B.heute_liste(J)  # setzt skill_fehlt für alle Einträge
     blitz = sorted([e for e in E_.values() if e["art"] == "freelance" and B.top_tauglich(e) and not e.get("blitz")
                     and not e.get("skill_fehlt") and (e.get("alter_tage") or 9) < 0.125 and (e.get("gebote") or 0) <= 5
                     and e["ew_eur"] >= E.BLITZ_AB_EUR], key=lambda x: -x["rang"])[:2]
