@@ -283,7 +283,7 @@ def main():
     # Diagnose: offene freelancer.com-Aufträge mit wenig Konkurrenz, die NICHT empfohlen werden – und warum
     wenig = [e for e in E_.values() if e["art"] == "freelance" and B.noch_offen(e) and (e.get("gebote") or 0) <= 12
              and not e.get("empfehlbar") and not e.get("feedback")]
-    print(f"Wenig-Gebote-aber-aussortiert: {len(wenig)}")
+    print(f"Wenig-Gebote-aber-aussortiert: {len(wenig)}; Skill-Tipps: {J.get('skill_tipps')}")
     gruende_z = Counter()
     for e in wenig:
         g = "; ".join(e.get("gruende") or [])[:150] or f"machbar {e.get('machbar', 0):.2f}, wert {e.get('wert_eur', 0):.0f}, frisch {e.get('frisch')}"

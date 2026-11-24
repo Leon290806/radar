@@ -227,7 +227,10 @@ def abgleichen(J, push):
                 push(f"{gebote[i]['titel']} – {b.get('amount')} {cur}\n\n1) Diese Nachricht an den Kunden schicken:\n"
                      f"{gebote[i]['kickoff']}\n\n2) Erst anfangen, wenn der Meilenstein bezahlt ist – dann Aufgabe und Dateien an Claude.",
                      "🎉 Zuschlag erhalten!")
-        print(f"Konto {K.get('name')}: {len(gebote)} Gebote, verifiziert={verifiziert}")
+        print(f"Konto {K.get('name')}: {len(gebote)} Gebote, verifiziert={verifiziert}, Skills im Profil: {len(K.get('skills') or [])}")
+        for i, g in sorted(gebote.items(), key=lambda x: x[1].get("zeit") or "")[-3:]:
+            print(f"  Gebot {g.get('zeit')} | {g.get('titel', '')[:45]} | {g.get('betrag')} {g.get('waehrung')} | Text {len(g.get('text') or '')} Zeichen: "
+                  f"{(g.get('text') or '')[:90]!r}")
 
     # ---- neue Nachrichten von Kunden
     res, f = _get("/messages/0.1/threads/", {"last_message": "true", "user_details": "true", "limit": 20})
