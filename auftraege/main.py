@@ -82,7 +82,7 @@ def blitz_senden(J, zeit):
     B.heute_liste(J)  # setzt skill_fehlt für alle Einträge
     E_ = J.get("eintraege") or {}
     kand = sorted([e for e in E_.values() if e["art"] == "freelance" and B.top_tauglich(e) and not e.get("blitz")
-                   and not e.get("skill_fehlt") and (e.get("alter_tage") or 9) < 0.125 and (e.get("gebote") or 0) <= 5
+                   and not e.get("skill_fehlt") and (e["alter_tage"] if e.get("alter_tage") is not None else 9) < 0.125 and (e.get("gebote") or 0) <= 5
                    and e.get("ew_eur", 0) >= E.BLITZ_AB_EUR], key=lambda x: -x["rang"])[:2]
     for e in kand:
         g = e.get("gebot") or {}

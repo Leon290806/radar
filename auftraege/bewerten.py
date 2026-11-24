@@ -124,6 +124,9 @@ def bewerte(e, gelernt):
     kat = kategorie(e)
     machbar = E.KATEGORIEN.get(kat, {}).get("machbar", 0.45)
     schwer = _treffer(_SCHWER, text)
+    # „Data Entry“/„Typing“ hängen Kunden oft nur als Tag an Excel-Aufträge – zählt nur, wenn es im Text steht
+    roh = " ".join([e.get("titel", ""), e.get("text", "")]).lower()
+    schwer = [w for w in schwer if w not in ("data entry", "typing") or w in roh]
     if schwer:
         machbar *= 0.45
     if e["art"] == "wettbewerb":
