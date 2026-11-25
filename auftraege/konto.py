@@ -253,7 +253,7 @@ def abgleichen(J, push):
         for t in res.get("threads") or []:
             tt = t.get("thread") or {}
             msgs = t.get("messages") if isinstance(t.get("messages"), list) else []
-            m = t.get("message") or t.get("last_message") or (msgs[-1] if msgs else {}) or {}
+            m = t.get("message") or tt.get("message") or t.get("last_message") or (msgs[-1] if msgs else {}) or {}
             zeit = (m.get("time_created") or tt.get("time_updated") or tt.get("time_created") or t.get("time_updated") or 0)
             von = m.get("from_user")
             ungelesen = (t.get("message_unread_count") or 0) > 0 or t.get("is_read") is False
@@ -280,8 +280,8 @@ def abgleichen(J, push):
                 pass
         thr = res.get("threads") or []
         print(f"Nachrichten: {len(thr)} Threads, seit {seit}, neueste {neu_max}, neu {len(neue)}",
-              (sorted((thr[0].get('thread') or {}).keys())[:16] if thr else ""),
-              (type(thr[0].get('messages')).__name__ if thr else ""), (thr[0].get('attachments') or [])[:1] if thr else "")
+              [((t.get('thread') or {}).get('message') or {}).get('time_created') for t in thr][:3],
+              [t.get('message_unread_count') for t in thr][:3])
         K["nachricht_seit"] = neu_max or int(datetime.now(timezone.utc).timestamp())
         K["ungelesen"] = len(neue)
 
