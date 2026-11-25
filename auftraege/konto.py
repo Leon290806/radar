@@ -268,6 +268,9 @@ def abgleichen(J, push):
                                        "Priority": "high"}) if E.NTFY_THEMA else None
             except requests.RequestException:
                 pass
+        thr = res.get("threads") or []
+        print(f"Nachrichten: {len(thr)} Threads, seit {seit}, neueste {neu_max}, neu {len(neue)}",
+              (sorted(thr[0].keys())[:14] if thr else ""), (sorted((thr[0].get('message') or {}).keys())[:12] if thr else ""))
         K["nachricht_seit"] = neu_max or int(datetime.now(timezone.utc).timestamp())
         K["ungelesen"] = len(neue)
 
