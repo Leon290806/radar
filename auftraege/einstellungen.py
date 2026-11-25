@@ -153,7 +153,9 @@ VERBOTEN = ["visa", "appointment bot", "ticket bot", "sneaker", "captcha", "fake
             "booth", "sales representative", "brand ambassador",
             # Stücklohn bei Dateneingabe (z. B. 10 Rupien pro Seite) = Hungerlohn
             "completed page", "per completed", "rs 10", "rs. 10", "inr 10", "per entry", "per record", "per form",
-            "paying rs", "per 1000 words", "per thousand words"]
+            "paying rs", "per 1000 words", "per thousand words",
+            # Wikipedia-Artikel gegen Bezahlung: verstößt ohne Offenlegung gegen Wikipedias Regeln, Artikel werden gelöscht
+            "wikipedia"]
 # Lockangebote: Schreibaufträge mit "Beginner" im Titel (heute mehrfach von frisch angelegten Konten mit überhöhtem Budget)
 LOCK_TITEL = ["beginner"]
 # Marken, deren Namen Phishing-Links gern im Pfad tragen (echte Domain -> erlaubte Endungen)
