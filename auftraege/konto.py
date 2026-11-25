@@ -260,7 +260,7 @@ def abgleichen(J, push):
             if not zeit or (von is not None and von == K["id"]):
                 continue
             neu_max = max(neu_max, zeit)
-            if seit and zeit > seit and ungelesen:
+            if seit and zeit > seit and t.get("is_read") is not True:
                 u = nutzer.get(str(von)) or {}
                 name = u.get("display_name") or u.get("username") or "Kunde"
                 anh = [a.get("filename") or a.get("name") or "" for a in (t.get("attachments") or []) if isinstance(a, dict)]
