@@ -251,15 +251,25 @@ def abgleichen(J, push):
         neu_max = seit
         neue = []
         for t in res.get("threads") or []:
-            m = t.get("message") or t.get("last_message") or {}
-            zeit = m.get("time_created") or t.get("time_updated") or 0
+            tt = t.get("thread") or {}
+            msgs = t.get("messages") if isinstance(t.get("messages"), list) else []
+            m = t.get("message") or t.get("last_message") or (msgs[-1] if msgs else {}) or {}
+            zeit = (m.get("time_created") or tt.get("time_updated") or tt.get("time_created") or t.get("time_updated") or 0)
             von = m.get("from_user")
-            if not zeit or von == K["id"]:
+            ungelesen = (t.get("message_unread_count") or 0) > 0 or t.get("is_read") is False
+            if not zeit or (von is not None and von == K["id"]):
                 continue
             neu_max = max(neu_max, zeit)
-            if seit and zeit > seit:
+            if seit and zeit > seit and ungelesen:
                 u = nutzer.get(str(von)) or {}
-                neue.append(f"{u.get('display_name') or u.get('username') or 'Kunde'}: {(m.get('message') or '')[:140]}")
+                name = u.get("display_name") or u.get("username") or "Kunde"
+                anh = [a.get("filename") or a.get("name") or "" for a in (t.get("attachments") or []) if isinstance(a, dict)]
+                warn = [x for x in anh if re.search(r"\.(zip|rar|7z|exe|scr|bat|cmd|msi|js|vbs|iso|apk|dmg)$", x.lower())]
+                text = (m.get("message") or "").strip()[:140] or "(neue Nachricht)"
+                zeile = f"{name}: {text}"
+                if warn:
+                    zeile += f"\n⚠️ Anhang {warn[0]} – NICHT öffnen (typisch für Schadsoftware). Um Text/PDF bitten."
+                neue.append(zeile)
         if seit and neue:
             try:
                 requests.post(f"https://ntfy.sh/{E.NTFY_THEMA}", data="\n\n".join(neue[:3]).encode("utf-8"), timeout=20,
@@ -270,7 +280,8 @@ def abgleichen(J, push):
                 pass
         thr = res.get("threads") or []
         print(f"Nachrichten: {len(thr)} Threads, seit {seit}, neueste {neu_max}, neu {len(neue)}",
-              (sorted(thr[0].keys())[:14] if thr else ""), (sorted((thr[0].get('message') or {}).keys())[:12] if thr else ""))
+              (sorted((thr[0].get('thread') or {}).keys())[:16] if thr else ""),
+              (type(thr[0].get('messages')).__name__ if thr else ""), (thr[0].get('attachments') or [])[:1] if thr else "")
         K["nachricht_seit"] = neu_max or int(datetime.now(timezone.utc).timestamp())
         K["ungelesen"] = len(neue)
 
