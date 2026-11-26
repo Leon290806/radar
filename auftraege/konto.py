@@ -269,6 +269,10 @@ def abgleichen(J, push):
                 zeile = f"{name}: {text}"
                 if warn:
                     zeile += f"\n⚠️ Anhang {warn[0]} – NICHT öffnen (typisch für Schadsoftware). Um Text/PDF bitten."
+                if re.search(r"telegram|whatsapp|signal|wechat|skype|t\.me/|wa\.me/|gmail\.com|discord", text.lower()):
+                    zeile += "\n⚠️ Will dich von Freelancer weglocken – typische Betrugsmasche. Nicht darauf eingehen, melden."
+                elif anh and not text.strip("() ") or re.search(r"accepted your (proposal|bid)|you('ve| have) been (hired|selected)", text.lower()):
+                    zeile += "\nℹ️ Echte Zuschläge kommen nur als offizielle „Awarded“-Benachrichtigung mit „Accept Project“."
                 neue.append(zeile)
         if seit and neue:
             try:
