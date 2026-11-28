@@ -1,0 +1,73 @@
+name: Bitcoin-Radar
+
+# Tägliche Langfrist-Bewertung von Bitcoin (Power Law, On-Chain, Zyklus, Stimmung) mit gelernter Gesamtnote.
+# Reine Analyse – es werden keine Orders gesendet.
+on:
+  schedule:
+    - cron: "23 6 * * *"          # täglich ~7:23 Uhr Berlin (CoinMetrics-Tageswerte sind dann da)
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: bitcoin
+  cancel-in-progress: false
+
+jobs:
+  analyse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      geaendert: ${{ steps.speichern.outputs.geaendert }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "requests>=2.31" "cryptography>=42" "pandas>=2.1" "numpy>=1.26"
+      - name: Bitcoin bewerten
+        env:
+          RADAR_PASSWORT: ${{ secrets.RADAR_PASSWORT }}
+          NTFY_THEMA: ${{ secrets.NTFY_THEMA }}
+          DASHBOARD_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/bitcoin/
+        run: python bitcoin/main.py
+      - name: Ergebnis speichern
+        id: speichern
+        run: |
+          git config user.name "radar-bot"
+          git config user.email "radar-bot@users.noreply.github.com"
+          git add speicher/bitcoin.enc docs/bitcoin/index.html
+          git diff --cached --quiet && exit 0
+          git commit -m "Bitcoin-Radar $(date -u +'%F %H:%M')"
+          for i in 1 2 3; do
+            git pull --rebase -X theirs origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && echo "geaendert=true" >> "$GITHUB_OUTPUT" && exit 0
+            sleep 15
+          done
+          exit 1
+
+  deploy:
+    needs: analyse
+    if: github.ref == 'refs/heads/main' && needs.analyse.outputs.geaendert == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy1.outputs.page_url || steps.deploy2.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - id: deploy1
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+      - if: steps.deploy1.outcome == 'failure'
+        run: sleep 45
+      - id: deploy2
+        if: steps.deploy1.outcome == 'failure'
+        uses: actions/deploy-pages@v4

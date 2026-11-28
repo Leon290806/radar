@@ -1,0 +1,40 @@
+/* Ergänzungen für den Bitcoin-Radar (Basis: app.css) */
+:root{--zsb:#0a8a0a;--zak:#1baf7a;--zha:#b8a24a;--zre:#eb6834;--zss:#cc3434}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--zsb:#3bc13b;--zak:#26c48c;--zha:#c9b45a;--zre:#f07a48;--zss:#ea6262}}
+:root[data-theme="dark"]{--zsb:#3bc13b;--zak:#26c48c;--zha:#c9b45a;--zre:#f07a48;--zss:#ea6262}
+.ztag{display:inline-block;font-size:11px;font-weight:750;letter-spacing:.04em;text-transform:uppercase;padding:2px 8px;border-radius:999px;
+  background:color-mix(in srgb,var(--zf) 16%,transparent);color:var(--zf);white-space:nowrap}
+.b-held{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:28px;align-items:center;padding:26px 28px;border-radius:18px;margin-bottom:18px;
+  background:radial-gradient(120% 140% at 0% 0%,color-mix(in srgb,var(--zf) 18%,var(--card)) 0%,var(--card) 62%);border:1px solid var(--line)}
+@media (max-width:980px){.b-held{grid-template-columns:1fr;padding:20px}}
+.b-label{font-size:13px;font-weight:650;color:var(--ink3)}
+.b-zone{font-size:clamp(34px,5vw,54px);font-weight:800;letter-spacing:-.035em;line-height:1.05;color:var(--zf);margin:4px 0 10px}
+.b-satz{margin:0 0 18px;color:var(--ink2);font-size:15px;max-width:64ch}
+.b-kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.b-kpis>div{background:var(--card);border:1px solid var(--line2);border-radius:14px;padding:12px 14px;display:grid;gap:2px}
+.b-kpis span{font-size:12px;color:var(--ink3);font-weight:600}.b-kpis b{font-size:22px;letter-spacing:-.02em;font-weight:760;white-space:nowrap}
+.b-kpis small{font-size:11.5px;color:var(--ink3)}
+.skala{position:relative;display:flex;gap:3px;height:30px;margin-top:30px}
+.skala>div{background:color-mix(in srgb,var(--zf) 22%,transparent);border-radius:6px;display:grid;place-items:center;font-size:10.5px;font-weight:700;
+  color:color-mix(in srgb,var(--zf) 80%,var(--ink));text-transform:uppercase;letter-spacing:.03em;overflow:hidden;white-space:nowrap}
+.skala>div.an{background:var(--zf);color:#fff}
+.skala .marker{position:absolute;top:-8px;bottom:-8px;width:3px;background:var(--ink);border-radius:2px;transform:translateX(-50%)}
+.skala .marker b{position:absolute;top:-20px;left:50%;transform:translateX(-50%);font-size:12px;font-style:normal;font-weight:800}
+.skala-a{display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink3);margin-top:6px}
+@media (max-width:600px){.skala>div span{display:none}}
+.treiber{list-style:none;margin:0;padding:0}.treiber li{padding:9px 0;border-top:1px solid var(--line2)}.treiber li:first-child{border-top:0}
+.sig{font-size:10.5px;font-weight:750;text-transform:uppercase;letter-spacing:.04em;padding:2px 7px;border-radius:999px;margin-left:6px}
+.sig.g{background:var(--goodbg);color:var(--good)}.sig.t{background:var(--badbg);color:var(--bad)}.sig.n{background:var(--chip);color:var(--ink2)}
+.score-vor{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
+.score-vor>div{background:var(--card2);border:1px solid var(--line2);border-radius:10px;padding:8px 10px;display:grid;gap:3px}
+.score-vor span{font-size:11.5px;color:var(--ink3)}.score-vor b{font-size:18px}
+@media (max-width:600px){.score-vor{grid-template-columns:repeat(2,1fr)}}
+.pbar{display:inline-block;position:relative;width:90px;height:8px;border-radius:4px;vertical-align:middle;margin-right:8px;
+  background:linear-gradient(90deg,var(--zsb),var(--zak),var(--zha),var(--zre),var(--zss));opacity:.85}
+.pbar i{position:absolute;top:-3px;width:3px;height:14px;background:var(--ink);border-radius:2px;transform:translateX(-50%)}
+.vergl{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.vergl>div{border:1px solid var(--line2);border-radius:12px;padding:12px 14px;display:grid;gap:2px;background:var(--card2)}
+.vergl>div.besser{border-color:color-mix(in srgb,var(--good) 45%,var(--line2))}
+.vergl span{font-size:12px;color:var(--ink3);font-weight:600}.vergl b{font-size:22px;letter-spacing:-.02em}.vergl small{font-size:11.5px;color:var(--ink3)}
+.tbl.gew td{text-align:center;font-size:12.5px;min-width:42px}
+.warnliste li::before{border-color:var(--warn)}

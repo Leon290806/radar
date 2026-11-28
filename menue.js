@@ -4,6 +4,7 @@ window.radarMenue = function (aktiv, titel) {
   var L = [
     ["aktien", "Aktien-Radar", "Strategie, Portfolio, Insider", vor || "./"],
     ["auftraege", "Auftrags-Radar", "Aufträge finden und bieten", vor + "auftraege/"],
+    ["bitcoin", "Bitcoin-Radar", "Langfrist-Bewertung: Power Law, On-Chain, Zyklus", vor + "bitcoin/"],
     ["smart", "Smart-Money-Radar", "Top-Trader beobachten (Papier-Test)", vor + "smart/"]
   ];
   return '<details class="wechsler"><summary title="Radar wechseln"><h1>' + titel + '</h1>' +
