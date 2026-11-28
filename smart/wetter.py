@@ -102,8 +102,12 @@ def stationen(icaos, cache):
 def beobachtet(icaos):
     """Gemessene Temperaturen der letzten 7 Tage je Station: [(obsTime UTC, °C)]."""
     out = {}
-    for k in range(0, len(icaos), 40):
-        r = _S.get(AWC + "/metar", params={"ids": ",".join(icaos[k:k + 40]), "format": "json", "hours": 168}, timeout=60)
+    for icao in icaos:   # einzeln abfragen: Sammelabfragen werden von der API gekürzt
+        try:
+            r = _S.get(AWC + "/metar", params={"ids": icao, "format": "json", "hours": 168}, timeout=60)
+        except requests.RequestException:
+            continue
+        time.sleep(0.15)
         if not r.ok:
             continue
         for x in r.json():
