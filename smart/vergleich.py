@@ -148,6 +148,11 @@ def wirtschaft(V, jetzt):
             pm_events += _S.get(GAMMA + "/events", params={"tag_slug": tag, "closed": "false", "limit": 100}, timeout=40).json()
         except (requests.RequestException, ValueError):
             pass
+    if not V.get("bip_fix"):
+        # BIP-Signale vom 28.11. beruhten auf falsch gerechneten Spannen -> verwerfen
+        for k in [k for k, t in V.get("offen", {}).items() if "gdp" in t.get("slug", "")]:
+            V["offen"].pop(k)
+        V["bip_fix"] = 1
     gesehen = set()
     for name, muster, serie in WIRTSCHAFT:
         try:
@@ -178,7 +183,15 @@ def wirtschaft(V, jetzt):
                 sp = pm_spanne(mk.get("groupItemTitle"))
                 if not sp:
                     continue
-                pk = _p_ueber(ka["schwellen"], round(sp[0] - 0.1, 2)) - _p_ueber(ka["schwellen"], sp[1])
+                if serie == "KXGDP":
+                    # Spannen wie "2.0% to 2.5%": durchgehende Intervalle, Summe bleibt 100 %
+                    t = (mk.get("groupItemTitle") or "").replace(" ", "")
+                    lo, hi = sp
+                    if t.startswith("<"):
+                        hi = round(hi + 0.1, 2)
+                    pk = _p_ueber(ka["schwellen"], lo if lo > -1e8 else -1e9) - _p_ueber(ka["schwellen"], hi)
+                else:
+                    pk = _p_ueber(ka["schwellen"], round(sp[0] - 0.1, 2)) - _p_ueber(ka["schwellen"], sp[1])
                 pk = max(0.0, min(1.0, pk))
                 bid, ask, liq = _f(mk.get("bestBid")), _f(mk.get("bestAsk")), _f(mk.get("liquidityNum")) or 0
                 sig = None
