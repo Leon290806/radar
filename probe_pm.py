@@ -1,17 +1,14 @@
-import json, requests, re
+import json, requests
 S=requests.Session(); S.headers["User-Agent"]="Mozilla/5.0 (privat, Papier-Test)"
 G="https://gamma-api.polymarket.com"
-for params in [{"tag_slug":"weather","closed":"false","limit":5},{"tag_slug":"temperature","closed":"false","limit":5}]:
-    r=S.get(G+"/events",params=params,timeout=40); print("\n### events",params,r.status_code,len(r.content))
-    try:
-        ev=r.json(); print(len(ev))
-        for e in ev[:3]:
-            print("-", e.get("title"), e.get("slug"), e.get("endDate"), "markets:", len(e.get("markets",[])))
-        if ev:
-            e=ev[0]; print("DESC:", (e.get("description") or "")[:900])
-            for m in e.get("markets",[])[:3]: print("  m", m.get("question"), m.get("groupItemTitle"), m.get("outcomePrices"), m.get("bestAsk"), m.get("bestBid"), m.get("lastTradePrice"), m.get("clobTokenIds","")[:60], m.get("liquidity"), m.get("volume24hr"))
-    except Exception as ex: print(ex, r.text[:300])
-r=S.get(G+"/public-search",params={"q":"highest temperature tokyo","limit_per_type":3},timeout=40); print("\n### search", r.status_code, r.text[:600])
-o=S.get("https://ensemble-api.open-meteo.com/v1/ensemble",params={"latitude":35.55,"longitude":139.78,"daily":"temperature_2m_max","models":"ecmwf_ifs025","forecast_days":3,"timezone":"Asia/Tokyo"},timeout=40)
-print("\n### openmeteo ens", o.status_code, o.text[:700])
-k=S.get("https://api.elections.kalshi.com/trade-api/v2/markets",params={"limit":3,"status":"open","series_ticker":"KXFED"},timeout=40); print("\n### kalshi", k.status_code, k.text[:600])
+ev=S.get(G+"/events",params={"slug":"highest-temperature-in-tokyo-on-november-29-2026"},timeout=40).json()
+print("slug-abfrage", len(ev)); e=ev[0]; print("tags", [t.get("slug") for t in e.get("tags",[])])
+print("DESC", e["description"][:1200])
+for m in e["markets"]: print(" ", repr(m.get("groupItemTitle")), m.get("outcomePrices"), "ask", m.get("bestAsk"), "bid", m.get("bestBid"), "liq", m.get("liquidityNum"), "closed", m.get("closed"), m.get("endDate"))
+for tag in [t.get("slug") for t in e.get("tags",[])]:
+    r=S.get(G+"/events",params={"tag_slug":tag,"closed":"false","limit":500},timeout=60).json()
+    print("tag", tag, len(r), [x["slug"] for x in r[:4]])
+st=S.get("https://aviationweather.gov/api/data/stationinfo",params={"ids":"RJTT,KLGA,EGLC","format":"json"},timeout=40); print("station", st.status_code, st.text[:500])
+mt=S.get("https://aviationweather.gov/api/data/metar",params={"ids":"RJTT","format":"json","hours":24},timeout=40); print("metar", mt.status_code, len(mt.content), mt.text[:400])
+ev2=S.get(G+"/events",params={"slug":"highest-temperature-in-nyc-on-november-29-2026"},timeout=40).json()
+if ev2: print("NYC", ev2[0]["description"][:400], [m.get("groupItemTitle") for m in ev2[0]["markets"]])
