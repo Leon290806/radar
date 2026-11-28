@@ -22,8 +22,8 @@ AUSWAHL_ALLE_STD = 24
 MIN_KONTO_USD = 50_000          # kleinere Konten sind oft Zufall oder Hebel-Zocker
 MIN_AKTIVITAET = 0.3            # Monatsumsatz mindestens 30 % des Kontos (sonst inaktiv)
 MAX_UMSCHLAG_MONAT = 60         # Monatsumsatz > 60× Konto = Hochfrequenz/Market-Maker -> nicht kopierbar
-KANDIDATEN_PNL = 50             # Vorauswahl: beste nach Gesamtgewinn …
-KANDIDATEN_ROI = 30             # … plus beste nach Rendite (ab 200 Tsd. $ Konto)
+KANDIDATEN_PNL = 80             # Vorauswahl: beste nach Gesamtgewinn …
+KANDIDATEN_ROI = 40             # … plus beste nach Rendite (ab 200 Tsd. $ Konto)
 MIN_TAGE_HISTORIE = 90
 MIN_SCHLIESSUNGEN_30T = 8       # genug abgeschlossene Trades im letzten Monat
 MIN_HALTEDAUER_STD = 1.0        # kürzer = Scalping, Kopieren kommt zu spät
