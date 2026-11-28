@@ -167,6 +167,11 @@ def auswaehlen(protokoll):
         k["gruende"] = pruefen(k)
         k["note_roh"] = bewerten(k) if not k["gruende"] else 0
         geprueft.append(k)
+    from collections import Counter
+    print("Ablehnungsgründe:", dict(Counter(g.split(" ")[0] if g.startswith(("Historie", "Rückgang")) else g for k in geprueft for g in k["gruende"])))
+    for k in geprueft[:25]:
+        print(f"  {k['adresse'][:8]} tage={k.get('tage')} mon={k.get('monate')}/{k.get('monate_pos')} dd={k.get('drawdown')} "
+              f"schl={k.get('schliessungen')} fills={k.get('fills')} halt={k.get('haltedauer_std')} top={k.get('top_anteil')} -> {k['gruende']}")
     gut = sorted((k for k in geprueft if not k["gruende"]), key=lambda k: -k["note_roh"])
     top = max((k["note_roh"] for k in gut), default=1) or 1
     for k in geprueft:
