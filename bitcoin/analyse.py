@@ -133,7 +133,7 @@ def lernen(df, P):
             if m.sum() < 365:
                 w[k] = 0.0
                 continue
-            c = P.loc[m, k].corr(df.loc[m, "fwd"], method="spearman")
+            c = P.loc[m, k].rank().corr(df.loc[m, "fwd"].rank())  # Rangkorrelation (Spearman) ohne scipy
             w[k] = round(max(0.0, -c), 4) if pd.notna(c) else 0.0
         # Robustheit: kein Indikator bekommt mehr als 30 % – sonst entscheidet ein einziger (z. B. der Zyklus mit nur
         # drei früheren Beispielen) fast allein
