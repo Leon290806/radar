@@ -2,6 +2,8 @@ name: BTC-Probe
 on:
   push:
     branches: [btc-probe]
+permissions:
+  contents: write
 jobs:
   probe:
     runs-on: ubuntu-latest
@@ -11,5 +13,6 @@ jobs:
         with: {python-version: "3.12"}
       - run: pip install requests
       - run: python probe_btc.py
-      - uses: actions/upload-artifact@v4
-        with: {name: btcdaten, path: out, retention-days: 2}
+      - run: |
+          git config user.name radar-bot; git config user.email radar-bot@users.noreply.github.com
+          git add -f out && git commit -qm "Probe-Daten" && git push -q origin HEAD:btc-probe
