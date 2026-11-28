@@ -46,7 +46,7 @@ function vergleichsReihen() {
 }
 
 /* ---------- Kopf ---------- */
-const tabs = [["uebersicht", "Übersicht", null], ["spiegel", "Spiegel-Portfolio", SPG.pos.length || null], ["tracking", "Tracking", (D.polymarket || []).reduce((n, t) => n + (t.n || 0), 0) || null], ["trader", "Trader", D.trader.length], ["bewegungen", "Bewegungen", D.bewegungen.length || null],
+const tabs = [["uebersicht", "Übersicht", null], ["spiegel", "Spiegel-Portfolio", SPG.pos.length || null], ["scanner", "Markt-Scanner", D.wetter ? (D.wetter.signale || []).filter(x => x.signal).length || null : null], ["tracking", "Tracking", (D.polymarket || []).reduce((n, t) => n + (t.n || 0), 0) || null], ["trader", "Trader", D.trader.length], ["bewegungen", "Bewegungen", D.bewegungen.length || null],
   ["kopie", "Kopier-Test", D.kopien.length || null], ["trades", "Papier-Trades", zu.length || null], ["methode", "Methode", null]];
 document.body.innerHTML = `
 <header class="kopf"><div class="in">
@@ -212,6 +212,48 @@ const RENDER = {
       ${sTr.length ? `<div class="tw"><table class="tbl karten"><thead><tr><th class="l">Zeit</th><th class="l">Trader</th><th class="l">Coin</th><th class="l">Richtung</th><th>Einsatz</th><th>Dauer</th><th class="l">Grund</th><th>Ergebnis</th></tr></thead><tbody>
       ${sTr.slice(0, 100).map(t => `<tr><td class="l mute">${esc(zeit(t.zeit_aus))}</td><td class="l">${tLink(t.a)}</td><td class="l tick">${esc(t.coin)}</td><td class="l">${richt(t.r)}</td><td>${usd(t.notional)}</td><td>${dauer(t.zeit_aus - t.zeit_ein)}</td><td class="l mute klein">${esc(t.grund)}${t.teil ? " (Teil)" : ""}</td><td class="m-r ${kl(t.ergebnis)}">${usdVz(t.ergebnis, 2)}</td></tr>`).join("")}
       </tbody></table></div>` : '<div class="leer">Noch kein Abschluss.</div>'}</div>`;
+  },
+
+  scanner(el) {
+    const W = D.wetter;
+    if (!W) { el.innerHTML = '<div class="leer">Der Scanner läuft beim nächsten Durchgang zum ersten Mal.</div>'; return; }
+    const sig = (W.signale || []).filter(x => x.signal), wert = W.kapital + W.ergebnis;
+    const b = W.brier || {};
+    const pc = x => ok(x) ? zahl(x * 100, 0) + " %" : "–";
+    const artTxt = a => a === "highest" ? "Höchst" : "Tiefst";
+    el.innerHTML = `<div class="box warn" style="margin-bottom:16px">Reiner Papier-Test mit öffentlichen Daten – es wird nichts gewettet. Die Teilnahme an Polymarket ist von Deutschland aus nicht erlaubt.</div>
+    <div class="h-held" style="margin-bottom:16px">
+      <div><div class="h-datum">Wetter-Märkte · letzter Scan ${esc(zeit((W.letzter_scan || 0) * 1000))}</div>
+        <h2 class="h-titel">Wo liegt der Markt daneben?</h2>
+        <p class="h-unter">Für jede Temperatur-Wette auf Polymarket rechnet der Scanner mit 82 Wetter-Modellläufen (ECMWF + GFS) für genau die Flughafen-Station, nach der aufgelöst wird – plus die heute schon gemessenen Werte. Weicht die Wahrscheinlichkeit um mindestens ${pct(W.regeln.vorteil, 0, false).replace(" %", "")} Prozentpunkte vom Preis ab, „kauft“ er auf Papier ${usd(W.regeln.einsatz)}.</p></div>
+      <div class="h-kpis">
+        <div><span>Papierkapital</span><b class="${kl(W.ergebnis)}">${usd(wert)}</b><small>${usdVz(W.ergebnis)} seit Start</small></div>
+        <div><span>Trades</span><b>${zahl(W.n)}<i> / ${zahl(W.offen.length)} offen</i></b><small>${W.n ? pct(W.gewonnen / W.n, 0, false) + " gewonnen" : "noch nichts aufgelöst"}</small></div>
+        <div><span>Modell gegen Markt ${tippI("Brier-Score über alle aufgelösten Spannen: je kleiner, desto treffsicherer. Liegt das Modell unter dem Markt, sieht es mehr als die anderen Händler.")}</span><b>${ok(b.modell) ? zahl(b.modell, 3) : "–"}<i> / ${ok(b.markt) ? zahl(b.markt, 3) : "–"}</i></b><small>${b.n ? zahl(b.n) + " Spannen · " + (b.modell < b.markt ? "Modell besser" : "Markt besser") : "Messung startet nach erster Auflösung"}</small></div>
+      </div>
+    </div>
+    ${W.fehler ? `<div class="box fehler" style="margin-bottom:16px">Letzter Scan fehlgeschlagen: ${esc(W.fehler)}</div>` : ""}
+    <div class="card" style="margin-bottom:16px"><div class="ch"><div><h3 class="ct">Aktuelle Signale</h3><div class="cs">${zahl((W.signale || []).length)} Märkte geprüft · ${zahl(sig.length)} mit genug Abweichung</div></div></div>
+      ${sig.length ? `<div class="tw"><table class="tbl karten"><thead><tr><th class="l">Stadt</th><th class="l">Wette</th><th class="l">Tag</th><th>gemessen</th><th>Modell-Mitte</th><th class="l">Empfehlung</th><th>Modell</th><th>Preis</th><th>Vorteil</th></tr></thead><tbody>
+      ${sig.map(x => `<tr><td class="l"><b>${esc(x.stadt)}</b><div class="firma">${esc(x.icao)} · noch ${zahl(Math.max(0, x.stunden_rest))} Std.</div></td><td class="l">${artTxt(x.art)}temperatur</td><td class="l">${esc(datum(x.datum))}</td>
+        <td>${ok(x.beobachtet) ? zahl(x.beobachtet, 1) + " °C" : "–"}</td><td>${zahl(x.ens_median, 1)} °C</td>
+        <td class="l"><span class="rt ${x.signal.seite === "JA" ? "long" : "short"}">${x.signal.seite}</span> ${esc(x.signal.titel)}</td><td>${pc(x.signal.seite === "JA" ? x.signal.p : 1 - x.signal.p)}</td><td>${zahl(x.signal.preis * 100, 1)} ¢</td><td class="m-r pos">+${zahl(x.signal.vorteil * 100, 0)} Pkt.</td></tr>`).join("")}
+      </tbody></table></div>` : '<div class="leer">Gerade keine Abweichung, die groß genug ist. Der Markt liegt nah am Modell.</div>'}</div>
+    <div class="grid">
+      <div class="card c6"><div class="ch"><div><h3 class="ct">Offene Papier-Trades</h3><div class="cs">Werden nach Auflösung (meist am Folgetag) abgerechnet</div></div></div>
+        ${W.offen.length ? `<div class="tw"><table class="tbl"><thead><tr><th class="l">Markt</th><th class="l">Wette</th><th>Preis</th><th>Modell</th></tr></thead><tbody>
+        ${W.offen.map(t => `<tr><td class="l">${esc(t.stadt)} <span class="mute klein">${artTxt(t.art)} · ${esc(datum(t.datum))}</span></td><td class="l"><span class="rt ${t.seite === "JA" ? "long" : "short"}">${t.seite}</span> ${esc(t.titel)}</td><td>${zahl(t.preis * 100, 1)} ¢</td><td>${pc(t.seite === "JA" ? t.p : 1 - t.p)}</td></tr>`).join("")}
+        </tbody></table></div>` : '<div class="leer">Keine offenen Trades.</div>'}</div>
+      <div class="card c6"><div class="ch"><div><h3 class="ct">Papierkapital</h3><div class="cs">Start ${usd(W.kapital)} · ${usd(W.regeln.einsatz)} je Signal</div></div></div><div class="chart" id="ch-wx"></div></div>
+    </div>
+    <div class="card"><div class="ch"><div><h3 class="ct">Abgerechnete Trades</h3></div></div>
+      ${W.trades.length ? `<div class="tw"><table class="tbl karten"><thead><tr><th class="l">Markt</th><th class="l">Wette</th><th>Preis</th><th>Modell</th><th class="l">Ausgang</th><th>Ergebnis</th></tr></thead><tbody>
+      ${W.trades.map(t => `<tr><td class="l">${esc(t.stadt)} <span class="mute klein">${artTxt(t.art)} · ${esc(datum(t.datum))}</span></td><td class="l"><span class="rt ${t.seite === "JA" ? "long" : "short"}">${t.seite}</span> ${esc(t.titel)}</td><td>${zahl(t.preis * 100, 1)} ¢</td><td>${pc(t.seite === "JA" ? t.p : 1 - t.p)}</td>
+        <td class="l">${t.gewonnen ? '<span class="status aktiv">gewonnen</span>' : '<span class="status" style="background:var(--badbg);color:var(--bad)">verloren</span>'}</td><td class="m-r ${kl(t.erg)}">${usdVz(t.erg, 2)}</td></tr>`).join("")}
+      </tbody></table></div>` : '<div class="leer">Noch nichts aufgelöst – Temperatur-Märkte werden am Tag nach dem Messtag abgerechnet.</div>'}</div>
+    <p class="fuss">Methode: Ensemble-Vorhersage von Open-Meteo (ECMWF IFS 0,25° mit 51 und GFS mit 31 Läufen) für die Koordinaten der Auflösungs-Station, Unsicherheit Station ↔ Modell ${zahl(W.regeln.sigma_heute, 1)} °C (heute) bzw. ${zahl(W.regeln.sigma_morgen, 1)} °C (morgen), gemessene Werte aus den METAR-Meldungen (aviationweather.gov). Signale nur bei mind. ${usd(W.regeln.liq)} Liquidität, Einstieg mit ${pct(W.regeln.slippage, 0, false)} Aufschlag. Später kommen Fed- und Politik-Märkte über den Vergleich mit anderen Prognosebörsen dazu.</p>`;
+    const V3 = W.verlauf || [];
+    linie($("#ch-wx", el), V3.map(v => v[0]), [{ name: "Papierkapital", farbe: "--s3", v: V3.map(v => v[1]), breite: 2.2 }], v => usd(v));
   },
 
   tracking(el) {
