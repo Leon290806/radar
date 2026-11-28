@@ -3,7 +3,7 @@
 Broker-Anbindung: führt die Empfehlungen des Radars automatisch bei Alpaca aus (Standard: Paper Trading = Spielgeld).
 
 Ablauf bei jedem Abendlauf (nach US-Börsenschluss):
-  1. Eigene offene Orders des Radars löschen (sie werden mit aktuellen Werten neu gesetzt).
+  1. Eigene offene Orders des Radars löschen, inkl. Stopp-Beine früherer OTO-Käufe (sie werden mit aktuellen Werten neu gesetzt).
   2. Positionen, die der Radar verkauft hat (Zeitstopp, Stopp, ...), zur nächsten Eröffnung verkaufen.
   3. Für jede offene Position eine Stopp-Order (GTC) zum aktuellen, nachgezogenen Stopp setzen.
   4. Neue Kaufsignale als Limit-Kauf für den nächsten Handelstag – mit angehängter Stopp-Order (OTO).
@@ -59,6 +59,15 @@ def _bestellen(a, erg, order):
     except Exception as e:
         erg["fehler"].append(f"{order.get('side')} {order.get('symbol')} ({order.get('type')}): {str(e)[:220]}")
         return False
+
+
+def _handelbar(a, sym):
+    """Prüft, ob Alpaca die Aktie handeln kann (übernommene/delistete Titel sind „not active“)."""
+    try:
+        x = a.get(f"/v2/assets/{sym}")
+        return bool(x and x.get("tradable") and x.get("status") == "active")
+    except Exception:
+        return True  # im Zweifel versuchen; ein Fehler landet dann wie bisher in der Fehlerliste
 
 
 def _us(t):
@@ -138,12 +147,26 @@ def synchronisieren(dep, cfg, regime, kern_kurs, kern=None):
             erg["aktionen"].append({"typ": "info", "text": "Börse offen – keine Orders gesendet, nur Kontostand gelesen."})
         else:
             pos = {p["symbol"]: p for p in a.get("/v2/positions")}
-            # 1) eigene offene Orders löschen
-            for o in a.get("/v2/orders", status="open", limit=500):
-                if (o.get("client_order_id") or "").startswith(PREFIX):
-                    a.delete(f"/v2/orders/{o['id']}")
-            time.sleep(2)
             soll = {tr["ticker"]: tr for tr in dep["trades"] if tr["status"] in ("offen", "geplant") and _us(tr["ticker"])}
+            # 1) eigene offene Orders löschen. Dazu gehören auch die Stopp-Beine früherer OTO-Käufe: Die bekommen von Alpaca
+            #    eine eigene ID (ohne „radar“) und blockieren sonst die Stücke – der neue Stopp scheitert dann mit
+            #    „insufficient qty available“. Nur für Aktien, die der Radar selbst verwaltet.
+            verwaltet = set(soll) | eigene
+            geloescht = set()
+            for o in a.get("/v2/orders", status="open", limit=500):
+                stopp_bein = (o.get("side") == "sell" and o.get("type") in ("stop", "stop_limit")
+                              and o.get("symbol") in verwaltet)
+                if (o.get("client_order_id") or "").startswith(PREFIX) or stopp_bein:
+                    try:
+                        a.delete(f"/v2/orders/{o['id']}")
+                        geloescht.add(o["id"])
+                    except Exception as e:
+                        erg["fehler"].append(f"Order {o.get('symbol')} nicht löschbar: {str(e)[:160]}")
+            # warten, bis Alpaca die Löschungen bestätigt und die Stücke wieder freigibt
+            for _ in range(10):
+                time.sleep(1.5)
+                if not geloescht or not any(o["id"] in geloescht for o in a.get("/v2/orders", status="open", limit=500)):
+                    break
             cash = float(konto.get("cash") or 0)
             # 1b) alter Kern-ETF (z. B. SPY, wenn der Kern jetzt QLD ist) wird verkauft
             for sym in list(alt_kern):
@@ -190,6 +213,8 @@ def synchronisieren(dep, cfg, regime, kern_kurs, kern=None):
                         grund = f"nur {(kurs - st) / kurs:.1%} bis zum Stopp"
                     elif rest < 10:
                         grund = f"nur noch {rest} Tage Haltedauer"
+                    elif not _handelbar(a, sym):
+                        grund = "bei Alpaca nicht handelbar"
                     if grund:
                         erg["aktionen"].append({"typ": "hinweis", "t": sym, "text": f"Im Musterdepot offen, im Konto nicht – kein Nachkauf ({grund})"})
                         continue
@@ -217,6 +242,9 @@ def synchronisieren(dep, cfg, regime, kern_kurs, kern=None):
             # 4) neue Käufe: Limit für den nächsten Handelstag + angehängter Stopp
             for sym, tr in soll.items():
                 if tr["status"] != "geplant" or sym in pos:
+                    continue
+                if not _handelbar(a, sym):
+                    erg["aktionen"].append({"typ": "hinweis", "t": sym, "text": "Bei Alpaca nicht handelbar (z. B. übernommen oder delistet) – kein Kauf"})
                     continue
                 qty = math.floor(min(tr["gewicht"] * equity, max(cash, 0) * 0.98) / tr["limit"])
                 if qty < 1:
