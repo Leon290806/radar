@@ -251,7 +251,26 @@ const RENDER = {
       ${W.trades.map(t => `<tr><td class="l">${esc(t.stadt)} <span class="mute klein">${artTxt(t.art)} · ${esc(datum(t.datum))}</span></td><td class="l"><span class="rt ${t.seite === "JA" ? "long" : "short"}">${t.seite}</span> ${esc(t.titel)}</td><td>${zahl(t.preis * 100, 1)} ¢</td><td>${pc(t.seite === "JA" ? t.p : 1 - t.p)}</td>
         <td class="l">${t.gewonnen ? '<span class="status aktiv">gewonnen</span>' : '<span class="status" style="background:var(--badbg);color:var(--bad)">verloren</span>'}</td><td class="m-r ${kl(t.erg)}">${usdVz(t.erg, 2)}</td></tr>`).join("")}
       </tbody></table></div>` : '<div class="leer">Noch nichts aufgelöst – Temperatur-Märkte werden am Tag nach dem Messtag abgerechnet.</div>'}</div>
-    <p class="fuss">Methode: Ensemble-Vorhersage von Open-Meteo (ECMWF IFS 0,25° mit 51 und GFS mit 31 Läufen) für die Koordinaten der Auflösungs-Station, Unsicherheit Station ↔ Modell ${zahl(W.regeln.sigma_heute, 1)} °C (heute) bzw. ${zahl(W.regeln.sigma_morgen, 1)} °C (morgen), gemessene Werte aus den METAR-Meldungen (aviationweather.gov). Signale nur bei mind. ${usd(W.regeln.liq)} Liquidität, Einstieg mit ${pct(W.regeln.slippage, 0, false)} Aufschlag. Später kommen Fed- und Politik-Märkte über den Vergleich mit anderen Prognosebörsen dazu.</p>`;
+    <div id="vg-box"></div>
+    <p class="fuss">Methode: Ensemble-Vorhersage von Open-Meteo (ECMWF IFS 0,25° mit 51 und GFS mit 31 Läufen) für die Koordinaten der Auflösungs-Station, Unsicherheit Station ↔ Modell ${zahl(W.regeln.sigma_heute, 1)} °C (heute) bzw. ${zahl(W.regeln.sigma_morgen, 1)} °C (morgen), gemessene Werte aus den METAR-Meldungen (aviationweather.gov). Signale nur bei mind. ${usd(W.regeln.liq)} Liquidität, Einstieg mit ${pct(W.regeln.slippage, 0, false)} Aufschlag.</p>`;
+    const VG = D.vergleich;
+    if (VG) {
+      const zl = VG.zeilen || [], sg = zl.filter(z => z.signal);
+      const termine = [...new Set(zl.map(z => z.termin))];
+      $("#vg-box", el).innerHTML = `<div class="card" style="margin:16px 0"><div class="ch"><div><h3 class="ct">Finanzen: Fed-Zinsentscheidungen – Polymarket gegen Kalshi</h3>
+        <div class="cs">Dieselbe Frage an zwei Börsen. Weicht Polymarket um mindestens ${zahl(VG.regeln.abstand * 100)} Punkte vom Kalshi-Mittelkurs ab, kauft der Scanner auf Papier die günstigere Seite (${usd(VG.regeln.einsatz)}). Stand ${esc(zeit((VG.letzter_scan || 0) * 1000))}</div></div>
+        <div class="legende"><span>Papier: <b class="${kl(VG.ergebnis)}">${usdVz(VG.ergebnis)}</b></span><span>${zahl(VG.n)} abgerechnet · ${zahl(VG.offen.length)} offen</span></div></div>
+        ${VG.fehler ? `<div class="box fehler">Letzter Abruf fehlgeschlagen: ${esc(VG.fehler)}</div>` : ""}
+        ${zl.length ? `<div class="tw"><table class="tbl"><thead><tr><th class="l">Sitzung</th><th class="l">Ausgang</th><th>Polymarket</th><th>Kalshi</th><th>Abstand</th><th class="l">Empfehlung</th></tr></thead><tbody>
+        ${termine.map(t => zl.filter(z => z.termin === t).map((z, i) => `<tr${z.signal ? ' class="hl"' : ""}><td class="l">${i === 0 ? `<b>${esc(z.datum || z.termin)}</b>` : ""}</td><td class="l">${esc(z.ausgang)}</td>
+          <td>${ok(z.pm_bid) || ok(z.pm_ask) ? zahl((ok(z.pm_bid) && ok(z.pm_ask) ? (z.pm_bid + z.pm_ask) / 2 : (z.pm_preis || 0)) * 100, 1) + " %" : "–"}</td><td>${zahl(z.kalshi * 100, 1)} %</td>
+          <td>${ok(z.pm_preis) ? (z.pm_preis - z.kalshi > 0 ? "+" : "") + zahl((z.pm_preis - z.kalshi) * 100, 1) + " Pkt." : "–"}</td>
+          <td class="l">${z.signal ? `<span class="rt ${z.signal.seite === "JA" ? "long" : "short"}">${z.signal.seite}</span> zu ${zahl(z.signal.preis * 100, 1)} ¢ · +${zahl(z.signal.vorteil * 100)} Pkt.` : '<span class="mute klein">beide Börsen einig</span>'}</td></tr>`).join("")).join("")}
+        </tbody></table></div>` : '<div class="leer">Noch keine Daten – der Vergleich läuft beim nächsten Scan.</div>'}
+        ${VG.trades.length ? `<h3 class="ct" style="margin:16px 0 8px">Abgerechnet</h3><div class="tw"><table class="tbl"><thead><tr><th class="l">Sitzung</th><th class="l">Wette</th><th>Preis</th><th class="l">Ausgang</th><th>Ergebnis</th></tr></thead><tbody>
+          ${VG.trades.map(t => `<tr><td class="l">${esc(t.termin)}</td><td class="l"><span class="rt ${t.seite === "JA" ? "long" : "short"}">${t.seite}</span> ${esc(t.ausgang)}</td><td>${zahl(t.preis * 100, 1)} ¢</td><td class="l">${t.gewonnen ? "gewonnen" : "verloren"}</td><td class="${kl(t.erg)}">${usdVz(t.erg, 2)}</td></tr>`).join("")}</tbody></table></div>` : ""}
+        <p class="klein mute" style="margin:12px 0 0">Kalshi ist eine in den USA regulierte Prognosebörse mit meist mehr Volumen bei Fed-Märkten. Weitere Wirtschaftsdaten (Inflation, Arbeitsmarkt) folgen, sobald sich die Märkte beider Börsen sauber zuordnen lassen.</p></div>`;
+    }
     const V3 = W.verlauf || [];
     linie($("#ch-wx", el), V3.map(v => v[0]), [{ name: "Papierkapital", farbe: "--s3", v: V3.map(v => v[1]), breite: 2.2 }], v => usd(v));
   },

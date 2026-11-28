@@ -16,6 +16,15 @@ def _lies(*teile):
         return f.read()
 
 
+def vg_daten(S):
+    V = S.get("vergleich")
+    if not V:
+        return None
+    return {k: V.get(k) for k in ("start", "letzter_scan", "fehler", "ergebnis", "n", "gewonnen", "verlauf", "zeilen")} | {
+        "offen": sorted(V.get("offen", {}).values(), key=lambda t: -t["zeit"]), "trades": sorted(V.get("trades", []), key=lambda t: -t["aufgeloest"])[:100],
+        "kapital": E.VG_KAPITAL, "regeln": {"abstand": E.VG_MIN_ABSTAND, "einsatz": E.VG_EINSATZ, "liq": E.VG_MIN_LIQ}}
+
+
 def wx_daten(S):
     W = S.get("wetter")
     if not W:
@@ -98,7 +107,7 @@ def daten(S):
         "portfolio": {"start": P.get("start"), "wert": round(SG.portfolio_wert(P, preise), 2) if P else E.START_KAPITAL, "start_kapital": E.START_KAPITAL, "cash": round(P.get("cash", 0), 2),
                       "gebuehren": round(P.get("gebuehren", 0), 2), "funding": round(P.get("funding", 0), 2), "pos": pos,
                       "trades": list(reversed(P.get("trades", [])))[:200], "verlauf": P.get("verlauf", []), "btc_start": P.get("btc_start")},
-        "spiegel": spiegel, "polymarket": pm_daten(S), "wetter": wx_daten(S), "trader": trader, "konsens": konsens[:40], "bewegungen": (S.get("bewegungen") or [])[:150],
+        "spiegel": spiegel, "polymarket": pm_daten(S), "wetter": wx_daten(S), "vergleich": vg_daten(S), "trader": trader, "konsens": konsens[:40], "bewegungen": (S.get("bewegungen") or [])[:150],
         "kopien": alle_kopien[:150], "abgelehnt": [{k: t.get(k) for k in TRADER_FELDER + ("gruende",)} for t in S.get("abgelehnt", [])[:25]],
         "auswahl": S.get("auswahl_info"), "protokoll": (S.get("protokoll") or [])[:40], "laeufe": (S.get("laeufe") or [])[-120:],
         "preise": S.get("preise") or {},

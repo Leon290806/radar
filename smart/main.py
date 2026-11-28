@@ -25,6 +25,7 @@ import signale as SG  # noqa: E402
 import spiegel as SP  # noqa: E402
 import polymarket as PMK  # noqa: E402
 import wetter as WX  # noqa: E402
+import vergleich as VG  # noqa: E402
 import seite  # noqa: E402
 import schutz  # noqa: E402
 
@@ -188,7 +189,7 @@ def push_bewegungen(bew, namen):
     push("\n".join(zeilen), f"👀 Top-Trader: {len(bew)} Bewegung{'en' if len(bew) > 1 else ''}")
 
 
-SEITEN_VERSION = 4   # erhöhen, wenn sich das Dashboard ändert -> Seite wird beim nächsten Lauf sofort neu gebaut
+SEITEN_VERSION = 5   # erhöhen, wenn sich das Dashboard ändert -> Seite wird beim nächsten Lauf sofort neu gebaut
 
 
 def main():
@@ -254,6 +255,10 @@ def main():
         WX.lauf(S, prot)
     except Exception as ex:
         prot.append(f"Wetter-Scanner: {type(ex).__name__}")
+    try:
+        VG.lauf(S, prot)
+    except Exception as ex:
+        prot.append(f"Fed-Vergleich: {type(ex).__name__}")
 
     EK = S.get("einzel") or {}
     for d in EK.values():   # Altlast: Kopien aus der Schwellen-Pendelei (Einstieg weit weg vom Einstieg des Traders) entfernen

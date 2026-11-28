@@ -79,6 +79,13 @@ WX_GEBUEHR = 0.0                 # Wetter-Märkte sind (anders als Kurzzeit-Kryp
 WX_SIGMA_HEUTE = 0.8             # Unsicherheit Station gegen Modell-Gitter (°C), heute …
 WX_SIGMA_MORGEN = 1.2            # … und für morgen
 
+# ---------- Markt-Scanner Finanzen: Polymarket gegen Kalshi (Papier-Test) ----------
+VG_KAPITAL = 10_000.0
+VG_EINSATZ = 100.0
+VG_MIN_ABSTAND = 0.06            # mind. 6 Prozentpunkte Unterschied zwischen den Börsen
+VG_MIN_LIQ = 1_000.0
+VG_SLIPPAGE = 0.01
+
 COMMIT_ALLE_MIN = 120           # Ergebnis höchstens alle 2 Std. ins Repo (außer bei Papier-Trades)
 MAX_PUSH_PRO_LAUF = 3
 ZEITZONE = "Europe/Berlin"
