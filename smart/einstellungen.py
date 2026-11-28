@@ -56,6 +56,28 @@ SPIEGEL_ANPASSEN_AB = 0.3        # Größe erst nachziehen, wenn sie mehr als 30
 SPIEGEL_PUSH_AB = 3_000.0        # Push bei neuen/geschlossenen Spiegel-Positionen ab 3.000 $
 TAGES_PUSH_STUNDE = 20           # Tageszusammenfassung ab 20 Uhr (Berlin)
 
+# ---------- Polymarket-Tracking (nur Papier – Teilnahme von Deutschland aus nicht erlaubt) ----------
+PM_TRADER = [{"name": "antsaslyku", "wallet": "0x3c58ef422754ff22c7e806336feba0064d8b776b"}]
+PM_KAPITAL = 10_000.0
+PM_BASIS_EINSATZ = 50.0          # Einsatz bei seinem typischen (Median-)Einsatz; größere Wetten von ihm = größere Kopie
+PM_MIN_EINSATZ = 5.0
+PM_MAX_EINSATZ = 250.0
+PM_KOPIE_VERZUG_S = 30           # realistische Kopie: Preis ~30 s nach seinem Trade (Minutenwerte, also 30–90 s)
+PM_SLIPPAGE = 0.01               # 1 % schlechterer Preis
+PM_GEBUEHR = 0.015               # Annahme: 1,5 % des Einsatzes (Kurzzeit-Krypto-Märkte haben Taker-Gebühren bis ~3 %)
+
+# ---------- Markt-Scanner Wetter (Papier-Test) ----------
+WX_ALLE_MIN = 30                 # höchstens alle 30 Min. scannen (Open-Meteo-Kontingent)
+WX_KAPITAL = 10_000.0
+WX_EINSATZ = 100.0               # fester Papier-Einsatz je Signal
+WX_MIN_VORTEIL = 0.12            # Modell-Wahrscheinlichkeit muss mind. 12 Prozentpunkte vom Preis abweichen
+WX_MIN_LIQ = 500.0
+WX_MAX_OFFEN = 40
+WX_SLIPPAGE = 0.02
+WX_GEBUEHR = 0.0                 # Wetter-Märkte sind (anders als Kurzzeit-Krypto) gebührenfrei
+WX_SIGMA_HEUTE = 0.8             # Unsicherheit Station gegen Modell-Gitter (°C), heute …
+WX_SIGMA_MORGEN = 1.2            # … und für morgen
+
 COMMIT_ALLE_MIN = 120           # Ergebnis höchstens alle 2 Std. ins Repo (außer bei Papier-Trades)
 MAX_PUSH_PRO_LAUF = 3
 ZEITZONE = "Europe/Berlin"

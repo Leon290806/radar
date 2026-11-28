@@ -16,6 +16,31 @@ def _lies(*teile):
         return f.read()
 
 
+def wx_daten(S):
+    W = S.get("wetter")
+    if not W:
+        return None
+    b = W.get("brier") or {}
+    return {"start": W.get("start"), "letzter_scan": W.get("letzter_scan"), "fehler": W.get("fehler"), "ergebnis": round(W.get("ergebnis", 0), 2),
+            "einsatz_summe": W.get("einsatz_summe", 0), "n": W.get("n", 0), "gewonnen": W.get("gewonnen", 0), "kapital": E.WX_KAPITAL,
+            "brier": {"n": b.get("n", 0), "modell": b["modell"] / b["n"] if b.get("n") else None, "markt": b["markt"] / b["n"] if b.get("n") else None},
+            "offen": sorted(W.get("offen", {}).values(), key=lambda t: -t["zeit"]), "trades": sorted(W.get("trades", []), key=lambda t: -t["aufgeloest"])[:150],
+            "signale": (W.get("signale") or [])[:80], "verlauf": W.get("verlauf", []),
+            "regeln": {"vorteil": E.WX_MIN_VORTEIL, "einsatz": E.WX_EINSATZ, "liq": E.WX_MIN_LIQ, "sigma_heute": E.WX_SIGMA_HEUTE,
+                       "sigma_morgen": E.WX_SIGMA_MORGEN, "slippage": E.WX_SLIPPAGE, "alle": E.WX_ALLE_MIN}}
+
+
+def pm_daten(S):
+    out = []
+    for w, T in (S.get("polymarket") or {}).items():
+        out.append({k: T.get(k) for k in ("name", "wallet", "start", "ideal", "real", "er", "ideal_einsatz", "real_einsatz", "er_einsatz", "n",
+                                           "verpasst", "gewonnen_ideal", "gewonnen_real", "fehler", "verlauf")}
+                   | {"offen": len(T.get("offen", [])), "trades": sorted(T.get("trades", []), key=lambda x: -x["ts"])[:150], "kapital": E.PM_KAPITAL,
+                      "regeln": {"basis": E.PM_BASIS_EINSATZ, "min": E.PM_MIN_EINSATZ, "max": E.PM_MAX_EINSATZ, "verzug": E.PM_KOPIE_VERZUG_S,
+                                 "slippage": E.PM_SLIPPAGE, "gebuehr": E.PM_GEBUEHR}})
+    return out
+
+
 def daten(S):
     P = S.get("portfolio") or {}
     preise = {c: {"px": px, "funding": 0} for c, px in (S.get("preise") or {}).items()}
@@ -73,7 +98,7 @@ def daten(S):
         "portfolio": {"start": P.get("start"), "wert": round(SG.portfolio_wert(P, preise), 2) if P else E.START_KAPITAL, "start_kapital": E.START_KAPITAL, "cash": round(P.get("cash", 0), 2),
                       "gebuehren": round(P.get("gebuehren", 0), 2), "funding": round(P.get("funding", 0), 2), "pos": pos,
                       "trades": list(reversed(P.get("trades", [])))[:200], "verlauf": P.get("verlauf", []), "btc_start": P.get("btc_start")},
-        "spiegel": spiegel, "trader": trader, "konsens": konsens[:40], "bewegungen": (S.get("bewegungen") or [])[:150],
+        "spiegel": spiegel, "polymarket": pm_daten(S), "wetter": wx_daten(S), "trader": trader, "konsens": konsens[:40], "bewegungen": (S.get("bewegungen") or [])[:150],
         "kopien": alle_kopien[:150], "abgelehnt": [{k: t.get(k) for k in TRADER_FELDER + ("gruende",)} for t in S.get("abgelehnt", [])[:25]],
         "auswahl": S.get("auswahl_info"), "protokoll": (S.get("protokoll") or [])[:40], "laeufe": (S.get("laeufe") or [])[-120:],
         "preise": S.get("preise") or {},
