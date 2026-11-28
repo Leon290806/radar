@@ -289,6 +289,11 @@ def lauf(S, protokoll):
         W["fehler"] = None
         sig = sum(1 for s in W["signale"] if s["signal"])
         print(f"Wetter-Scanner: {n} Märkte, {sig} Signale, {len(W['offen'])} offene Papier-Trades, Ergebnis {W['ergebnis']:+.2f} $")
+        for x in [x for x in W["signale"] if x["signal"]][:12]:
+            g = x["signal"]
+            print(f"  {x['stadt']:<14} {x['art'][:4]} {x['datum']} rest {x['stunden_rest']:>5}h gemessen {x['beobachtet']} median {x['ens_median']} "
+                  f"-> {g['seite']} {g['titel']} p={g['p']:.2f} preis={g['preis']:.3f} | " +
+                  " ".join(f"{z['titel']}:{z['p']:.2f}/{z['preis']}" for z in x['zeilen'] if (z['preis'] or 0) > 0.02 or z['p'] > 0.05))
     except Exception as ex:
         W["fehler"] = f"{type(ex).__name__}: {str(ex)[:120]}"
         protokoll.append(f"Wetter-Scanner: {W['fehler']}")
