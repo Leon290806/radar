@@ -1,8 +1,13 @@
-import json, requests
+import json, requests, os
+os.makedirs("out", exist_ok=True)
 CM="https://community-api.coinmetrics.io/v4/timeseries/asset-metrics"
-for m in ["PriceUSD","CapMrktCurUSD","CapMVRVCur","SplyCur","IssTotUSD","HashRate","AdrActCnt","TxTfrValAdjUSD","FeeTotUSD","CapMVRVFF","SplyAct1yr","RevUSD","NVTAdj"]:
-    r=requests.get(CM, params={"assets":"btc","metrics":m,"frequency":"1d","start_time":"2010-07-18","page_size":10000}, timeout=60)
-    j=r.json(); d=j.get("data",[])
-    print(m, r.status_code, len(d), d[0] if d else j.get("error",{}).get("message","")[:120], d[-1] if d else "", "MORE" if j.get("next_page_url") else "")
-r=requests.get("https://community-api.coinmetrics.io/v4/catalog-v2/asset-metrics", params={"assets":"btc"}, timeout=60)
-print("catalog", r.status_code, r.text[:300])
+r=requests.get(CM, params={"assets":"btc","metrics":"PriceUSD,CapMrktCurUSD,CapMVRVCur,SplyCur,IssTotUSD,HashRate,AdrActCnt","frequency":"1d","start_time":"2010-07-18","page_size":10000}, timeout=90)
+j=r.json(); print("cm", r.status_code, len(j.get("data",[])), bool(j.get("next_page_url")))
+json.dump(j["data"], open("out/cm.json","w"))
+f=requests.get("https://api.alternative.me/fng/?limit=0&format=json", timeout=60).json()["data"]; json.dump(f, open("out/fng.json","w")); print("fng", len(f))
+bg={}
+for ep in ["sth-realized-price","lth-realized-price","sopr","sth-mvrv"]:
+    x=requests.get(f"https://bitcoin-data.com/v1/{ep}", params={"startday":"2011-01-01"}, timeout=60)
+    print(ep, x.status_code, len(x.content)); 
+    if x.ok: bg[ep]=x.json(); print(" ", len(bg[ep]), bg[ep][0] if bg[ep] else "")
+json.dump(bg, open("out/bg.json","w"))
