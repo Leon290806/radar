@@ -225,7 +225,7 @@ const RENDER = {
     <div class="h-held" style="margin-bottom:16px">
       <div><div class="h-datum">Wetter-Märkte · letzter Scan ${esc(zeit((W.letzter_scan || 0) * 1000))}</div>
         <h2 class="h-titel">Wo liegt der Markt daneben?</h2>
-        <p class="h-unter">Für jede Temperatur-Wette auf Polymarket rechnet der Scanner mit 82 Wetter-Modellläufen (ECMWF + GFS) für genau die Flughafen-Station, nach der aufgelöst wird – plus die heute schon gemessenen Werte. Weicht die Wahrscheinlichkeit um mindestens ${pct(W.regeln.vorteil, 0, false).replace(" %", "")} Prozentpunkte vom Preis ab, „kauft“ er auf Papier ${usd(W.regeln.einsatz)}.</p></div>
+        <p class="h-unter">Für jede Temperatur-Wette auf Polymarket rechnet der Scanner mit 82 Wetter-Modellläufen (ECMWF + GFS) für genau die Flughafen-Station, nach der aufgelöst wird, korrigiert um den Fehler des Modells an dieser Station in den letzten 7 Tagen – plus die heute schon gemessenen Werte. Weicht die Wahrscheinlichkeit um mindestens ${zahl(W.regeln.vorteil * 100)} Prozentpunkte vom Preis ab, „kauft“ er auf Papier ${usd(W.regeln.einsatz)}.</p></div>
       <div class="h-kpis">
         <div><span>Papierkapital</span><b class="${kl(W.ergebnis)}">${usd(wert)}</b><small>${usdVz(W.ergebnis)} seit Start</small></div>
         <div><span>Trades</span><b>${zahl(W.n)}<i> / ${zahl(W.offen.length)} offen</i></b><small>${W.n ? pct(W.gewonnen / W.n, 0, false) + " gewonnen" : "noch nichts aufgelöst"}</small></div>
