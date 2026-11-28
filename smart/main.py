@@ -23,6 +23,7 @@ import hl  # noqa: E402
 import auswahl  # noqa: E402
 import signale as SG  # noqa: E402
 import spiegel as SP  # noqa: E402
+import polymarket as PMK  # noqa: E402
 import seite  # noqa: E402
 import schutz  # noqa: E402
 
@@ -225,6 +226,11 @@ def main():
         SPG["verlauf"].append([SG.jetzt_ms(), round(sp_wert, 2), round(bench, 2) if bench else None])
         SPG["verlauf"] = SPG["verlauf"][-9000:]
     S["spiegel"] = SPG
+
+    try:
+        PMK.lauf(S, prot)
+    except Exception as ex:
+        prot.append(f"Polymarket-Tracking: {type(ex).__name__}")
 
     EK = S.get("einzel") or {}
     SG.einzel_kopie(EK, alt_rel, rel, preise, erster)

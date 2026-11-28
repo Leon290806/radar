@@ -46,7 +46,7 @@ function vergleichsReihen() {
 }
 
 /* ---------- Kopf ---------- */
-const tabs = [["uebersicht", "Übersicht", null], ["spiegel", "Spiegel-Portfolio", SPG.pos.length || null], ["trader", "Trader", D.trader.length], ["bewegungen", "Bewegungen", D.bewegungen.length || null],
+const tabs = [["uebersicht", "Übersicht", null], ["spiegel", "Spiegel-Portfolio", SPG.pos.length || null], ["tracking", "Tracking", (D.polymarket || []).reduce((n, t) => n + (t.n || 0), 0) || null], ["trader", "Trader", D.trader.length], ["bewegungen", "Bewegungen", D.bewegungen.length || null],
   ["kopie", "Kopier-Test", D.kopien.length || null], ["trades", "Papier-Trades", zu.length || null], ["methode", "Methode", null]];
 document.body.innerHTML = `
 <header class="kopf"><div class="in">
@@ -212,6 +212,46 @@ const RENDER = {
       ${sTr.length ? `<div class="tw"><table class="tbl karten"><thead><tr><th class="l">Zeit</th><th class="l">Trader</th><th class="l">Coin</th><th class="l">Richtung</th><th>Einsatz</th><th>Dauer</th><th class="l">Grund</th><th>Ergebnis</th></tr></thead><tbody>
       ${sTr.slice(0, 100).map(t => `<tr><td class="l mute">${esc(zeit(t.zeit_aus))}</td><td class="l">${tLink(t.a)}</td><td class="l tick">${esc(t.coin)}</td><td class="l">${richt(t.r)}</td><td>${usd(t.notional)}</td><td>${dauer(t.zeit_aus - t.zeit_ein)}</td><td class="l mute klein">${esc(t.grund)}${t.teil ? " (Teil)" : ""}</td><td class="m-r ${kl(t.ergebnis)}">${usdVz(t.ergebnis, 2)}</td></tr>`).join("")}
       </tbody></table></div>` : '<div class="leer">Noch kein Abschluss.</div>'}</div>`;
+  },
+
+  tracking(el) {
+    const L = D.polymarket || [];
+    if (!L.length) { el.innerHTML = '<div class="leer">Noch kein Trader im Tracking.</div>'; return; }
+    el.innerHTML = L.map((T, i) => {
+      const wR = T.kapital + (T.real || 0), wI = T.kapital + (T.ideal || 0);
+      const tq = n => T.n ? n / T.n : null;
+      const abger = T.n - T.verpasst;
+      return `<div class="box warn" style="margin-bottom:16px">Reiner Papier-Test mit öffentlichen Daten – es wird nichts gewettet. Die Teilnahme an Polymarket ist von Deutschland aus nicht erlaubt.</div>
+      <div class="h-held" style="margin-bottom:16px">
+        <div><div class="h-datum">Polymarket-Tracking seit ${esc(zeit(T.start * 1000))}</div>
+          <h2 class="h-titel"><a href="https://polymarket.com/@${esc(T.name)}" target="_blank" rel="noopener" style="color:inherit">${esc(T.name)} ↗</a></h2>
+          <p class="h-unter">Jeder seiner Käufe wird nach Auflösung des Markts mit ${usd(T.kapital)} Papierkapital nachgerechnet: <b>ideal</b> zu seinem Preis (in der Praxis unmöglich) und <b>realistisch</b> zum Preis ~${T.regeln.verzug} s später plus ${pct(T.regeln.slippage, 0, false)} Slippage. Schließt der Markt vorher, ist der Trade verpasst.</p></div>
+        <div class="h-kpis">
+          <div><span>Kopie realistisch</span><b class="${kl(T.real)}">${pct(T.real / T.kapital, 2)}</b><small>${usd(wR)} · ${usdVz(T.real)}</small></div>
+          <div><span>Kopie ideal</span><b class="${kl(T.ideal)}">${pct(T.ideal / T.kapital, 2)}</b><small>${usd(wI)} · ${usdVz(T.ideal)}</small></div>
+          <div><span>Er selbst</span><b class="${kl(T.er)}">${usdVz(T.er)}</b><small>mit seinen echten Einsätzen (${usd(T.er_einsatz)})</small></div>
+        </div>
+      </div>
+      ${T.fehler ? `<div class="box fehler" style="margin-bottom:16px">Letzter Abruf fehlgeschlagen: ${esc(T.fehler)}</div>` : ""}
+      <div class="kpis">
+        <div class="kpi"><div class="k">Trades abgerechnet</div><div class="v">${zahl(T.n)}</div><div class="n">${zahl(T.offen)} warten auf Marktende</div></div>
+        <div class="kpi"><div class="k">Verpasst ${tippI("Der Markt war schon zu, bevor die Kopie hätte kaufen können – er kauft oft in den letzten Sekunden.")}</div><div class="v">${T.n ? pct(T.verpasst / T.n, 0, false) : "–"}</div><div class="n">${zahl(T.verpasst)} von ${zahl(T.n)} zu spät</div></div>
+        <div class="kpi"><div class="k">Treffer ideal</div><div class="v">${tq(T.gewonnen_ideal) !== null ? pct(tq(T.gewonnen_ideal), 0, false) : "–"}</div><div class="n">gewonnene Wetten</div></div>
+        <div class="kpi"><div class="k">Rendite je Einsatz (realistisch)</div><div class="v ${kl(T.real)}">${T.real_einsatz ? pct(T.real / T.real_einsatz, 1) : "–"}</div><div class="n">ideal ${T.ideal_einsatz ? pct(T.ideal / T.ideal_einsatz, 1) : "–"} · er ${T.er_einsatz ? pct(T.er / T.er_einsatz, 1) : "–"}</div></div>
+      </div>
+      <div class="grid"><div class="card c12"><div class="ch"><div><h3 class="ct">Papierkapital</h3><div class="cs">Start ${usd(T.kapital)} · Einsatz ${usd(T.regeln.basis)} bei seinem typischen Einsatz (${usd(T.regeln.min)}–${usd(T.regeln.max)}) · Gebühr-Annahme ${pct(T.regeln.gebuehr, 1, false)}</div></div>
+        <div class="legende"><span><i style="background:var(--s7)"></i>realistisch</span><span><i style="background:var(--s1)"></i>ideal</span></div></div>
+        <div class="chart" id="ch-pm-${i}"></div></div></div>
+      <div class="card"><div class="ch"><div><h3 class="ct">Letzte abgerechnete Trades</h3></div></div>
+        ${T.trades.length ? `<div class="tw"><table class="tbl karten"><thead><tr><th class="l">Zeit</th><th class="l">Markt</th><th class="l">Tipp</th><th>vor Ende ${tippI("So viele Sekunden vor Marktschluss hat er gekauft.")}</th><th>sein Preis</th><th>Kopie-Preis</th><th>Einsatz</th><th class="l">Ausgang</th><th>Ergebnis ideal</th><th>Ergebnis realistisch</th></tr></thead><tbody>
+        ${T.trades.map(t => `<tr><td class="l mute">${esc(zeit(t.ts * 1000))}</td><td class="l wrap klein">${esc(t.titel)}</td><td class="l"><span class="rt ${t.outcome === "Up" ? "long" : "short"}">${esc(t.outcome)}</span></td>
+          <td>${t.sekunden_vor_ende < 120 ? t.sekunden_vor_ende + " s" : Math.round(t.sekunden_vor_ende / 60) + " Min."}</td><td>${zahl(t.preis * 100, 1)} ¢</td>
+          <td>${t.verpasst ? '<span class="mute">verpasst</span>' : zahl(t.preis_r * 100, 1) + " ¢"}</td><td>${usd(t.einsatz)}</td>
+          <td class="l">${t.gewonnen ? '<span class="status aktiv">gewonnen</span>' : '<span class="status" style="background:var(--badbg);color:var(--bad)">verloren</span>'}</td>
+          <td class="${kl(t.erg_i)}">${usdVz(t.erg_i, 2)}</td><td class="m-r ${kl(t.erg_r)}">${t.verpasst ? "–" : usdVz(t.erg_r, 2)}</td></tr>`).join("")}
+        </tbody></table></div>` : `<div class="leer">Noch nichts abgerechnet. Seine Märkte laufen 5–15 Minuten; abgerechnet wird nach Marktende beim nächsten Lauf.</div>`}</div>`;
+    }).join('<div style="height:24px"></div>');
+    L.forEach((T, i) => { const V2 = T.verlauf || []; linie($("#ch-pm-" + i, el), V2.map(v => v[0]), [{ name: "realistisch", farbe: "--s7", v: V2.map(v => v[1]), breite: 2.4 }, { name: "ideal", farbe: "--s1", v: V2.map(v => v[2]) }], v => usd(v)); });
   },
 
   trader(el) {
