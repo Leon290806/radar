@@ -29,7 +29,7 @@ MIN_SCHLIESSUNGEN_30T = 8       # genug abgeschlossene Trades im letzten Monat
 MIN_HALTEDAUER_STD = 1.0        # kürzer = Scalping, Kopieren kommt zu spät
 MAX_TOP_ANTEIL = 0.5            # ein einzelner Trade darf nicht mehr als die Hälfte des Gewinns ausmachen
 MAX_DRAWDOWN = 0.5
-MIN_MONATE_POSITIV = 0.6
+MIN_MONATE_POSITIV = 0.55
 MAX_TRADER = 25
 
 # ---------- Konsens-Signale ----------

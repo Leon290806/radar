@@ -61,18 +61,22 @@ def _kurve(portfolio):
 
 
 def kurven_kennzahlen(pnl, av):
-    """Rückgang = größter Verlust vom Gewinn-Hoch, geteilt durch den typischen Kontowert (Median, robust gegen
-    Ein- und Auszahlungen). Monats-Beständigkeit = Anteil der 30-Tage-Blöcke mit Gewinnzuwachs."""
+    """Rückgang = größter Verlust vom Gewinn-Hoch, geteilt durch das Größere aus typischem Kontowert (Median) und
+    bisherigem Gewinn-Hoch – also „wie viel vom Erreichten wurde zwischendurch wieder verloren“. Robust gegen
+    Ein- und Auszahlungen. Monats-Beständigkeit = Anteil der 30-Tage-Blöcke mit Gewinnzuwachs."""
     if len(pnl) < 3:
         return None
     tage = (pnl[-1][0] - pnl[0][0]) / TAG_MS
     werte = sorted(v for _, v in av if v > 1000)
     basis = werte[len(werte) // 2] if werte else None
-    hoch, dd_abs = pnl[0][1], 0.0
-    for _, p in pnl:
-        hoch = max(hoch, p)
-        dd_abs = max(dd_abs, hoch - p)
-    dd = min(dd_abs / basis, 9.99) if basis else None
+    hoch, dd = pnl[0][1], 0.0
+    if not basis:
+        dd = None
+    else:
+        for _, p in pnl:
+            hoch = max(hoch, p)
+            dd = max(dd, (hoch - p) / max(basis, hoch))
+        dd = min(dd, 9.99)
     start, ende = pnl[0][0], pnl[-1][0]
     bloecke, pos, t0 = 0, 0, start
     while t0 + 30 * TAG_MS <= ende + TAG_MS:
