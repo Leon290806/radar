@@ -67,7 +67,7 @@ PM_SLIPPAGE = 0.01               # 1 % schlechterer Preis
 PM_GEBUEHR = 0.015               # Annahme: 1,5 % des Einsatzes (Kurzzeit-Krypto-Märkte haben Taker-Gebühren bis ~3 %)
 
 # ---------- Markt-Scanner Wetter (Papier-Test) ----------
-WX_ALLE_MIN = 30                 # höchstens alle 30 Min. scannen (Open-Meteo-Kontingent)
+WX_ALLE_MIN = 25                 # etwa jeder zweite Lauf (Open-Meteo-Kontingent)
 WX_KAPITAL = 10_000.0
 WX_EINSATZ = 100.0               # fester Papier-Einsatz je Signal
 WX_MIN_VORTEIL = 0.15            # Modell-Wahrscheinlichkeit muss mind. 15 Prozentpunkte vom Preis abweichen
