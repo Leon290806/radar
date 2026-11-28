@@ -27,5 +27,6 @@ def erstelle(D):
 <style>{_lies("app.css")}</style></head>
 <body><main></main>
 <script type="application/json" id="daten">{daten}</script>
+<script>{_lies("menue.js")}</script>
 <script>{_lies("app.js")}</script>
 </body></html>"""

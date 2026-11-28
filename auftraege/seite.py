@@ -74,6 +74,7 @@ def erstelle(J):
     D = json.dumps(daten(J), ensure_ascii=False, separators=(",", ":"), allow_nan=False, default=str).replace("</", "<\\/")
     css = _lies(E.REPO_WURZEL, "app.css") + "\n" + _lies(E.BASIS, "web", "auftraege.css")
     js = _lies(E.BASIS, "web", "auftraege.js")
+    menue = _lies(E.REPO_WURZEL, "menue.js")
     return f"""<!doctype html>
 <html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -84,5 +85,6 @@ def erstelle(J):
 <style>{css}</style></head>
 <body><main></main>
 <script type="application/json" id="daten">{D}</script>
+<script>{menue}</script>
 <script>{js}</script>
 </body></html>"""

@@ -156,8 +156,8 @@ document.body.innerHTML = `
 <header class="kopf"><div class="in">
   <div class="zeile1">
     <div class="marke"><div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M4 17l5-5 4 4 7-8"/><path d="M15 8h5v5"/></svg></div>
-      <div><h1>Auftrags-Radar</h1><div class="stand">Stand ${esc(zeit(D.stand))}<span class="lang"> · scannt ${Object.values(D.quellen).filter(q => q.status !== "pausiert").length} Quellen alle 90 Minuten</span></div></div></div>
-    <div class="rechts"><a class="pill" href="../">← Aktien-Radar</a>
+      <div>${window.radarMenue ? radarMenue("auftraege", "Auftrags-Radar") : "<h1>Auftrags-Radar</h1>"}<div class="stand">Stand ${esc(zeit(D.stand))}<span class="lang"> · scannt ${Object.values(D.quellen).filter(q => q.status !== "pausiert").length} Quellen alle 90 Minuten</span></div></div></div>
+    <div class="rechts">
       <a class="pill" href="https://github.com/${esc(D.repo)}/actions/workflows/auftraege.yml" target="_blank" rel="noopener" title="Öffnet GitHub: dort „Run workflow“ tippen. Manuelle Läufe prüfen auch nach dem Tageskontingent bis zu 8 Aufträge mit KI.">↻ Jetzt scannen</a>
       <button class="ikon" id="thema" aria-label="Hell/Dunkel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
       <span class="pill" title="Automatisch höchstens ${D.ki.max} Prüfungen pro Tag, mit manuellen Prüfungen höchstens ${D.ki.hart}. Zähler beginnt um 0 Uhr."><i style="background:var(${D.ki.aktiv ? "--good" : "--warn"})"></i>KI ${D.ki.aktiv ? D.ki.heute + "/" + D.ki.max + " heute" : "aus"}</span></div>

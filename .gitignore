@@ -4,3 +4,6 @@ cache/
 docs/demo.html
 speicher/journal_demo.json
 speicher/auftraege.json
+speicher/smart_cache.enc
+speicher/smart.json
+speicher/smart_cache.json

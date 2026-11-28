@@ -1,0 +1,26 @@
+/* Ergänzungen für den Smart-Money-Radar (Basis: app.css) */
+.h-held{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:28px;align-items:end;padding:26px 28px;border-radius:18px;margin-bottom:18px;
+  background:radial-gradient(120% 140% at 0% 0%,color-mix(in srgb,var(--s7) 16%,var(--card)) 0%,var(--card) 60%);border:1px solid var(--line)}
+.h-datum{font-size:13px;font-weight:650;color:var(--s7);margin-bottom:6px}
+.h-titel{font-size:clamp(24px,3.2vw,34px);line-height:1.1;letter-spacing:-.025em;margin:0 0 8px;text-wrap:balance}
+.h-unter{margin:0;color:var(--ink2);max-width:62ch;font-size:15px}
+.h-kpis{display:grid;grid-template-columns:repeat(3,minmax(130px,1fr));gap:10px}
+.h-kpis>div{background:var(--card);border:1px solid var(--line2);border-radius:14px;padding:12px 14px;display:grid;gap:2px}
+.h-kpis span{font-size:12px;color:var(--ink3);font-weight:600}
+.h-kpis b{font-size:24px;letter-spacing:-.02em;font-weight:760;white-space:nowrap}.h-kpis b i{font-style:normal;font-size:14px;color:var(--ink3);font-weight:600}
+.h-kpis small{font-size:11.5px;color:var(--ink3)}
+.status{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:999px}
+.status.aktiv{background:var(--goodbg);color:var(--good)}.status.test{background:var(--warnbg);color:var(--warn)}
+@media (max-width:900px){.h-held{grid-template-columns:1fr;padding:20px}.h-kpis{grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}}
+.rt{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 8px;border-radius:999px}
+.rt.long{background:var(--goodbg);color:var(--good)}.rt.short{background:var(--badbg);color:var(--bad)}
+.kbar{display:inline-flex;width:90px;height:8px;border-radius:4px;overflow:hidden;background:var(--chip);vertical-align:middle;margin-right:8px}
+.kbar i{display:block;height:100%}.kbar i.l{background:var(--good)}.kbar i.s{background:var(--bad)}
+.pchip{display:inline-block;font-size:11.5px;font-weight:650;padding:2px 7px;border-radius:6px;margin:0 4px 2px 0}
+.pchip.long{background:var(--goodbg);color:var(--good)}.pchip.short{background:var(--badbg);color:var(--bad)}
+.note{display:inline-block;min-width:34px;text-align:center;font-weight:700;padding:2px 6px;border-radius:7px;background:color-mix(in srgb,var(--s7) 14%,transparent);color:var(--s7)}
+.akt{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 7px;border-radius:999px;background:var(--chip);color:var(--ink2)}
+.akt.auf{background:color-mix(in srgb,var(--s1) 14%,transparent);color:var(--s1)}
+.warnliste li::before{border-color:var(--warn)}
+.gedanken li{padding-bottom:12px}
+@media (max-width:760px){.nur-desktop{display:none}details.wechsler h1{white-space:nowrap;font-size:16px}}

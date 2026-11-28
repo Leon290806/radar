@@ -1,0 +1,96 @@
+name: Smart-Money-Radar
+
+# Beobachtet beständige Top-Trader auf Hyperliquid und testet per Papier-Handel, ob Kopieren Geld gebracht hätte.
+# Sendet NIE echte Orders. Läuft unabhängig vom Aktien- und Auftrags-Radar.
+on:
+  schedule:
+    - cron: "*/15 * * * *"        # Krypto handelt rund um die Uhr
+  workflow_dispatch:
+    inputs:
+      neu_auswahl:
+        description: "Trader-Auswahl sofort neu berechnen"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: smart
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      geaendert: ${{ steps.speichern.outputs.geaendert }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "requests>=2.31" "cryptography>=42"
+      # Zwischenstand jedes Laufs liegt im GitHub-Cache statt im Repo (hält das Repository klein)
+      - uses: actions/cache/restore@v4
+        with:
+          path: speicher/smart_cache.enc
+          key: smart-${{ github.run_id }}
+          restore-keys: smart-
+      - name: Trader beobachten
+        env:
+          RADAR_PASSWORT: ${{ secrets.RADAR_PASSWORT }}
+          NTFY_THEMA: ${{ secrets.NTFY_THEMA }}
+          SMART_NEU_AUSWAHL: ${{ github.event.inputs.neu_auswahl == 'true' && '1' || '0' }}
+          DASHBOARD_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/smart/
+        run: python smart/main.py
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: speicher/smart_cache.enc
+          key: smart-${{ github.run_id }}
+      - name: Ergebnis speichern
+        id: speichern
+        run: |
+          git config user.name "radar-bot"
+          git config user.email "radar-bot@users.noreply.github.com"
+          git add speicher/smart.enc docs/smart/index.html 2>/dev/null || true
+          git diff --cached --quiet && exit 0
+          git commit -m "Smart-Money-Radar $(date -u +'%F %H:%M')"
+          for i in 1 2 3; do
+            git pull --rebase -X theirs origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && echo "geaendert=true" >> "$GITHUB_OUTPUT" && exit 0
+            sleep 15
+          done
+          exit 1
+
+  deploy:
+    needs: scan
+    if: github.ref == 'refs/heads/main' && needs.scan.outputs.geaendert == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy1.outputs.page_url || steps.deploy2.outputs.page_url || steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - id: deploy1
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+      - if: steps.deploy1.outcome == 'failure'
+        run: sleep 30
+      - id: deploy2
+        if: steps.deploy1.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+      - if: steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
+        run: sleep 60
+      - id: deploy
+        if: steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
+        uses: actions/deploy-pages@v4
