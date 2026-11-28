@@ -61,36 +61,30 @@ def _kurve(portfolio):
 
 
 def kurven_kennzahlen(pnl, av):
-    """Rückgang und Monats-Beständigkeit aus zeitgewichteten Renditen (Ein- und Auszahlungen verfälschen so nichts):
-    Rendite je Intervall = Gewinnänderung / Kontowert zu Beginn des Intervalls."""
+    """Rückgang = größter Verlust vom Gewinn-Hoch, geteilt durch den typischen Kontowert (Median, robust gegen
+    Ein- und Auszahlungen). Monats-Beständigkeit = Anteil der 30-Tage-Blöcke mit Gewinnzuwachs."""
     if len(pnl) < 3:
         return None
     tage = (pnl[-1][0] - pnl[0][0]) / TAG_MS
-    av_map = dict(av)
-    index, punkte, letzter_av = 1.0, [(pnl[0][0], 1.0)], av_map.get(pnl[0][0], 0.0)
-    for (t0, p0), (t1, p1) in zip(pnl, pnl[1:]):
-        basis = letzter_av if letzter_av and letzter_av > 1000 else None
-        if basis:
-            r = max(-0.95, min((p1 - p0) / basis, 5.0))
-            index *= 1 + r
-        punkte.append((t1, index))
-        letzter_av = av_map.get(t1, letzter_av)
-    hoch, dd = punkte[0][1], 0.0
-    for _, x in punkte:
-        hoch = max(hoch, x)
-        dd = max(dd, 1 - x / hoch if hoch > 0 else 0)
-    start, ende = punkte[0][0], punkte[-1][0]
+    werte = sorted(v for _, v in av if v > 1000)
+    basis = werte[len(werte) // 2] if werte else None
+    hoch, dd_abs = pnl[0][1], 0.0
+    for _, p in pnl:
+        hoch = max(hoch, p)
+        dd_abs = max(dd_abs, hoch - p)
+    dd = min(dd_abs / basis, 9.99) if basis else None
+    start, ende = pnl[0][0], pnl[-1][0]
     bloecke, pos, t0 = 0, 0, start
     while t0 + 30 * TAG_MS <= ende + TAG_MS:
         t1 = t0 + 30 * TAG_MS
-        a = [x for t, x in punkte if t <= t0]
-        b = [x for t, x in punkte if t <= t1]
+        a = [p for t, p in pnl if t <= t0]
+        b = [p for t, p in pnl if t <= t1]
         if a and b:
             bloecke += 1
             pos += b[-1] > a[-1]
         t0 = t1
-    return {"tage": round(tage), "drawdown": round(dd, 3), "monate": bloecke, "monate_pos": round(pos / bloecke, 2) if bloecke else None,
-            "index": round(index, 3)}
+    return {"tage": round(tage), "drawdown": round(dd, 3) if dd is not None else None, "monate": bloecke,
+            "monate_pos": round(pos / bloecke, 2) if bloecke else None, "konto_typisch": round(basis) if basis else None}
 
 
 def trade_kennzahlen(fl):
@@ -142,7 +136,7 @@ def pruefen(k):
         gruende.append(f"Historie nur {k.get('tage')} Tage")
     if (k.get("monate_pos") or 0) < E.MIN_MONATE_POSITIV:
         gruende.append("zu wenige Gewinnmonate")
-    if (k.get("drawdown") or 0) > E.MAX_DRAWDOWN:
+    if k.get("drawdown") is None or k["drawdown"] > E.MAX_DRAWDOWN:
         gruende.append(f"Rückgang {round((k.get('drawdown') or 0) * 100)} %")
     if (k.get("schliessungen") or 0) < E.MIN_SCHLIESSUNGEN_30T:
         gruende.append("zu wenige Trades")
