@@ -100,10 +100,10 @@ def stationen(icaos, cache):
 
 
 def beobachtet(icaos):
-    """Gemessene Temperaturen der letzten 30 Std. je Station: [(obsTime UTC, °C)]."""
+    """Gemessene Temperaturen der letzten 7 Tage je Station: [(obsTime UTC, °C)]."""
     out = {}
     for k in range(0, len(icaos), 40):
-        r = _S.get(AWC + "/metar", params={"ids": ",".join(icaos[k:k + 40]), "format": "json", "hours": 30}, timeout=60)
+        r = _S.get(AWC + "/metar", params={"ids": ",".join(icaos[k:k + 40]), "format": "json", "hours": 168}, timeout=60)
         if not r.ok:
             continue
         for x in r.json():
@@ -118,7 +118,7 @@ def beobachtet(icaos):
 
 def ensemble(lat, lon):
     r = _S.get(ENSEMBLE, params={"latitude": lat, "longitude": lon, "daily": "temperature_2m_max,temperature_2m_min",
-                                 "models": "ecmwf_ifs025,gfs025", "forecast_days": 3, "timezone": "auto"}, timeout=60)
+                                 "models": "ecmwf_ifs025,gfs025", "forecast_days": 3, "past_days": 7, "timezone": "auto"}, timeout=60)
     r.raise_for_status()
     j = r.json()
     d = j["daily"]
@@ -132,6 +132,30 @@ def ensemble(lat, lon):
             if x is not None:
                 werte[art][t].append(float(x))
     return werte, int(j.get("utc_offset_seconds") or 0)
+
+
+def stations_abweichung(werte, offset, beob, art, heute_lokal):
+    """Wie weit lag das Modell an dieser Station in den letzten Tagen daneben? Das Modell rechnet für ein 25-km-Gitter,
+    aufgelöst wird an einem Flughafen – Küste, Stadt und Höhe verschieben die Werte oft um 1–3 °C. Rückgabe: (Korrektur, Streuung, Tage)."""
+    tage = {}
+    for ts, t in beob:
+        d = datetime.fromtimestamp(ts + offset, tz=timezone.utc).date().isoformat()
+        tage.setdefault(d, []).append(t)
+    reste = []
+    for d, liste in tage.items():
+        if d >= heute_lokal or len(liste) < 18:      # nur vollständig gemessene, vergangene Tage
+            continue
+        m = werte[art].get(d)
+        if not m:
+            continue
+        mitte = sorted(m)[len(m) // 2]
+        reste.append((max(liste) if art == "max" else min(liste)) - mitte)
+    if len(reste) < 3:
+        return 0.0, None, len(reste)
+    reste.sort()
+    korr = reste[len(reste) // 2]
+    streu = (sum((r - korr) ** 2 for r in reste) / (len(reste) - 1)) ** 0.5
+    return korr, streu, len(reste)
 
 
 def wahrscheinlichkeiten(members, spannen, sigma):
@@ -169,9 +193,15 @@ def scannen(W, protokoll):
         if not ens:
             continue
         werte, offset = ens
-        members = list(werte["max" if info["art"] == "highest" else "min"].get(info["datum"], []))
+        art = "max" if info["art"] == "highest" else "min"
+        members = list(werte[art].get(info["datum"], []))
         if len(members) < 20:
             continue
+        heute_lokal = datetime.fromtimestamp(jetzt + offset, tz=timezone.utc).date().isoformat()
+        korr, streu, n_tage = stations_abweichung(werte, offset, obs.get(info["icao"], []), art, heute_lokal)
+        if n_tage < 3:
+            continue   # ohne Abgleich mit der Station kein Signal – sonst misst man nur den Modellfehler
+        members = [v + korr for v in members]
         # bereits gemessene Werte des Tages (Ortszeit) einrechnen
         tag0 = datetime.fromisoformat(info["datum"]).replace(tzinfo=timezone.utc).timestamp() - offset
         heute_obs = [t for ts, t in obs.get(info["icao"], []) if tag0 <= ts < tag0 + 86400]
@@ -181,7 +211,7 @@ def scannen(W, protokoll):
                 members = [max(v, max(heute_obs)) for v in members]
             else:
                 members = [min(v, min(heute_obs)) for v in members]
-        sigma = E.WX_SIGMA_HEUTE if stunden_rest < 24 else E.WX_SIGMA_MORGEN
+        sigma = max(E.WX_SIGMA_HEUTE if stunden_rest < 24 else E.WX_SIGMA_MORGEN, streu or 0)
         maerkte = [m for m in e.get("markets", []) if not m.get("closed")]
         sp = [spanne(m.get("groupItemTitle")) for m in maerkte]
         if not maerkte or any(s is None for s in sp):
@@ -208,6 +238,7 @@ def scannen(W, protokoll):
         ev = {"slug": e["slug"], "stadt": info["stadt"], "art": info["art"], "datum": info["datum"], "icao": info["icao"],
               "station": st.get("name"), "beobachtet": (max(heute_obs) if info["art"] == "highest" else min(heute_obs)) if heute_obs else None,
               "ens_median": round(sorted(members)[len(members) // 2], 1), "stunden_rest": round(stunden_rest, 1), "zeilen": zeilen,
+              "korrektur": round(korr, 1), "sigma": round(sigma, 2),
               "signal": {"seite": best[0], "titel": best[1]["titel"], "vorteil": round(best[2], 3), "preis": best[3], "p": best[1]["p"]} if best else None,
               "ende": e.get("endDate")}
         signale.append(ev)
@@ -280,8 +311,10 @@ def abrechnen(W):
 
 
 def lauf(S, protokoll):
+    if (S.get("wetter") or {}).get("version") != 2:
+        S.pop("wetter", None)   # Version 1 hatte keine Stations-Korrektur – Test sauber neu starten
     W = S.setdefault("wetter", {"start": int(time.time()), "offen": {}, "trades": [], "ergebnis": 0.0, "einsatz_summe": 0.0, "n": 0,
-                                "gewonnen": 0, "schaetzungen": {}, "brier": {"n": 0, "modell": 0.0, "markt": 0.0}, "verlauf": [], "stationen": {}})
+                                "gewonnen": 0, "schaetzungen": {}, "brier": {"n": 0, "modell": 0.0, "markt": 0.0}, "verlauf": [], "stationen": {}, "version": 2})
     if time.time() - W.get("letzter_scan", 0) < E.WX_ALLE_MIN * 60:
         return W
     try:
@@ -291,7 +324,7 @@ def lauf(S, protokoll):
         print(f"Wetter-Scanner: {n} Märkte, {sig} Signale, {len(W['offen'])} offene Papier-Trades, Ergebnis {W['ergebnis']:+.2f} $")
         for x in [x for x in W["signale"] if x["signal"]][:12]:
             g = x["signal"]
-            print(f"  {x['stadt']:<14} {x['art'][:4]} {x['datum']} rest {x['stunden_rest']:>5}h gemessen {x['beobachtet']} median {x['ens_median']} "
+            print(f"  {x['stadt']:<14} {x['art'][:4]} {x['datum']} rest {x['stunden_rest']:>5}h gemessen {x['beobachtet']} median {x['ens_median']} korr {x['korrektur']:+} sig {x['sigma']} "
                   f"-> {g['seite']} {g['titel']} p={g['p']:.2f} preis={g['preis']:.3f} | " +
                   " ".join(f"{z['titel']}:{z['p']:.2f}/{z['preis']}" for z in x['zeilen'] if (z['preis'] or 0) > 0.02 or z['p'] > 0.05))
     except Exception as ex:
