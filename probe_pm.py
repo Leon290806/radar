@@ -1,15 +1,17 @@
-import json, requests, time
+import json, requests, re
 S=requests.Session(); S.headers["User-Agent"]="Mozilla/5.0 (privat, Papier-Test)"
-A="0x3c58ef422754ff22c7e806336feba0064d8b776b"; B="https://data-api.polymarket.com/v2"
-items=S.get(B+"/activity",params={"user":A,"limit":40},timeout=40).json()["data"]
-from collections import Counter; print(Counter((y["type"],y.get("side")) for y in items)); print("zeitraum", (items[0]["timestamp"]-items[-1]["timestamp"])/3600, "h")
-for x in [y for y in items if y["type"]=="TRADE"][:3]:
-    slug=x["slug"]; print("\n----", x["title"], x["outcome"], "price", x["price"], "t", x["timestamp"])
-    m=S.get("https://gamma-api.polymarket.com/markets",params={"slug":slug},timeout=40).json()
-    if m: mm=m[0]; print("gamma", mm.get("closed"), mm.get("outcomes"), mm.get("outcomePrices"), mm.get("clobTokenIds")[:200] if mm.get("clobTokenIds") else None, mm.get("umaResolutionStatus"), mm.get("endDate"))
-    toks=json.loads(m[0]["clobTokenIds"]) if m else [x["token_id"]]
-    for i,t in enumerate(toks):
-        ph=S.get(B+"/prices-history",params={"token_id":t,"start":x["timestamp"]-300,"end":x["timestamp"]+900,"bucket_seconds":60},timeout=40).json()["data"]
-        print(" token",i,"(seiner)" if t==x["token_id"] else "", [(p["timestamp"]-x["timestamp"], p["price"]) for p in ph][:12])
-red=[y for y in items if y["type"]=="REDEEM"][:2]; print("\nREDEEM sample", json.dumps(red)[:600])
-j=S.get(B+"/activity",params={"user":A,"limit":500,"start":int(time.time())-86400},timeout=40).json(); print("24h:", len(j["data"]), j["pagination"])
+G="https://gamma-api.polymarket.com"
+for params in [{"tag_slug":"weather","closed":"false","limit":5},{"tag_slug":"temperature","closed":"false","limit":5}]:
+    r=S.get(G+"/events",params=params,timeout=40); print("\n### events",params,r.status_code,len(r.content))
+    try:
+        ev=r.json(); print(len(ev))
+        for e in ev[:3]:
+            print("-", e.get("title"), e.get("slug"), e.get("endDate"), "markets:", len(e.get("markets",[])))
+        if ev:
+            e=ev[0]; print("DESC:", (e.get("description") or "")[:900])
+            for m in e.get("markets",[])[:3]: print("  m", m.get("question"), m.get("groupItemTitle"), m.get("outcomePrices"), m.get("bestAsk"), m.get("bestBid"), m.get("lastTradePrice"), m.get("clobTokenIds","")[:60], m.get("liquidity"), m.get("volume24hr"))
+    except Exception as ex: print(ex, r.text[:300])
+r=S.get(G+"/public-search",params={"q":"highest temperature tokyo","limit_per_type":3},timeout=40); print("\n### search", r.status_code, r.text[:600])
+o=S.get("https://ensemble-api.open-meteo.com/v1/ensemble",params={"latitude":35.55,"longitude":139.78,"daily":"temperature_2m_max","models":"ecmwf_ifs025","forecast_days":3,"timezone":"Asia/Tokyo"},timeout=40)
+print("\n### openmeteo ens", o.status_code, o.text[:700])
+k=S.get("https://api.elections.kalshi.com/trade-api/v2/markets",params={"limit":3,"status":"open","series_ticker":"KXFED"},timeout=40); print("\n### kalshi", k.status_code, k.text[:600])
