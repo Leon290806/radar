@@ -10,6 +10,7 @@ Was das Radar damit macht:
 
 Ohne Secret FREELANCER_TOKEN passiert nichts. Das Radar schreibt nie etwas ins Konto (keine Gebote, keine Nachrichten).
 """
+import re
 from datetime import datetime, timezone
 
 import requests
