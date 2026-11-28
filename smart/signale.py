@@ -172,8 +172,8 @@ def einzel_kopie(EK, alt, neu, preise, erster_lauf):
         if erster_lauf or vorher is None:
             continue  # bestehende Positionen nicht kopieren: Einstiegszeitpunkt unbekannt
         for coin, p in pos.items():
-            if coin in d["offen"]:
-                continue
+            if coin in d["offen"] or not p.get("rel", True):
+                continue   # nur nennenswerte Positionen kopieren
             war = vorher.get(coin)
             if war and war["r"] == p["r"]:
                 continue

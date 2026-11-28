@@ -155,7 +155,9 @@ def migrieren(P):
 
 
 def bewegungen(alt, neu, namen):
-    """Was die Trader seit dem letzten Lauf getan haben (für den Verlauf im Dashboard)."""
+    """Echte Eröffnungen und Schließungen seit dem letzten Lauf. Verglichen wird mit ALLEN Positionen (ab 1 % des Kontos),
+    damit eine Position, die nur um die 5-%-Schwelle pendelt, nicht als „geschlossen“ und „neu eröffnet“ erscheint.
+    Gemeldet werden nur nennenswerte Positionen (ab 5 % bzw. 5.000 $)."""
     out, t = [], SG.jetzt_ms()
     for a, pos in neu.items():
         vorher = alt.get(a)
@@ -163,14 +165,30 @@ def bewegungen(alt, neu, namen):
             continue
         for coin, p in pos.items():
             w = vorher.get(coin)
+            if not p.get("rel", True):
+                continue
             if not w:
                 out.append({"zeit": t, "a": a, "coin": coin, "art": "eröffnet", "r": p["r"], "wert": p["wert"]})
             elif w["r"] != p["r"]:
                 out.append({"zeit": t, "a": a, "coin": coin, "art": "gedreht", "r": p["r"], "wert": p["wert"]})
         for coin, w in vorher.items():
-            if coin not in pos:
+            if coin not in pos and w.get("rel", True):
                 out.append({"zeit": t, "a": a, "coin": coin, "art": "geschlossen", "r": w["r"], "wert": w["wert"]})
     return out
+
+
+def push_bewegungen(bew, namen):
+    if not bew:
+        return
+    txt = {"eröffnet": "eröffnet", "gedreht": "gedreht auf", "geschlossen": "geschlossen"}
+    zeilen = [f"{_kurz(b['a'], namen)}: {txt[b['art']]} {'LONG' if b['r'] > 0 else 'SHORT'} {b['coin']} ({b['wert']:,.0f} $)".replace(",", ".")
+              for b in bew[:6]]
+    if len(bew) > 6:
+        zeilen.append(f"… und {len(bew) - 6} weitere")
+    push("\n".join(zeilen), f"👀 Top-Trader: {len(bew)} Bewegung{'en' if len(bew) > 1 else ''}")
+
+
+SEITEN_VERSION = 4   # erhöhen, wenn sich das Dashboard ändert -> Seite wird beim nächsten Lauf sofort neu gebaut
 
 
 def main():
@@ -199,8 +217,8 @@ def main():
     snap, konten = SG.schnappschuss(S.get("trader", []), prot)
     alt_snap = S.get("snap") or {}
     erster = not alt_snap
-    rel, alt_rel = SG.relevant(snap), SG.relevant(alt_snap)
-    bew = bewegungen(alt_rel, rel, namen)
+    rel = SG.relevant(snap)
+    bew = bewegungen(alt_snap, snap, namen)
     S["bewegungen"] = (bew + S.get("bewegungen", []))[:300]
     K = SG.konsens(rel)
 
@@ -238,7 +256,9 @@ def main():
         prot.append(f"Wetter-Scanner: {type(ex).__name__}")
 
     EK = S.get("einzel") or {}
-    SG.einzel_kopie(EK, alt_rel, rel, preise, erster)
+    for d in EK.values():   # Altlast: Kopien aus der Schwellen-Pendelei (Einstieg weit weg vom Einstieg des Traders) entfernen
+        d["fertig"] = [x for x in d.get("fertig", []) if x.get("verz") is None or abs(x["verz"]) < 0.1]
+    SG.einzel_kopie(EK, alt_snap, snap, preise, erster)
     S["einzel"] = EK
     S["snap"], S["konten"], S["konsens"] = snap, konten, K
     S["preise"] = {c: preise[c]["px"] for c in set(K) | set(P["pos"]) | {p["coin"] for p in SPG["pos"].values()} | {"BTC", "ETH", "SOL"} if c in preise}
@@ -254,14 +274,16 @@ def main():
         print(" ", z)
 
     push_ereignisse(ereignisse)
+    push_bewegungen(bew, namen)
     push_spiegel(sp_ereignisse, namen)
     tages_push(S, preise)
 
     gross = any(e["art"] in ("auf", "zu") and e["notional"] >= E.SPIEGEL_PUSH_AB for e in sp_ereignisse)
-    faellig = (neu_ausgewaehlt or ereignisse or gross or not os.path.exists(E.SEITE)
+    faellig = (neu_ausgewaehlt or ereignisse or gross or bew or not os.path.exists(E.SEITE) or S.get("seiten_version") != SEITEN_VERSION
                or SG.jetzt_ms() - S.get("commit_zeit", 0) >= E.COMMIT_ALLE_MIN * 60_000)
     if faellig:
         S["commit_zeit"] = SG.jetzt_ms()
+        S["seiten_version"] = SEITEN_VERSION
         _speichern(S, E.JOURNAL)
         html = seite.erstelle(S)
         if E.PASSWORT:

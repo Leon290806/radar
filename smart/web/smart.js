@@ -47,7 +47,7 @@ function vergleichsReihen() {
 
 /* ---------- Kopf ---------- */
 const tabs = [["uebersicht", "Übersicht", null], ["spiegel", "Spiegel-Portfolio", SPG.pos.length || null], ["scanner", "Markt-Scanner", D.wetter ? (D.wetter.signale || []).filter(x => x.signal).length || null : null], ["tracking", "Tracking", (D.polymarket || []).reduce((n, t) => n + (t.n || 0), 0) || null], ["trader", "Trader", D.trader.length], ["bewegungen", "Bewegungen", D.bewegungen.length || null],
-  ["kopie", "Kopier-Test", D.kopien.length || null], ["trades", "Papier-Trades", zu.length || null], ["methode", "Methode", null]];
+  ["kopie", "Kopier-Test", D.kopien.length || null], ["trades", "Konsens-Trades", zu.length || null], ["methode", "Methode", null]];
 document.body.innerHTML = `
 <header class="kopf"><div class="in">
   <div class="zeile1">
@@ -336,9 +336,9 @@ const RENDER = {
   },
 
   trades(el) {
-    el.innerHTML = `<div class="card">${zu.length ? `<div class="tw"><table class="tbl karten"><thead><tr><th class="l">Geschlossen</th><th class="l">Coin</th><th class="l">Richtung</th><th>Einstieg</th><th>Ausstieg</th><th>Dauer</th><th>Trader</th><th class="l">Grund</th><th>Ergebnis</th></tr></thead><tbody>
+    el.innerHTML = `<p class="erkl">Abgeschlossene Trades des <b>Konsens-Portfolios</b>: Es kauft nur, wenn mindestens ${R.KONSENS_MIN_TRADER} Top-Trader zu ${pct(R.KONSENS_MIN_ANTEIL, 0, false)} dieselbe Richtung halten, und verkauft, wenn die Einigkeit verschwindet. Offene Positionen siehst du in der Übersicht.</p><div class="card">${zu.length ? `<div class="tw"><table class="tbl karten"><thead><tr><th class="l">Geschlossen</th><th class="l">Coin</th><th class="l">Richtung</th><th>Einstieg</th><th>Ausstieg</th><th>Dauer</th><th>Trader</th><th class="l">Grund</th><th>Ergebnis</th></tr></thead><tbody>
       ${zu.map(t => `<tr><td class="l mute">${esc(zeit(t.zeit_aus))}</td><td class="l tick">${esc(t.coin)}</td><td class="l">${richt(t.r)}</td><td>${preis(t.ein)}</td><td>${preis(t.aus)}</td><td>${dauer(t.zeit_aus - t.zeit_ein)}</td><td>${t.trader_ein || "–"}</td><td class="l mute klein">${esc(t.grund)}</td><td class="m-r ${kl(t.ergebnis)}">${usdVz(t.ergebnis, 2)} <span class="klein">(${pct(t.pct)})</span></td></tr>`).join("")}
-    </tbody></table></div>` : `<div class="leer">Noch kein abgeschlossener Papier-Trade.</div>`}</div>`;
+    </tbody></table></div>` : `<div class="leer">Noch kein abgeschlossener Konsens-Trade – die 3 offenen Positionen stehen in der Übersicht.</div>`}</div>`;
   },
 
   methode(el) {
