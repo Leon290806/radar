@@ -32,9 +32,21 @@ const btcR = V.length && ok(V[V.length - 1][2]) ? V[V.length - 1][2] / P.start_k
 const tage = P.start ? (D.stand - P.start) / 864e5 : 0;
 const zu = P.trades || [];
 const gewinnTrades = zu.filter(t => t.ergebnis > 0).length;
+const SPG = D.spiegel || { pos: [], trades: [], verlauf: [], netto: [], je_trader: {}, kapital: R.SPIEGEL_KAPITAL };
+const spR = ok(SPG.wert) ? SPG.wert / SPG.kapital - 1 : null;
+const SV = SPG.verlauf || [];
+const spTage = SPG.start ? (D.stand - SPG.start) / 864e5 : 0;
+const spBtcR = SV.length && ok(SV[SV.length - 1][2]) ? SV[SV.length - 1][2] / SPG.kapital - 1 : btcR;
+/* gemeinsame Zeitachse für den Vergleich (Rendite in % seit Start des jeweiligen Tests) */
+function vergleichsReihen() {
+  const ts = Array.from(new Set(V.map(v => v[0]).concat(SV.map(v => v[0])))).sort((a, b) => a - b);
+  const nimm = (reihe, idx, basis) => { let j = 0, letzt = null; return ts.map(t => { while (j < reihe.length && reihe[j][0] <= t) { if (ok(reihe[j][idx])) letzt = reihe[j][idx] / basis - 1; j++; } return letzt; }); };
+  const btc = SV.length ? nimm(SV, 2, SPG.kapital) : nimm(V, 2, P.start_kapital);
+  return { ts, sp: nimm(SV, 1, SPG.kapital), ko: nimm(V, 1, P.start_kapital), btc };
+}
 
 /* ---------- Kopf ---------- */
-const tabs = [["uebersicht", "Übersicht", null], ["trader", "Trader", D.trader.length], ["bewegungen", "Bewegungen", D.bewegungen.length || null],
+const tabs = [["uebersicht", "Übersicht", null], ["spiegel", "Spiegel-Portfolio", SPG.pos.length || null], ["trader", "Trader", D.trader.length], ["bewegungen", "Bewegungen", D.bewegungen.length || null],
   ["kopie", "Kopier-Test", D.kopien.length || null], ["trades", "Papier-Trades", zu.length || null], ["methode", "Methode", null]];
 document.body.innerHTML = `
 <header class="kopf"><div class="in">
@@ -83,10 +95,12 @@ function linie(host, x, serien, fmt) {
     const ticks = []; const n = 4; for (let k = 0; k <= n; k++) ticks.push(lo + (hi - lo) * k / n);
     let svg = `<svg width="${W}" height="${H}">`;
     ticks.forEach(t => { svg += `<line x1="${pl}" x2="${W - pr}" y1="${Y(t)}" y2="${Y(t)}" stroke="${cssv("--line2")}"/><text x="${W - pr + 8}" y="${Y(t) + 4}" font-size="11" fill="${cssv("--ink3")}">${esc(fmt(t))}</text>`; });
-    const xt = [0, Math.floor((x.length - 1) / 2), x.length - 1];
     const kurzZeit = x[x.length - 1] - x[0] < 2 * 864e5;
-    const xl = i => kurzZeit ? new Date(x[i]).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : datum(x[i]);
-    (x.length > 2 ? xt : [0, x.length - 1]).forEach((i, j, arr) => { svg += `<text x="${X(i)}" y="${H - 6}" font-size="11" fill="${cssv("--ink3")}" text-anchor="${j === 0 ? "start" : j === arr.length - 1 ? "end" : "middle"}">${esc(xl(i))}</text>`; });
+    const t0 = x[0], t1 = x[x.length - 1];
+    [t0, (t0 + t1) / 2, t1].forEach((t, j) => {
+      const xp = pl + (W - pl - pr) * (t - t0) / ((t1 - t0) || 1);
+      const txt = kurzZeit ? new Date(t).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : datum(t);
+      svg += `<text x="${xp}" y="${H - 6}" font-size="11" fill="${cssv("--ink3")}" text-anchor="${j === 0 ? "start" : j === 2 ? "end" : "middle"}">${esc(txt)}</text>`; });
     serien.forEach(s => {
       let d = "", an = false;
       s.v.forEach((v, i) => { if (!ok(v)) { an = false; return; } d += (an ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1); an = true; });
@@ -133,46 +147,83 @@ function posTabelle(liste) {
 const RENDER = {
   uebersicht(el) {
     const signale = D.konsens.filter(c => c.signal).length;
-    const vergleich = ok(btcR) ? (rendite - btcR) : null;
+    const vg = ok(spR) && ok(spBtcR) ? spR - spBtcR : null;
+    const kopienErg = D.trader.reduce((s, t) => s + (t.kopie ? t.kopie.ergebnis + t.kopie.offen_erg : 0), 0);
     el.innerHTML = `
     <div class="h-held">
       <div><div class="h-datum">Papier-Test seit ${esc(datum(P.start))} · ${zahl(tage, tage < 10 ? 1 : 0)} Tage</div>
         <h2 class="h-titel">Hätte man mit Smart Money Geld verdient?</h2>
-        <p class="h-unter">Der Radar beobachtet ${D.trader.length} beständige Top-Trader auf Hyperliquid. Halten mehrere dieselbe Richtung, „kauft“ das Papier-Portfolio – mit echten Preisen, Gebühren, Slippage und Funding, aber ohne echtes Geld.</p></div>
+        <p class="h-unter">${D.trader.length} beständige Top-Trader auf Hyperliquid, zwei Papier-Portfolios mit je ${usd(SPG.kapital)}: Das <b>Spiegel-Portfolio</b> kopiert alle Trader anteilig nach ihrer Note, das <b>Konsens-Portfolio</b> kauft nur, wenn sich mehrere einig sind. Echte Preise, Gebühren, Slippage und Funding – aber kein echtes Geld.</p></div>
       <div class="h-kpis">
-        <div><span>Papier-Portfolio</span><b class="${kl(rendite)}">${pct(rendite)}</b><small>${usd(P.wert)} von ${usd(P.start_kapital)}</small></div>
-        <div><span>Bitcoin halten</span><b class="${kl(btcR)}">${pct(btcR)}</b><small>${ok(vergleich) ? (vergleich >= 0 ? "Test liegt vorn: " : "Test liegt hinten: ") + pct(vergleich) : "Vergleich ab dem 2. Messpunkt"}</small></div>
-        <div><span>Signale jetzt</span><b>${signale}<i> / ${P.pos.length} offen</i></b><small>${zu.length} abgeschlossen · ${zu.length ? pct(gewinnTrades / zu.length, 0, false) + " im Plus" : "noch keine"}</small></div>
+        <div><span>Spiegel-Portfolio</span><b class="${kl(spR)}">${pct(spR)}</b><small>${usd(SPG.wert)} · ${SPG.pos.length} Positionen</small></div>
+        <div><span>Konsens-Portfolio</span><b class="${kl(rendite)}">${pct(rendite)}</b><small>${signale} Signale · ${P.pos.length} offen</small></div>
+        <div><span>Bitcoin halten</span><b class="${kl(spBtcR)}">${pct(spBtcR)}</b><small>${ok(vg) ? (vg >= 0 ? "Spiegel liegt vorn: " : "Spiegel liegt hinten: ") + pct(vg) : "Vergleich ab dem 2. Messpunkt"}</small></div>
       </div>
     </div>
     ${tage < 28 ? `<div class="box warn" style="margin-bottom:16px">Der Test läuft erst ${zahl(tage, tage < 10 ? 1 : 0)} Tage. Aussagekräftig wird das Ergebnis frühestens nach 4–8 Wochen – vorher ist alles Zufall. Bitte kein echtes Geld darauf setzen.</div>` : ""}
     <div class="grid">
-      <div class="card c8"><div class="ch"><div><h3 class="ct">Papier-Portfolio gegen Bitcoin</h3><div class="cs">Startkapital ${usd(P.start_kapital)} · ohne Hebel · je Position ${pct(R.POS_ANTEIL, 0, false)}</div></div>
-        <div class="legende"><span><i style="background:var(--s1)"></i>Smart-Money-Test</span><span><i style="background:var(--s4)"></i>Bitcoin halten</span></div></div>
+      <div class="card c8"><div class="ch"><div><h3 class="ct">Rendite seit Start</h3><div class="cs">Alle Tests ohne Hebel, nach Kosten</div></div>
+        <div class="legende"><span><i style="background:var(--s7)"></i>Spiegel</span><span><i style="background:var(--s1)"></i>Konsens</span><span><i style="background:var(--s4)"></i>Bitcoin halten</span></div></div>
         <div class="chart" id="ch-verlauf"></div></div>
-      <div class="card c4"><div class="ch"><div><h3 class="ct">Kosten bisher</h3><div class="cs">Simuliert, so wie sie echt anfallen würden</div></div></div>
+      <div class="card c4"><div class="ch"><div><h3 class="ct">Die drei Tests</h3><div class="cs">Was davon funktioniert, zeigt sich erst nach Wochen</div></div></div>
         <ul class="schritte" style="margin-top:0">
-          <li><span>Gebühren ${tippI("Taker-Gebühr " + pct(R.GEBUEHR, 3, false) + " je Ein- und Ausstieg.")}</span><span>${usd(-P.gebuehren, 2)}</span></li>
-          <li><span>Funding ${tippI("Bei Perps zahlen Longs (oder Shorts) stündlich eine Gebühr an die Gegenseite. Positiv = erhalten.")}</span><span class="${kl(P.funding)}">${usdVz(P.funding, 2)}</span></li>
-          <li><span>Slippage je Trade ${tippI("Annahme: Wir bekommen " + pct(R.SLIPPAGE, 2, false) + " schlechtere Preise als der Mittelkurs.")}</span><span>${pct(R.SLIPPAGE, 2, false)}</span></li>
-          <li><span>Freies Kapital</span><span>${usd(P.cash)}</span></li>
+          <li><span>Spiegel-Portfolio ${tippI("Kapital nach Note auf alle Trader verteilt, jede Position anteilig kopiert. Wie Copy-Trading.")}</span><span class="${kl(spR)}">${pct(spR)}</span></li>
+          <li><span>Konsens-Portfolio ${tippI("Kauft nur, wenn mindestens " + R.KONSENS_MIN_TRADER + " Trader zu " + pct(R.KONSENS_MIN_ANTEIL, 0, false) + " dieselbe Richtung halten.")}</span><span class="${kl(rendite)}">${pct(rendite)}</span></li>
+          <li><span>Einzel-Kopien ${tippI("Jede neue Position mit festen " + usd(R.EINZEL_NOTIONAL) + " kopiert – misst vor allem die Verzögerungskosten.")}</span><span class="${kl(kopienErg)}">${usdVz(kopienErg)}</span></li>
+          <li><span>Bitcoin halten</span><span class="${kl(spBtcR)}">${pct(spBtcR)}</span></li>
         </ul>
-        <p class="klein mute" style="margin:12px 0 0">Push aufs Handy bei jedem Papier-Kauf und -Verkauf.</p></div>
+        <p class="klein mute" style="margin:12px 0 0">Push aufs Handy: Konsens-Käufe und -Verkäufe, Spiegel-Trades ab ${usd(R.SPIEGEL_PUSH_AB)}, jeden Abend ab ${R.TAGES_PUSH_STUNDE} Uhr der Tagesstand.</p></div>
     </div>
-    <div class="card" style="margin-bottom:16px"><div class="ch"><div><h3 class="ct">Offene Papier-Positionen</h3><div class="cs">Werden geschlossen, sobald weniger als ${R.KONSENS_AUS_TRADER} Trader übrig sind oder die Einigkeit unter ${pct(R.KONSENS_AUS_ANTEIL, 0, false)} fällt</div></div></div>${posTabelle(P.pos)}</div>
+    <div class="card" style="margin-bottom:16px"><div class="ch"><div><h3 class="ct">Konsens-Positionen</h3><div class="cs">Werden geschlossen, sobald weniger als ${R.KONSENS_AUS_TRADER} Trader übrig sind oder die Einigkeit unter ${pct(R.KONSENS_AUS_ANTEIL, 0, false)} fällt</div></div></div>${posTabelle(P.pos)}</div>
     <div class="card"><div class="ch"><div><h3 class="ct">Was die Top-Trader gerade halten</h3><div class="cs">Coins, in denen mindestens 2 der beobachteten Trader eine nennenswerte Position haben</div></div></div>${konsensTabelle(D.konsens)}</div>`;
-    linie($("#ch-verlauf", el), V.map(v => v[0]), [{ name: "Smart-Money-Test", farbe: "--s1", v: V.map(v => v[1]), breite: 2.4 }, { name: "Bitcoin halten", farbe: "--s4", v: V.map(v => v[2]), strich: true }], v => usd(v));
+    const vr = vergleichsReihen();
+    linie($("#ch-verlauf", el), vr.ts, [{ name: "Spiegel", farbe: "--s7", v: vr.sp, breite: 2.4 }, { name: "Konsens", farbe: "--s1", v: vr.ko, breite: 2 }, { name: "Bitcoin halten", farbe: "--s4", v: vr.btc, strich: true }], v => pct(v, 1));
+  },
+
+  spiegel(el) {
+    const je = Object.entries(SPG.je_trader || {}).sort((a, b) => (b[1].gewicht || 0) - (a[1].gewicht || 0));
+    const offenErg = SPG.pos.reduce((s, p) => s + (p.erg || 0), 0);
+    const einsatz = SPG.pos.reduce((s, p) => s + p.notional, 0);
+    const sTr = SPG.trades || [];
+    el.innerHTML = `<p class="erkl">${usd(SPG.kapital)} werden nach der Note auf die ${D.trader.length} Trader verteilt – bessere Trader bekommen mehr. Hält ein Trader 20 % seines Kontos in ETH long, hält sein Anteil hier ebenfalls 20 % in ETH long. Nutzt er Hebel, wird proportional heruntergerechnet, damit nie mehr als das eigene Kapital im Markt ist. Fällt ein Trader bei der täglichen Auswahl heraus, werden seine Positionen geschlossen; neue bekommen sofort ihren Anteil.</p>
+    <div class="kpis">
+      <div class="kpi"><div class="k">Wert</div><div class="v">${usd(SPG.wert)}</div><div class="n">Start ${usd(SPG.kapital)} am ${esc(datum(SPG.start))}</div></div>
+      <div class="kpi"><div class="k">Rendite</div><div class="v ${kl(spR)}">${pct(spR)}</div><div class="n">Bitcoin im selben Zeitraum ${pct(spBtcR)}</div></div>
+      <div class="kpi"><div class="k">Im Markt</div><div class="v">${usd(einsatz)}</div><div class="n">${SPG.pos.length} Positionen · Buchwert ${usdVz(offenErg)}</div></div>
+      <div class="kpi"><div class="k">Kosten bisher</div><div class="v neg">${usd(-SPG.gebuehren)}</div><div class="n">Funding ${usdVz(SPG.funding)} · ${sTr.length} Abschlüsse</div></div>
+    </div>
+    <div class="grid">
+      <div class="card c7"><div class="ch"><div><h3 class="ct">Aufteilung nach Trader</h3><div class="cs">Gewicht aus der Note · Ergebnis nach Gebühren und Funding</div></div></div>
+        ${je.length ? `<div class="tw"><table class="tbl"><thead><tr><th class="l">Trader</th><th>Gewicht</th><th>Budget</th><th>Im Markt</th><th>Pos.</th><th>Ergebnis</th></tr></thead><tbody>
+        ${je.map(([a, v]) => `<tr class="klick" data-trader="${esc(a)}"><td class="l">${TR[a] ? `<span class="tick">${tName(a)}</span>` : `<span class="mute">${kurzAdr(a)} (ausgeschieden)</span>`}</td>
+          <td><span class="gbar"><i style="width:${Math.min(100, (v.gewicht || 0) * 100 / Math.max(...je.map(x => x[1].gewicht || 0), 0.0001))}%"></i></span>${pct(v.gewicht, 1, false)}</td>
+          <td>${usd(v.budget)}</td><td>${usd(v.einsatz)}</td><td>${v.positionen}</td><td class="${kl(v.realisiert + v.offen_erg)}">${usdVz(v.realisiert + v.offen_erg)}</td></tr>`).join("")}
+        </tbody></table></div>` : '<div class="leer">Noch keine Aufteilung.</div>'}</div>
+      <div class="card c5"><div class="ch"><div><h3 class="ct">Netto-Ausrichtung nach Coin</h3><div class="cs">Summe aller gespiegelten Positionen</div></div></div>
+        ${SPG.netto.length ? `<div class="tw"><table class="tbl"><thead><tr><th class="l">Coin</th><th>Long</th><th>Short</th><th>Netto</th><th>Trader</th></tr></thead><tbody>
+        ${SPG.netto.slice(0, 20).map(n => `<tr><td class="l tick">${esc(n.coin)}</td><td class="pos">${usd(n.long)}</td><td class="neg">${usd(n.short)}</td><td class="${kl(n.long - n.short)}">${usdVz(n.long - n.short)}</td><td>${n.trader}</td></tr>`).join("")}
+        </tbody></table></div>` : '<div class="leer">Keine offenen Positionen.</div>'}</div>
+    </div>
+    <div class="card" style="margin-bottom:16px"><div class="ch"><div><h3 class="ct">Offene Spiegel-Positionen</h3></div></div>
+      ${SPG.pos.length ? `<div class="tw"><table class="tbl karten"><thead><tr><th class="l">Trader</th><th class="l">Coin</th><th class="l">Richtung</th><th>Einsatz</th><th>Einstieg</th><th>Aktuell</th><th>Seit</th><th>Ergebnis</th></tr></thead><tbody>
+      ${SPG.pos.map(p => `<tr><td class="l">${tLink(p.a)}</td><td class="l tick">${esc(p.coin)}</td><td class="l">${richt(p.r)}</td><td>${usd(p.notional)}</td><td>${preis(p.ein)}</td><td>${preis(p.px)}</td><td>${dauer(D.stand - p.zeit)}</td><td class="m-r ${kl(p.erg)}">${usdVz(p.erg)} <span class="klein">(${pct(p.pct)})</span></td></tr>`).join("")}
+      </tbody></table></div>` : '<div class="leer">Keine offenen Positionen.</div>'}</div>
+    <div class="card"><div class="ch"><div><h3 class="ct">Letzte Abschlüsse</h3><div class="cs">Ganz oder teilweise geschlossen</div></div></div>
+      ${sTr.length ? `<div class="tw"><table class="tbl karten"><thead><tr><th class="l">Zeit</th><th class="l">Trader</th><th class="l">Coin</th><th class="l">Richtung</th><th>Einsatz</th><th>Dauer</th><th class="l">Grund</th><th>Ergebnis</th></tr></thead><tbody>
+      ${sTr.slice(0, 100).map(t => `<tr><td class="l mute">${esc(zeit(t.zeit_aus))}</td><td class="l">${tLink(t.a)}</td><td class="l tick">${esc(t.coin)}</td><td class="l">${richt(t.r)}</td><td>${usd(t.notional)}</td><td>${dauer(t.zeit_aus - t.zeit_ein)}</td><td class="l mute klein">${esc(t.grund)}${t.teil ? " (Teil)" : ""}</td><td class="m-r ${kl(t.ergebnis)}">${usdVz(t.ergebnis, 2)}</td></tr>`).join("")}
+      </tbody></table></div>` : '<div class="leer">Noch kein Abschluss.</div>'}</div>`;
   },
 
   trader(el) {
     const zeilen = D.trader.slice().sort((a, b) => (b.note || 0) - (a.note || 0));
     el.innerHTML = `<p class="erkl">Ausgewählt nach Beständigkeit, nicht nach dem größten Gewinn: mindestens ${R.MIN_TAGE_HISTORIE} Tage Historie, in mindestens ${pct(R.MIN_MONATE_POSITIV, 0, false)} der Monate im Plus, höchstens ${pct(R.MAX_DRAWDOWN, 0, false)} Rückgang, kein einzelner Glückstreffer und Haltedauer lang genug zum Kopieren. Die Auswahl wird täglich neu berechnet.</p>
-    <div class="card flach"><div class="tw" style="margin:0;padding:0"><table class="tbl"><thead><tr><th class="l">Trader</th><th>Note ${tippI("0–100, relativ zum besten ausgewählten Trader. Mischt Gewinnmonate, Rendite, Rückgang und Trefferquote.")}</th><th>Konto</th><th>Gewinn gesamt</th><th>Rendite</th><th>Gewinnmonate</th><th>Max. Rückgang</th><th>Haltedauer ${tippI("Median der abgeschlossenen Runden im letzten Monat.")}</th><th>Treffer 30 T.</th><th class="l">Positionen jetzt</th><th>Kopie-Test ${tippI("Was es gebracht hätte, jede neue Position dieses Traders mit " + usd(R.EINZEL_NOTIONAL) + " zu kopieren – mit unserer Verzögerung.")}</th></tr></thead><tbody>
+    <div class="card flach"><div class="tw" style="margin:0;padding:0"><table class="tbl"><thead><tr><th class="l">Trader</th><th>Note ${tippI("0–100, relativ zum besten ausgewählten Trader. Mischt Gewinnmonate, Rendite, Rückgang und Trefferquote.")}</th><th>Konto</th><th>Gewinn gesamt</th><th>Rendite</th><th>Gewinnmonate</th><th>Max. Rückgang</th><th>Haltedauer ${tippI("Median der abgeschlossenen Runden im letzten Monat.")}</th><th>Treffer 30 T.</th><th class="l">Positionen jetzt</th><th>Spiegel ${tippI("Anteil am Spiegel-Portfolio und dessen Ergebnis für diesen Trader.")}</th><th>Kopie-Test ${tippI("Was es gebracht hätte, jede neue Position dieses Traders mit " + usd(R.EINZEL_NOTIONAL) + " zu kopieren – mit unserer Verzögerung.")}</th></tr></thead><tbody>
     ${zeilen.map(t => `<tr class="klick" data-trader="${esc(t.adresse)}"><td class="l"><span class="tick">${tName(t.adresse)}</span><div class="firma">${esc(t.tage)} Tage aktiv</div></td>
       <td><span class="note">${t.note ?? "–"}</span></td><td>${kurz(t.konto_jetzt ?? t.konto)}</td><td class="pos">${kurz(t.pnl_gesamt)}</td><td>${pct(t.roi_gesamt, 0)}</td>
       <td>${pct(t.monate_pos, 0, false)} <span class="klein mute">von ${t.monate}</span></td><td class="neg">${pct(-(t.drawdown || 0), 0)}</td><td>${ok(t.haltedauer_std) ? dauer(t.haltedauer_std * 3.6e6) : "–"}</td>
       <td>${pct(t.trefferquote, 0, false)}</td>
       <td class="l">${t.pos.length ? t.pos.slice(0, 4).map(p => `<span class="pchip ${p.r > 0 ? "long" : "short"}">${esc(p.coin)}</span>`).join("") + (t.pos.length > 4 ? `<span class="klein mute"> +${t.pos.length - 4}</span>` : "") : '<span class="mute klein">keine</span>'}</td>
+      <td class="${kl(t.spiegel && (t.spiegel.realisiert + t.spiegel.offen_erg))}">${t.spiegel ? pct(t.spiegel.gewicht, 1, false) + `<div class="firma">${usdVz(t.spiegel.realisiert + t.spiegel.offen_erg)}</div>` : "–"}</td>
       <td class="${kl(t.kopie && (t.kopie.ergebnis + t.kopie.offen_erg))}">${t.kopie && (t.kopie.anzahl || t.kopie.offen) ? usdVz(t.kopie.ergebnis + t.kopie.offen_erg) + `<div class="firma">${t.kopie.anzahl} fertig · ${t.kopie.offen} offen</div>` : '<span class="mute klein">noch nichts</span>'}</td></tr>`).join("")}
     </tbody></table></div></div>`;
   },
@@ -213,10 +264,11 @@ const RENDER = {
     el.innerHTML = `<div class="grid">
       <div class="card c6"><h3 class="ct">So funktioniert der Test</h3>
         <ol class="gedanken" style="margin-top:14px">
-          <li><b>Auswahl (täglich):</b> Aus allen ${zahl(A.konten)} Konten der Hyperliquid-Rangliste fallen Hochfrequenz-Bots, kleine und inaktive Konten weg (${zahl(A.vorfilter)} übrig). Die besten ${zahl(A.geprueft)} werden genau geprüft, ${zahl(A.bestanden)} bestehen alle Regeln, die ${zahl(A.ausgewaehlt)} beständigsten werden beobachtet.</li>
+          <li><b>Auswahl (täglich neu):</b> Neue Trader, die alle Regeln erfüllen, kommen dazu; wer sie nicht mehr erfüllt, scheidet aus. Aus allen ${zahl(A.konten)} Konten der Hyperliquid-Rangliste fallen Hochfrequenz-Bots, kleine und inaktive Konten weg (${zahl(A.vorfilter)} übrig). Die besten ${zahl(A.geprueft)} werden genau geprüft, ${zahl(A.bestanden)} bestehen alle Regeln, die ${zahl(A.ausgewaehlt)} beständigsten werden beobachtet.</li>
           <li><b>Beobachten (alle 15 Min.):</b> Alle offenen Positionen der Trader, die mindestens ${pct(R.MIN_POS_ANTEIL, 0, false)} ihres Kontos ausmachen.</li>
           <li><b>Konsens:</b> Halten mindestens ${R.KONSENS_MIN_TRADER} Trader einen Coin und zeigen mindestens ${pct(R.KONSENS_MIN_ANTEIL, 0, false)} in dieselbe Richtung, eröffnet das Papier-Portfolio eine Position (${pct(R.POS_ANTEIL, 0, false)} des Kapitals, ohne Hebel).</li>
           <li><b>Ausstieg:</b> Wenn weniger als ${R.KONSENS_AUS_TRADER} Trader übrig sind oder die Einigkeit unter ${pct(R.KONSENS_AUS_ANTEIL, 0, false)} fällt.</li>
+          <li><b>Spiegel-Portfolio:</b> ${usd(R.SPIEGEL_KAPITAL)} nach Note verteilt; jede Position ab ${pct(R.MIN_POS_SPIEGEL_ANTEIL, 0, false)} des Trader-Kontos wird anteilig gespiegelt, Hebel wird herausgerechnet. Größen werden nachgezogen, wenn sie mehr als ${pct(R.SPIEGEL_ANPASSEN_AB, 0, false)} abweichen.</li>
           <li><b>Ehrliche Kosten:</b> ${pct(R.GEBUEHR, 3, false)} Gebühr und ${pct(R.SLIPPAGE, 2, false)} Slippage je Ein- und Ausstieg, stündliches Funding.</li>
         </ol></div>
       <div class="card c6"><h3 class="ct">Worauf du achten solltest</h3>

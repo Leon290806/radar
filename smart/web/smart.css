@@ -24,3 +24,4 @@
 .warnliste li::before{border-color:var(--warn)}
 .gedanken li{padding-bottom:12px}
 @media (max-width:760px){.nur-desktop{display:none}details.wechsler h1{white-space:nowrap;font-size:16px}}
+.gbar{display:inline-block;width:46px;height:6px;border-radius:3px;background:var(--chip);overflow:hidden;vertical-align:middle;margin-right:8px}.gbar i{display:block;height:100%;background:var(--s7)}

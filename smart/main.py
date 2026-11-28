@@ -9,6 +9,8 @@ import json
 import os
 import sys
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -20,6 +22,7 @@ import einstellungen as E  # noqa: E402
 import hl  # noqa: E402
 import auswahl  # noqa: E402
 import signale as SG  # noqa: E402
+import spiegel as SP  # noqa: E402
 import seite  # noqa: E402
 import schutz  # noqa: E402
 
@@ -82,6 +85,73 @@ def push_ereignisse(ereignisse):
                  f"🧠 Smart Money: {d['coin']} geschlossen")
 
 
+def _kurz(a, namen):
+    return namen.get(a) or (a[:6] + "…" + a[-4:])
+
+
+def push_spiegel(ereignisse, namen):
+    start = [e for e in ereignisse if e.get("grund") == "Start"]
+    if start:
+        einsatz = sum(e["notional"] for e in start)
+        push(f"{len(start)} Positionen von {len({e['a'] for e in start})} Tradern gespiegelt, {einsatz:,.0f} $ im Markt.".replace(",", ".") +
+             "\nAb jetzt Push bei Spiegel-Trades ab " + f"{E.SPIEGEL_PUSH_AB:,.0f} $".replace(",", ".") + " und abends der Tagesstand. Nur Papier-Test.",
+             "🪞 Spiegel-Portfolio gestartet")
+        ereignisse = [e for e in ereignisse if e.get("grund") != "Start"]
+    gross = [e for e in ereignisse if e["art"] in ("auf", "zu") and e["notional"] >= E.SPIEGEL_PUSH_AB]
+    if not gross:
+        return
+    zeilen = []
+    for e in gross[:6]:
+        richtung = "LONG" if e["r"] > 0 else "SHORT"
+        if e["art"] == "auf":
+            zeilen.append(f"+ {richtung} {e['coin']} {e['notional']:,.0f} $ ({_kurz(e['a'], namen)})".replace(",", "."))
+        else:
+            vz = "+" if e["ergebnis"] >= 0 else ""
+            zeilen.append(f"– {e['coin']} zu, {vz}{e['ergebnis']:,.0f} $ ({_kurz(e['a'], namen)})".replace(",", "."))
+    if len(gross) > 6:
+        zeilen.append(f"… und {len(gross) - 6} weitere")
+    push("\n".join(zeilen) + "\nNur Papier-Test.", f"🪞 Spiegel-Portfolio: {len(gross)} Trade{'s' if len(gross) > 1 else ''}")
+
+
+def tages_push(S, preise):
+    jetzt = datetime.now(ZoneInfo(E.ZEITZONE))
+    heute = jetzt.date().isoformat()
+    if jetzt.hour < E.TAGES_PUSH_STUNDE or S.get("tages_push") == heute:
+        return
+    S["tages_push"] = heute
+    sp, ko = S.get("spiegel") or {}, S.get("portfolio") or {}
+    btc = (preise.get("BTC") or {}).get("px")
+    def r(x, k):
+        return (x / k - 1) * 100 if x and k else 0
+    w_sp = SP.wert(sp, preise) if sp else None
+    w_ko = SG.portfolio_wert(ko, preise) if ko else None
+    b = r(btc, sp.get("btc_start")) if btc and sp.get("btc_start") else 0
+    heute_trades = sum(1 for t in sp.get("trades", []) if t["zeit_aus"] > SG.jetzt_ms() - 86_400_000)
+    push(f"Spiegel-Portfolio: {r(w_sp, sp.get('kapital')):+.1f} % ({w_sp:,.0f} $)\n".replace(",", ".") +
+         f"Konsens-Portfolio: {r(w_ko, E.START_KAPITAL):+.1f} %\nBitcoin halten: {b:+.1f} %\n"
+         f"{len(sp.get('pos', {}))} offene Spiegel-Positionen, {heute_trades} Abschlüsse in 24 Std. Nur Papier-Test.",
+         "🧠 Smart Money: Tagesstand")
+
+
+def migrieren(P):
+    """Konsens-Test lief anfangs mit 10.000 $ – auf das neue Startkapital hochskalieren (Prozente bleiben gleich)."""
+    alt = P.get("kapital", 10_000.0)
+    if not P or abs(alt - E.START_KAPITAL) < 1:
+        return
+    f = E.START_KAPITAL / alt
+    for k in ("cash", "gebuehren", "funding"):
+        P[k] = P.get(k, 0.0) * f
+    for p in P.get("pos", {}).values():
+        for k in ("menge", "notional", "geb_ein", "funding"):
+            if k in p:
+                p[k] *= f
+    for t in P.get("trades", []):
+        for k in ("notional", "ergebnis"):
+            t[k] = round(t.get(k, 0) * f, 2)
+    P["verlauf"] = [[v[0], round(v[1] * f, 2), round(v[2] * f, 2) if v[2] else None] for v in P.get("verlauf", [])]
+    P["kapital"] = E.START_KAPITAL
+
+
 def bewegungen(alt, neu, namen):
     """Was die Trader seit dem letzten Lauf getan haben (für den Verlauf im Dashboard)."""
     out, t = [], SG.jetzt_ms()
@@ -118,19 +188,23 @@ def main():
             S["trader"], S["abgelehnt"], S["auswahl_info"] = trader, abgelehnt, info
             neu_ausgewaehlt = True
             dazu = len({t["adresse"] for t in trader} - alt)
+            weg = len(alt - {t["adresse"] for t in trader})
             konten_txt = f"{info['konten']:,}".replace(",", ".")
-            prot.append(f"Auswahl: {info['ausgewaehlt']} Trader aus {konten_txt} Konten ({info['bestanden']} bestanden, {dazu} neu)")
+            prot.append(f"Auswahl: {info['ausgewaehlt']} Trader aus {konten_txt} Konten ({info['bestanden']} bestanden, {dazu} neu, {weg} ausgeschieden)")
         print("Auswahl:", info)
 
     namen = {t["adresse"]: t.get("name") for t in S.get("trader", [])}
     snap, konten = SG.schnappschuss(S.get("trader", []), prot)
     alt_snap = S.get("snap") or {}
     erster = not alt_snap
-    bew = bewegungen(alt_snap, snap, namen)
+    rel, alt_rel = SG.relevant(snap), SG.relevant(alt_snap)
+    bew = bewegungen(alt_rel, rel, namen)
     S["bewegungen"] = (bew + S.get("bewegungen", []))[:300]
-    K = SG.konsens(snap)
+    K = SG.konsens(rel)
 
     P = S.get("portfolio") or SG.neues_portfolio(preise)
+    migrieren(P)
+    P["kapital"] = E.START_KAPITAL
     SG.funding_verbuchen(P, preise)
     ereignisse = SG.konsens_handeln(P, K, preise)
     wert = SG.portfolio_wert(P, preise)
@@ -142,24 +216,38 @@ def main():
     P["trades"] = P["trades"][-500:]
     S["portfolio"] = P
 
+    SPG = S.get("spiegel") or SP.neues(preise)
+    SP.funding(SPG, preise)
+    sp_ereignisse = SP.handeln(SPG, S.get("trader", []), snap, konten, preise)
+    sp_wert = SP.wert(SPG, preise)
+    if not SPG["verlauf"] or SG.jetzt_ms() - SPG["verlauf"][-1][0] > 55 * 60_000 or any(e["art"] in ("auf", "zu") for e in sp_ereignisse):
+        bench = SPG["kapital"] * btc / SPG["btc_start"] if btc and SPG.get("btc_start") else None
+        SPG["verlauf"].append([SG.jetzt_ms(), round(sp_wert, 2), round(bench, 2) if bench else None])
+        SPG["verlauf"] = SPG["verlauf"][-9000:]
+    S["spiegel"] = SPG
+
     EK = S.get("einzel") or {}
-    SG.einzel_kopie(EK, alt_snap, snap, preise, erster)
+    SG.einzel_kopie(EK, alt_rel, rel, preise, erster)
     S["einzel"] = EK
     S["snap"], S["konten"], S["konsens"] = snap, konten, K
-    S["preise"] = {c: preise[c]["px"] for c in set(K) | set(P["pos"]) | {"BTC", "ETH", "SOL"} if c in preise}
+    S["preise"] = {c: preise[c]["px"] for c in set(K) | set(P["pos"]) | {p["coin"] for p in SPG["pos"].values()} | {"BTC", "ETH", "SOL"} if c in preise}
     S["stand"] = SG.jetzt_ms()
     S["protokoll"] = ([{"zeit": S["stand"], "text": p} for p in prot] + S["protokoll"])[:150]
     S["laeufe"] = (S.get("laeufe", []) + [{"zeit": S["stand"], "dauer": round(time.time() - t0), "trader": len(snap),
                                             "signale": sum(1 for c in K.values() if c["signal"]), "trades": len(ereignisse)}])[-300:]
 
+    print(f"Spiegel: {sp_wert:.2f} $, {len(SPG['pos'])} Positionen, {len(sp_ereignisse)} Trades in diesem Lauf")
     print(f"Trader: {len(snap)}, Konsens-Signale: {sum(1 for c in K.values() if c['signal'])}, Papier-Ereignisse: {len(ereignisse)}, "
           f"Portfolio: {wert:.2f} $, Bewegungen: {len(bew)}")
     for z in prot:
         print(" ", z)
 
     push_ereignisse(ereignisse)
+    push_spiegel(sp_ereignisse, namen)
+    tages_push(S, preise)
 
-    faellig = (neu_ausgewaehlt or ereignisse or not os.path.exists(E.SEITE)
+    gross = any(e["art"] in ("auf", "zu") and e["notional"] >= E.SPIEGEL_PUSH_AB for e in sp_ereignisse)
+    faellig = (neu_ausgewaehlt or ereignisse or gross or not os.path.exists(E.SEITE)
                or SG.jetzt_ms() - S.get("commit_zeit", 0) >= E.COMMIT_ALLE_MIN * 60_000)
     if faellig:
         S["commit_zeit"] = SG.jetzt_ms()

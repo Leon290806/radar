@@ -41,12 +41,20 @@ KONSENS_AUS_TRADER = 2          # Ausstieg, wenn weniger als 2 Trader übrig …
 KONSENS_AUS_ANTEIL = 0.6        # … oder Einigkeit unter 60 % fällt
 
 # ---------- Papier-Portfolio ----------
-START_KAPITAL = 10_000.0
+START_KAPITAL = 100_000.0
 POS_ANTEIL = 0.10               # je Position 10 % des Portfolios, ohne Hebel
 MAX_POSITIONEN = 10
 GEBUEHR = 0.00045               # Taker-Gebühr Hyperliquid (Basisstufe)
 SLIPPAGE = 0.0005               # 0,05 % schlechterer Preis beim Ein- und Ausstieg
 EINZEL_NOTIONAL = 1_000.0       # Einzel-Kopie-Test: fester Betrag pro kopierter Position
+
+# ---------- Spiegel-Portfolio ----------
+SPIEGEL_KAPITAL = 100_000.0      # wird nach Note auf die Trader verteilt
+MIN_POS_SPIEGEL_ANTEIL = 0.01    # gespiegelt werden Positionen ab 1 % des Trader-Kontos (mind. 1.000 $)
+SPIEGEL_MIN_POS = 200.0          # kleinere Teil-Positionen lohnen die Gebühr nicht
+SPIEGEL_ANPASSEN_AB = 0.3        # Größe erst nachziehen, wenn sie mehr als 30 % vom Ziel abweicht
+SPIEGEL_PUSH_AB = 3_000.0        # Push bei neuen/geschlossenen Spiegel-Positionen ab 3.000 $
+TAGES_PUSH_STUNDE = 20           # Tageszusammenfassung ab 20 Uhr (Berlin)
 
 COMMIT_ALLE_MIN = 120           # Ergebnis höchstens alle 2 Std. ins Repo (außer bei Papier-Trades)
 MAX_PUSH_PRO_LAUF = 3

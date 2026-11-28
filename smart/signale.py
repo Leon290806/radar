@@ -39,12 +39,18 @@ def schnappschuss(trader, protokoll):
         for ap in st.get("assetPositions", []):
             p = ap.get("position") or {}
             szi, wert = _f(p.get("szi")), abs(_f(p.get("positionValue")))
-            if not szi or wert < max(E.MIN_POS_USD, E.MIN_POS_ANTEIL * av):
+            if not szi or wert < max(1_000, E.MIN_POS_SPIEGEL_ANTEIL * av):
                 continue
             pos[p["coin"]] = {"r": 1 if szi > 0 else -1, "wert": round(wert), "einstieg": _f(p.get("entryPx")),
-                              "hebel": (p.get("leverage") or {}).get("value"), "upnl": round(_f(p.get("unrealizedPnl")))}
+                              "hebel": (p.get("leverage") or {}).get("value"), "upnl": round(_f(p.get("unrealizedPnl"))),
+                              "rel": wert >= max(E.MIN_POS_USD, E.MIN_POS_ANTEIL * av)}
         snap[a] = pos
     return snap, konten
+
+
+def relevant(snap):
+    """Nur nennenswerte Positionen (für Konsens, Bewegungen, Einzel-Kopie). Kleine zählen nur im Spiegel-Portfolio."""
+    return {a: {c: p for c, p in pos.items() if p.get("rel", True)} for a, pos in snap.items()}
 
 
 def konsens(snap):
@@ -66,7 +72,7 @@ def konsens(snap):
 
 # ---------------- Papier-Portfolio (Konsens) ----------------
 def neues_portfolio(preise):
-    return {"start": jetzt_ms(), "cash": E.START_KAPITAL, "pos": {}, "trades": [], "verlauf": [],
+    return {"start": jetzt_ms(), "kapital": E.START_KAPITAL, "cash": E.START_KAPITAL, "pos": {}, "trades": [], "verlauf": [],
             "btc_start": (preise.get("BTC") or {}).get("px"), "gebuehren": 0.0, "funding": 0.0, "zuletzt": jetzt_ms()}
 
 
