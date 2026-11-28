@@ -182,7 +182,7 @@ def scannen(W, protokoll):
     icaos = sorted({i["icao"] for _, i in infos})
     W["stationen"] = stationen(icaos, W.get("stationen", {}))
     obs = beobachtet(icaos)
-    ens_cache, signale = {}, []
+    ens_cache, signale, kandidaten = {}, [], []
     for e, info in infos:
         st = W["stationen"].get(info["icao"])
         if not st:
@@ -246,16 +246,23 @@ def scannen(W, protokoll):
               "signal": {"seite": best[0], "titel": best[1]["titel"], "vorteil": round(best[2], 3), "preis": best[3], "p": best[1]["p"]} if best else None,
               "ende": e.get("endDate")}
         signale.append(ev)
-        # Papier-Kauf (einmal pro Markt-Spanne)
         if best:
-            key = f"{e['slug']}|{best[1]['titel']}|{best[0]}"
-            if key not in W["offen"] and key not in W.get("erledigt_keys", []) and len(W["offen"]) < E.WX_MAX_OFFEN:
-                preis = min(0.99, best[3] * (1 + E.WX_SLIPPAGE))
-                W["offen"][key] = {"slug": e["slug"], "stadt": info["stadt"], "art": info["art"], "datum": info["datum"], "titel": best[1]["titel"],
-                                   "seite": best[0], "preis": round(preis, 4), "p": best[1]["p"], "einsatz": E.WX_EINSATZ, "zeit": int(jetzt),
-                                   "market_id": best[1]["id"]}
+            kandidaten.append((best, e, info))
         # für die Treffsicherheits-Messung: letzte Schätzung je Spanne vor Marktende merken
         W["schaetzungen"][e["slug"]] = {"zeit": int(jetzt), "zeilen": [{"id": z["id"], "p": z["p"], "preis": z["preis"]} for z in zeilen]}
+    # Papier-Käufe: je Scan nur die stärksten Signale, jede Markt-Spanne nur einmal
+    neu = 0
+    for best, e, info in sorted(kandidaten, key=lambda k: -k[0][2]):
+        key = f"{e['slug']}|{best[1]['titel']}|{best[0]}"
+        if neu >= E.WX_MAX_NEU_PRO_SCAN or len(W["offen"]) >= E.WX_MAX_OFFEN:
+            break
+        if key in W["offen"] or key in W.get("erledigt_keys", []):
+            continue
+        preis = min(0.99, best[3] * (1 + E.WX_SLIPPAGE))
+        W["offen"][key] = {"slug": e["slug"], "stadt": info["stadt"], "art": info["art"], "datum": info["datum"], "titel": best[1]["titel"],
+                           "seite": best[0], "preis": round(preis, 4), "p": best[1]["p"], "einsatz": E.WX_EINSATZ, "zeit": int(jetzt),
+                           "market_id": best[1]["id"]}
+        neu += 1
     W["signale"] = sorted(signale, key=lambda s: -(s["signal"]["vorteil"] if s["signal"] else 0))
     W["letzter_scan"] = int(jetzt)
     abrechnen(W)
