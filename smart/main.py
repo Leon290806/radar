@@ -189,7 +189,7 @@ def push_bewegungen(bew, namen):
     push("\n".join(zeilen), f"👀 Top-Trader: {len(bew)} Bewegung{'en' if len(bew) > 1 else ''}")
 
 
-SEITEN_VERSION = 6   # erhöhen, wenn sich das Dashboard ändert -> Seite wird beim nächsten Lauf sofort neu gebaut
+SEITEN_VERSION = 7   # erhöhen, wenn sich das Dashboard ändert -> Seite wird beim nächsten Lauf sofort neu gebaut
 
 
 def main():

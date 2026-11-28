@@ -46,7 +46,7 @@ function vergleichsReihen() {
 }
 
 /* ---------- Kopf ---------- */
-const tabs = [["uebersicht", "Übersicht", null], ["spiegel", "Spiegel-Portfolio", SPG.pos.length || null], ["scanner", "Markt-Scanner", D.wetter ? (D.wetter.signale || []).filter(x => x.signal).length || null : null], ["tracking", "Tracking", (D.polymarket || []).reduce((n, t) => n + (t.n || 0), 0) || null], ["trader", "Trader", D.trader.length], ["bewegungen", "Bewegungen", D.bewegungen.length || null],
+const tabs = [["uebersicht", "Übersicht", null], ["spiegel", "Spiegel-Portfolio", SPG.pos.length || null], ["scanner", "Markt-Scanner", ((D.wetter && D.wetter.signale || []).filter(x => x.signal).length + ((D.vergleich && D.vergleich.zeilen) || []).filter(z => z.signal).length) || null], ["tracking", "Tracking", (D.polymarket || []).reduce((n, t) => n + (t.n || 0), 0) || null], ["trader", "Trader", D.trader.length], ["bewegungen", "Bewegungen", D.bewegungen.length || null],
   ["kopie", "Kopier-Test", D.kopien.length || null], ["trades", "Konsens-Trades", zu.length || null], ["methode", "Methode", null]];
 document.body.innerHTML = `
 <header class="kopf"><div class="in">
@@ -215,13 +215,16 @@ const RENDER = {
   },
 
   scanner(el) {
-    const W = D.wetter;
-    if (!W) { el.innerHTML = '<div class="leer">Der Scanner läuft beim nächsten Durchgang zum ersten Mal.</div>'; return; }
+    const W = D.wetter || { signale: [], offen: [], trades: [], verlauf: [], n: 0, gewonnen: 0, ergebnis: 0, kapital: 10000, brier: {},
+      regeln: { vorteil: 0.15, einsatz: 100, liq: 500, sigma_heute: 0.8, sigma_morgen: 1.2, slippage: 0.02 } };
     const sig = (W.signale || []).filter(x => x.signal), wert = W.kapital + W.ergebnis;
     const b = W.brier || {};
     const pc = x => ok(x) ? zahl(x * 100, 0) + " %" : "–";
     const artTxt = a => a === "highest" ? "Höchst" : "Tiefst";
+    const VGx = D.vergleich || {}, finSig = (VGx.zeilen || []).filter(z => z.signal).length;
     el.innerHTML = `<div class="box warn" style="margin-bottom:16px">Reiner Papier-Test mit öffentlichen Daten – es wird nichts gewettet. Die Teilnahme an Polymarket ist von Deutschland aus nicht erlaubt.</div>
+    <div class="seg unterreiter" id="sc-seg" style="margin-bottom:16px"><button data-s="wetter" class="an">Wetter · ${sig.length}</button><button data-s="fin">Finanzen · ${finSig}</button></div>
+    <div id="sc-wetter">
     <div class="h-held" style="margin-bottom:16px">
       <div><div class="h-datum">Wetter-Märkte · letzter Scan ${esc(zeit((W.letzter_scan || 0) * 1000))}</div>
         <h2 class="h-titel">Wo liegt der Markt daneben?</h2>
@@ -251,25 +254,41 @@ const RENDER = {
       ${W.trades.map(t => `<tr><td class="l">${esc(t.stadt)} <span class="mute klein">${artTxt(t.art)} · ${esc(datum(t.datum))}</span></td><td class="l"><span class="rt ${t.seite === "JA" ? "long" : "short"}">${t.seite}</span> ${esc(t.titel)}</td><td>${zahl(t.preis * 100, 1)} ¢</td><td>${pc(t.seite === "JA" ? t.p : 1 - t.p)}</td>
         <td class="l">${t.gewonnen ? '<span class="status aktiv">gewonnen</span>' : '<span class="status" style="background:var(--badbg);color:var(--bad)">verloren</span>'}</td><td class="m-r ${kl(t.erg)}">${usdVz(t.erg, 2)}</td></tr>`).join("")}
       </tbody></table></div>` : '<div class="leer">Noch nichts aufgelöst – Temperatur-Märkte werden am Tag nach dem Messtag abgerechnet.</div>'}</div>
-    <div id="vg-box"></div>
-    <p class="fuss">Methode: Ensemble-Vorhersage von Open-Meteo (ECMWF IFS 0,25° mit 51 und GFS mit 31 Läufen) für die Koordinaten der Auflösungs-Station, Unsicherheit Station ↔ Modell ${zahl(W.regeln.sigma_heute, 1)} °C (heute) bzw. ${zahl(W.regeln.sigma_morgen, 1)} °C (morgen), gemessene Werte aus den METAR-Meldungen (aviationweather.gov). Signale nur bei mind. ${usd(W.regeln.liq)} Liquidität, Einstieg mit ${pct(W.regeln.slippage, 0, false)} Aufschlag.</p>`;
+    <p class="fuss">Methode: Ensemble-Vorhersage von Open-Meteo (ECMWF IFS 0,25° mit 51 und GFS mit 31 Läufen) für die Koordinaten der Auflösungs-Station, Unsicherheit Station ↔ Modell ${zahl(W.regeln.sigma_heute, 1)} °C (heute) bzw. ${zahl(W.regeln.sigma_morgen, 1)} °C (morgen), gemessene Werte aus den METAR-Meldungen (aviationweather.gov). Signale nur bei mind. ${usd(W.regeln.liq)} Liquidität, Einstieg mit ${pct(W.regeln.slippage, 0, false)} Aufschlag.</p></div><div id="sc-fin" style="display:none"></div>`;
+    $$("#sc-seg button", el).forEach(b => b.addEventListener("click", () => {
+      $$("#sc-seg button", el).forEach(x => x.classList.toggle("an", x === b));
+      $("#sc-wetter", el).style.display = b.dataset.s === "wetter" ? "" : "none";
+      $("#sc-fin", el).style.display = b.dataset.s === "fin" ? "" : "none";
+      zeichneCharts();
+    }));
     const VG = D.vergleich;
     if (VG) {
       const zl = VG.zeilen || [], sg = zl.filter(z => z.signal);
-      const termine = [...new Set(zl.map(z => z.termin))];
-      $("#vg-box", el).innerHTML = `<div class="card" style="margin:16px 0"><div class="ch"><div><h3 class="ct">Finanzen: Fed-Zinsentscheidungen – Polymarket gegen Kalshi</h3>
-        <div class="cs">Dieselbe Frage an zwei Börsen. Weicht Polymarket um mindestens ${zahl(VG.regeln.abstand * 100)} Punkte vom Kalshi-Mittelkurs ab, kauft der Scanner auf Papier die günstigere Seite (${usd(VG.regeln.einsatz)}). Stand ${esc(zeit((VG.letzter_scan || 0) * 1000))}</div></div>
-        <div class="legende"><span>Papier: <b class="${kl(VG.ergebnis)}">${usdVz(VG.ergebnis)}</b></span><span>${zahl(VG.n)} abgerechnet · ${zahl(VG.offen.length)} offen</span></div></div>
-        ${VG.fehler ? `<div class="box fehler">Letzter Abruf fehlgeschlagen: ${esc(VG.fehler)}</div>` : ""}
-        ${zl.length ? `<div class="tw"><table class="tbl"><thead><tr><th class="l">Sitzung</th><th class="l">Ausgang</th><th>Polymarket</th><th>Kalshi</th><th>Abstand</th><th class="l">Empfehlung</th></tr></thead><tbody>
-        ${termine.map(t => zl.filter(z => z.termin === t).map((z, i) => `<tr${z.signal ? ' class="hl"' : ""}><td class="l">${i === 0 ? `<b>${esc(z.datum || z.termin)}</b>` : ""}</td><td class="l">${esc(z.ausgang)}</td>
-          <td>${ok(z.pm_bid) || ok(z.pm_ask) ? zahl((ok(z.pm_bid) && ok(z.pm_ask) ? (z.pm_bid + z.pm_ask) / 2 : (z.pm_preis || 0)) * 100, 1) + " %" : "–"}</td><td>${zahl(z.kalshi * 100, 1)} %</td>
-          <td>${ok(z.pm_preis) ? (z.pm_preis - z.kalshi > 0 ? "+" : "") + zahl((z.pm_preis - z.kalshi) * 100, 1) + " Pkt." : "–"}</td>
-          <td class="l">${z.signal ? `<span class="rt ${z.signal.seite === "JA" ? "long" : "short"}">${z.signal.seite}</span> zu ${zahl(z.signal.preis * 100, 1)} ¢ · +${zahl(z.signal.vorteil * 100)} Pkt.` : '<span class="mute klein">beide Börsen einig</span>'}</td></tr>`).join("")).join("")}
-        </tbody></table></div>` : '<div class="leer">Noch keine Daten – der Vergleich läuft beim nächsten Scan.</div>'}
-        ${VG.trades.length ? `<h3 class="ct" style="margin:16px 0 8px">Abgerechnet</h3><div class="tw"><table class="tbl"><thead><tr><th class="l">Sitzung</th><th class="l">Wette</th><th>Preis</th><th class="l">Ausgang</th><th>Ergebnis</th></tr></thead><tbody>
-          ${VG.trades.map(t => `<tr><td class="l">${esc(t.termin)}</td><td class="l"><span class="rt ${t.seite === "JA" ? "long" : "short"}">${t.seite}</span> ${esc(t.ausgang)}</td><td>${zahl(t.preis * 100, 1)} ¢</td><td class="l">${t.gewonnen ? "gewonnen" : "verloren"}</td><td class="${kl(t.erg)}">${usdVz(t.erg, 2)}</td></tr>`).join("")}</tbody></table></div>` : ""}
-        <p class="klein mute" style="margin:12px 0 0">Kalshi ist eine in den USA regulierte Prognosebörse mit meist mehr Volumen bei Fed-Märkten. Weitere Wirtschaftsdaten (Inflation, Arbeitsmarkt) folgen, sobald sich die Märkte beider Börsen sauber zuordnen lassen.</p></div>`;
+      const gruppen = [...new Set(zl.map(z => z.gruppe || "Fed-Zinsentscheidung"))];
+      const mitte = z => ok(z.pm_bid) && ok(z.pm_ask) ? (z.pm_bid + z.pm_ask) / 2 : z.pm_preis;
+      $("#sc-fin", el).innerHTML = `<div class="h-held" style="margin-bottom:16px">
+        <div><div class="h-datum">Finanz-Märkte · letzter Scan ${esc(zeit((VG.letzter_scan || 0) * 1000))}</div><h2 class="h-titel">Zwei Börsen, eine Frage</h2>
+          <p class="h-unter">Polymarket und Kalshi handeln dieselben Wirtschaftsereignisse: Fed-Zinsentscheidungen, Inflation, Wachstum. Kalshi ist in den USA reguliert und dient als Referenz. Weicht Polymarket um mindestens ${zahl(VG.regeln.abstand * 100)} Punkte ab, kauft der Scanner auf Papier die günstigere Seite (${usd(VG.regeln.einsatz)}).</p></div>
+        <div class="h-kpis">
+          <div><span>Papierkapital</span><b class="${kl(VG.ergebnis)}">${usd(VG.kapital + VG.ergebnis)}</b><small>${usdVz(VG.ergebnis)} seit Start</small></div>
+          <div><span>Signale jetzt</span><b>${zahl(sg.length)}<i> / ${zahl(zl.length)}</i></b><small>Ausgänge verglichen</small></div>
+          <div><span>Trades</span><b>${zahl(VG.n)}<i> / ${zahl(VG.offen.length)} offen</i></b><small>${VG.n ? pct(VG.gewonnen / VG.n, 0, false) + " gewonnen" : "noch nichts aufgelöst"}</small></div>
+        </div></div>
+        ${VG.fehler ? `<div class="box fehler" style="margin-bottom:16px">Letzter Abruf fehlgeschlagen: ${esc(VG.fehler)}</div>` : ""}
+        ${gruppen.map(g => { const zg = zl.filter(z => (z.gruppe || "Fed-Zinsentscheidung") === g), termine = [...new Set(zg.map(z => z.termin))];
+          return `<div class="card" style="margin-bottom:16px"><div class="ch"><div><h3 class="ct">${esc(g)}</h3><div class="cs">${zg.filter(z => z.signal).length} Signale · ${termine.length} Termin${termine.length > 1 ? "e" : ""}</div></div></div>
+          <div class="tw"><table class="tbl"><thead><tr><th class="l">Termin</th><th class="l">Ausgang</th><th>Polymarket</th><th>Kalshi</th><th>Abstand</th><th class="l">Empfehlung</th></tr></thead><tbody>
+          ${termine.map(t => zg.filter(z => z.termin === t).map((z, i) => `<tr${z.signal ? ' class="hl"' : ""}><td class="l">${i === 0 ? `<b>${esc(z.datum || z.termin)}</b>` : ""}</td><td class="l">${esc(z.ausgang)}</td>
+            <td>${ok(mitte(z)) ? zahl(mitte(z) * 100, 1) + " %" : "–"}</td><td>${zahl(z.kalshi * 100, 1)} %</td>
+            <td>${ok(mitte(z)) ? (mitte(z) - z.kalshi > 0 ? "+" : "") + zahl((mitte(z) - z.kalshi) * 100, 1) + " Pkt." : "–"}</td>
+            <td class="l">${z.signal ? `<span class="rt ${z.signal.seite === "JA" ? "long" : "short"}">${z.signal.seite}</span> zu ${zahl(z.signal.preis * 100, 1)} ¢ · +${zahl(z.signal.vorteil * 100)} Pkt.` : '<span class="mute klein">beide Börsen einig</span>'}</td></tr>`).join("")).join("")}
+          </tbody></table></div></div>`; }).join("") || '<div class="leer">Noch keine Daten – der Vergleich läuft beim nächsten Scan.</div>'}
+        <div class="grid">
+          <div class="card c6"><div class="ch"><div><h3 class="ct">Offene Papier-Trades</h3></div></div>${VG.offen.length ? `<div class="tw"><table class="tbl"><thead><tr><th class="l">Termin</th><th class="l">Wette</th><th>Preis</th><th>Kalshi</th></tr></thead><tbody>
+            ${VG.offen.map(t => `<tr><td class="l">${esc(t.termin)}</td><td class="l"><span class="rt ${t.seite === "JA" ? "long" : "short"}">${t.seite}</span> ${esc(t.ausgang)}</td><td>${zahl(t.preis * 100, 1)} ¢</td><td>${zahl(t.kalshi * 100, 1)} %</td></tr>`).join("")}</tbody></table></div>` : '<div class="leer">Keine offenen Trades.</div>'}</div>
+          <div class="card c6"><div class="ch"><div><h3 class="ct">Abgerechnet</h3></div></div>${VG.trades.length ? `<div class="tw"><table class="tbl"><thead><tr><th class="l">Termin</th><th class="l">Wette</th><th>Preis</th><th>Ergebnis</th></tr></thead><tbody>
+            ${VG.trades.map(t => `<tr><td class="l">${esc(t.termin)}</td><td class="l"><span class="rt ${t.seite === "JA" ? "long" : "short"}">${t.seite}</span> ${esc(t.ausgang)}</td><td>${zahl(t.preis * 100, 1)} ¢</td><td class="${kl(t.erg)}">${usdVz(t.erg, 2)}</td></tr>`).join("")}</tbody></table></div>` : '<div class="leer">Noch nichts aufgelöst.</div>'}</div>
+        </div>`;
     }
     const V3 = W.verlauf || [];
     linie($("#ch-wx", el), V3.map(v => v[0]), [{ name: "Papierkapital", farbe: "--s3", v: V3.map(v => v[1]), breite: 2.2 }], v => usd(v));

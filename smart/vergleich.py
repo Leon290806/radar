@@ -69,6 +69,136 @@ def polymarket_fed():
     return out
 
 
+# Wirtschaftsdaten: Polymarket-Spannen gegen Kalshi-Schwellen („Above X%“)
+WIRTSCHAFT = [
+    # (Name, Polymarket-Slug-Muster, Kalshi-Serie)
+    ("US-Inflation (Monat)", r"^(?P<m>[a-z]+)-inflation-us-monthly$", "KXCPI"),
+    ("US-Inflation (Jahr)", r"^(?P<m>[a-z]+)-inflation-us-annual$", "KXCPIYOY"),
+    ("US-Kerninflation (Monat)", r"^core-cpi-mom-(?P<m>[a-z]+)-(?P<y>\d{4})$", "KXCPICORE"),
+    ("US-Kerninflation (Jahr)", r"^core-cpi-yoy-(?P<m>[a-z]+)-(?P<y>\d{4})$", "KXCPICOREYOY"),
+    ("US-Wachstum (BIP Quartal)", r"^us-gdp-growth-in-q(?P<q>[1-4])-(?P<y>\d{4})$", "KXGDP"),
+]
+
+
+def _zahl(t):
+    t = t.replace("−", "-").replace("–", "-").replace(",", ".").strip()
+    return float(t)
+
+
+def pm_spanne(titel):
+    """'0.2%' -> (0.2, 0.2); '≤-0.3%' -> (-inf, -0.3); '≥0.4%' / '0.4%+' -> (0.4, inf); '2.0% to 2.5%' -> (2.0, 2.5); '<1.5%' -> (-inf, 1.4)."""
+    t = (titel or "").replace("%", "").replace(" ", "").replace("−", "-").replace("–", "-")
+    try:
+        if t.startswith("≤"):
+            return (-1e9, _zahl(t[1:]))
+        if t.startswith("≥"):
+            return (_zahl(t[1:]), 1e9)
+        if t.endswith("+"):
+            return (_zahl(t[:-1]), 1e9)
+        if t.startswith("<"):
+            return (-1e9, round(_zahl(t[1:]) - 0.1, 2))
+        if t.startswith(">"):
+            return (round(_zahl(t[1:]) + 0.1, 2), 1e9)
+        m = re.match(r"^(-?\d+(?:\.\d+)?)(?:to|-)(-?\d+(?:\.\d+)?)$", t)
+        if m:
+            return (float(m.group(1)), float(m.group(2)))
+        return (_zahl(t), _zahl(t))
+    except ValueError:
+        return None
+
+
+def _p_ueber(schwellen, x):
+    """P(Wert > x) aus Kalshi-Schwellen [(t, p)], linear interpoliert, an den Rändern gekappt."""
+    if x <= -1e8:
+        return 1.0
+    if x >= 1e8:
+        return 0.0
+    if x <= schwellen[0][0]:
+        return schwellen[0][1] if abs(x - schwellen[0][0]) < 1e-9 else max(schwellen[0][1], 1.0 if x < schwellen[0][0] - 0.05 else schwellen[0][1])
+    if x >= schwellen[-1][0]:
+        return schwellen[-1][1] if abs(x - schwellen[-1][0]) < 1e-9 else min(schwellen[-1][1], 0.0 if x > schwellen[-1][0] + 0.05 else schwellen[-1][1])
+    for (a, pa), (b, pb) in zip(schwellen, schwellen[1:]):
+        if a <= x <= b:
+            return pa + (pb - pa) * (x - a) / (b - a)
+    return 0.0
+
+
+def kalshi_schwellen(serie):
+    r = _S.get(KALSHI + "/events", params={"series_ticker": serie, "status": "open", "with_nested_markets": "true", "limit": 10}, timeout=40)
+    r.raise_for_status()
+    out = []
+    for e in r.json().get("events", []):
+        pts = []
+        for mk in e.get("markets", []):
+            m = re.match(r"^Above (-?[\d,.]+)%?$", (mk.get("yes_sub_title") or "").strip())
+            bid, ask = _f(mk.get("yes_bid_dollars")), _f(mk.get("yes_ask_dollars"))
+            if not m or bid is None or ask is None:
+                continue
+            pts.append((float(m.group(1).replace(",", "")), (bid + ask) / 2))
+        if len(pts) >= 3:
+            out.append({"ticker": e["event_ticker"], "titel": e.get("title"), "datum": e.get("sub_title"), "schwellen": sorted(pts)})
+    return out
+
+
+def wirtschaft(V, jetzt):
+    zeilen = []
+    pm_events = []
+    for tag in ("inflation", "gdp"):
+        try:
+            pm_events += _S.get(GAMMA + "/events", params={"tag_slug": tag, "closed": "false", "limit": 100}, timeout=40).json()
+        except (requests.RequestException, ValueError):
+            pass
+    gesehen = set()
+    for name, muster, serie in WIRTSCHAFT:
+        try:
+            kal = kalshi_schwellen(serie)
+        except requests.RequestException:
+            continue
+        for e in pm_events:
+            m = re.match(muster, e.get("slug", ""))
+            if not m or e["slug"] in gesehen:
+                continue
+            gesehen.add(e["slug"])
+            ende = datetime.fromisoformat(e["endDate"].replace("Z", "+00:00"))
+            d = m.groupdict()
+            if "q" in d and d.get("q"):
+                ziel = f"Q{d['q']} {d['y']}"
+                ka = next((k for k in kal if ziel in (k["titel"] or "")), None)
+            else:
+                mon = MONATE.get(d["m"], "")
+                jahr = int(d["y"]) if d.get("y") else ende.year
+                if not d.get("y") and mon in ("NOV", "DEC") and ende.month <= 2:
+                    jahr -= 1   # Novemberdaten werden erst im Dezember/Januar veröffentlicht
+                ka = next((k for k in kal if k["ticker"].endswith(f"-{str(jahr)[2:]}{mon}")), None)
+            if not ka:
+                continue
+            for mk in e.get("markets", []):
+                if mk.get("closed"):
+                    continue
+                sp = pm_spanne(mk.get("groupItemTitle"))
+                if not sp:
+                    continue
+                pk = _p_ueber(ka["schwellen"], round(sp[0] - 0.1, 2)) - _p_ueber(ka["schwellen"], sp[1])
+                pk = max(0.0, min(1.0, pk))
+                bid, ask, liq = _f(mk.get("bestBid")), _f(mk.get("bestAsk")), _f(mk.get("liquidityNum")) or 0
+                sig = None
+                if ask and ask <= 0.97 and pk - ask >= E.VG_MIN_ABSTAND:
+                    sig = ("JA", pk - ask, ask)
+                elif bid and bid >= 0.03 and bid - pk >= E.VG_MIN_ABSTAND:
+                    sig = ("NEIN", bid - pk, 1 - bid)
+                z = {"gruppe": name, "termin": e["title"], "datum": ka["datum"], "code": mk.get("groupItemTitle"), "ausgang": mk.get("groupItemTitle"),
+                     "pm_bid": bid, "pm_ask": ask, "pm_preis": _f((json.loads(mk.get("outcomePrices") or "[]") or [None])[0]), "kalshi": round(pk, 4),
+                     "liq": liq, "slug": e["slug"], "signal": {"seite": sig[0], "vorteil": round(sig[1], 3), "preis": sig[2]} if sig and liq >= E.VG_MIN_LIQ else None}
+                zeilen.append(z)
+                if z["signal"]:
+                    schl = f"{e['slug']}|{z['code']}|{sig[0]}"
+                    if schl not in V["offen"] and schl not in V.get("erledigt", []):
+                        V["offen"][schl] = {"slug": e["slug"], "termin": e["title"], "ausgang": z["ausgang"], "seite": sig[0], "market_id": mk["id"],
+                                            "preis": round(min(0.99, sig[2] * (1 + E.VG_SLIPPAGE)), 4), "kalshi": z["kalshi"], "einsatz": E.VG_EINSATZ,
+                                            "zeit": int(jetzt)}
+    return zeilen
+
+
 def scannen(V):
     jetzt = time.time()
     k, p = kalshi_fed(), polymarket_fed()
@@ -83,7 +213,7 @@ def scannen(V):
                 sig = ("JA", ka["mitte"] - pm["ask"], pm["ask"])
             elif pm["bid"] and pm["bid"] >= 0.03 and pm["bid"] - ka["mitte"] >= E.VG_MIN_ABSTAND:
                 sig = ("NEIN", pm["bid"] - ka["mitte"], 1 - pm["bid"])
-            z = {"termin": key, "datum": k[key]["datum"], "code": code, "ausgang": DEUTSCH.get(code, code), "pm_bid": pm["bid"], "pm_ask": pm["ask"],
+            z = {"gruppe": "Fed-Zinsentscheidung", "termin": key, "datum": k[key]["datum"], "code": code, "ausgang": DEUTSCH.get(code, code), "pm_bid": pm["bid"], "pm_ask": pm["ask"],
                  "pm_preis": pm["preis"], "kalshi": round(ka["mitte"], 4), "kalshi_vol": ka["vol"], "liq": pm["liq"], "slug": p[key]["slug"],
                  "signal": {"seite": sig[0], "vorteil": round(sig[1], 3), "preis": sig[2]} if sig and pm["liq"] >= E.VG_MIN_LIQ else None}
             zeilen.append(z)
@@ -93,6 +223,7 @@ def scannen(V):
                     V["offen"][schl] = {"slug": p[key]["slug"], "termin": key, "ausgang": z["ausgang"], "seite": sig[0], "market_id": pm["id"],
                                         "preis": round(min(0.99, sig[2] * (1 + E.VG_SLIPPAGE)), 4), "kalshi": z["kalshi"], "einsatz": E.VG_EINSATZ,
                                         "zeit": int(jetzt)}
+    zeilen += wirtschaft(V, jetzt)
     V["zeilen"] = zeilen
     V["letzter_scan"] = int(jetzt)
     abrechnen(V)
@@ -133,9 +264,10 @@ def lauf(S, protokoll):
     try:
         z = scannen(V)
         V["fehler"] = None
-        print(f"Fed-Vergleich: {len(z)} Ausgänge, {sum(1 for x in z if x['signal'])} Signale, {len(V['offen'])} offen")
+        print(f"Finanz-Vergleich: {len(z)} Ausgänge, {sum(1 for x in z if x['signal'])} Signale, {len(V['offen'])} offen")
         for x in z:
-            print(f"  {x['termin']} {x['ausgang']:<18} Polymarket {x['pm_bid']}/{x['pm_ask']}  Kalshi {x['kalshi']}")
+            if x["gruppe"] != "Fed-Zinsentscheidung":
+                print(f"  {x['termin'][:34]:<34} {str(x['ausgang']):<14} Polymarket {x['pm_bid']}/{x['pm_ask']}  Kalshi {x['kalshi']}")
     except Exception as ex:
         V["fehler"] = f"{type(ex).__name__}: {str(ex)[:120]}"
         protokoll.append(f"Fed-Vergleich: {V['fehler']}")
