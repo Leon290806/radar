@@ -251,6 +251,9 @@ def main():
         PMK.lauf(S, prot)
     except Exception as ex:
         prot.append(f"Polymarket-Tracking: {type(ex).__name__}")
+    def _stand_scanner():
+        return tuple((len((S.get(k) or {}).get("offen", {})), (S.get(k) or {}).get("n", 0)) for k in ("wetter", "vergleich"))
+    scanner_vorher = _stand_scanner()
     try:
         WX.lauf(S, prot)
     except Exception as ex:
@@ -284,7 +287,8 @@ def main():
     tages_push(S, preise)
 
     gross = any(e["art"] in ("auf", "zu") and e["notional"] >= E.SPIEGEL_PUSH_AB for e in sp_ereignisse)
-    faellig = (neu_ausgewaehlt or ereignisse or gross or bew or not os.path.exists(E.SEITE) or S.get("seiten_version") != SEITEN_VERSION
+    scanner_neu = _stand_scanner() != scanner_vorher   # neue oder abgerechnete Papier-Trades im Markt-Scanner
+    faellig = (neu_ausgewaehlt or ereignisse or gross or bew or scanner_neu or not os.path.exists(E.SEITE) or S.get("seiten_version") != SEITEN_VERSION
                or SG.jetzt_ms() - S.get("commit_zeit", 0) >= E.COMMIT_ALLE_MIN * 60_000)
     if faellig:
         S["commit_zeit"] = SG.jetzt_ms()
